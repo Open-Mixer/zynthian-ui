@@ -285,6 +285,14 @@ class plugin_hostd_daemon:
             raise plugin_hostd_down(f"{' '.join(cmd)} => {why}")
         pid = done.stdout.strip()
         self.pid = int(pid) if pid.isdigit() else None
+        # The script prints its PID once the daemon's ready line is in its log, which can be a moment before the port
+        # answers a connection; the add that follows must not meet a refusal in that moment (a snapshot restore at the
+        # UI's start did, and left the plugin out of the chain)
+        deadline = time.monotonic() + START_TIMEOUT
+        while not self.identify():
+            if time.monotonic() >= deadline:
+                raise plugin_hostd_down(f"{' '.join(cmd)} started a daemon that does not answer on port {port}")
+            time.sleep(0.1)
 
     def call(self, line, timeout=TIMEOUT):
         """One command; if the connection is gone, bring the daemon back, replay and send it again."""

@@ -954,8 +954,13 @@ class zynthian_state_manager:
     def get_state(self):
         """Get a dictionary describing the full state model"""
 
+        # What the last state held of a processor that could not be built stays in it: save_zs3 only knows the live ones
+        unbuilt = self.chain_manager.__dict__.get("unbuilt", {})
+        held = {i: p for i, p in self.zs3.get("zs3-0", {}).get("processors", {}).items() if str(i) in unbuilt}
         self.save_zs3("zs3-0", "Last state")
         self.purge_zs3()
+        if held:
+            self.zs3["zs3-0"].setdefault("processors", {}).update(held)
         state = {
             'schema_version': SNAPSHOT_SCHEMA_VERSION,
             'last_snapshot_fpath': self.last_snapshot_fpath,
@@ -973,6 +978,9 @@ class zynthian_state_manager:
             engine_state = engine.get_extended_config()
             if engine_state:
                 engine_states[eid] = engine_state
+        for proc_id, kept in unbuilt.items():
+            if kept["eng_config"]:
+                engine_states.setdefault(f"PH#{proc_id}" if kept["eng_code"].startswith("PH/") else kept["eng_code"], kept["eng_config"])
         if engine_states:
             state["engine_config"] = engine_states
 
@@ -1889,7 +1897,8 @@ class zynthian_state_manager:
                 state["active_chain"] = self.chain_manager.active_chain.chain_id
             if "processors" in state:
                 for processor_id in list(state["processors"]):
-                    if int(processor_id) not in self.chain_manager.processors:
+                    if int(processor_id) not in self.chain_manager.processors \
+                            and str(processor_id) not in self.chain_manager.__dict__.get("unbuilt", {}):
                         logging.debug(
                             f"Purging processor {processor_id} from ZS3 {key}")
                         del state["processors"][processor_id]
