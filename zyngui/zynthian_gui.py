@@ -2809,8 +2809,15 @@ class zynthian_gui:
             self.zynswitches_midi_setup(active_chain.midi_chan)
 
     def cb_show_message(self, message, timeout=1):
+        screen = self.get_current_screen_obj()
         try:
-            self.get_current_screen_obj().set_title(message, None, None, timeout)
+            screen.set_title(message, None, None, timeout)
+        except TypeError:
+            # a screen whose set_title takes no timeout (the loading screen at start-up): the message still shows
+            try:
+                screen.set_title(message)
+            except Exception as e:
+                logging.error(f"Can't show GUI message => {e}")
         except Exception as e:
             logging.error(f"Can't show GUI message => {e}")
 

@@ -2,7 +2,8 @@
 # Stand-in for zynthian-sys's sbin/plugin-hostd-start.sh <port> [<feedback port>]: starts the fake daemon
 # (fake_plugin_hostd.py) on the port, returns once it prints the line protocol.json declares for ready and
 # prints its PID. Each run's arguments and PHD_CONF go to $START_STUB_LOG. START_STUB_FAIL makes it refuse
-# with that text on stderr, as the script does when the daemon stays silent.
+# with that text on stderr, as the script does when the daemon stays silent. START_STUB_LATE=seconds returns at once and
+# lets the daemon listen only after that long.
 import os
 import sys
 import json
@@ -25,6 +26,13 @@ spec.loader.exec_module(module)
 directory, name = module.daemon_file()
 ready = module.read(name, directory)[0]["readiness"]["daemon_line"]
 log = os.path.join(os.environ["START_STUB_DIR"], f"plugin-hostd-{sys.argv[1]}.log")
+if os.environ.get("START_STUB_LATE"):
+    # the script has returned, with the daemon's PID, before the port accepts: START_STUB_LATE seconds before it does
+    late = subprocess.Popen([sys.executable, "-c", "import os, sys, time; time.sleep(float(sys.argv[1])); os.execv(sys.argv[2], sys.argv[2:])",
+                             os.environ["START_STUB_LATE"], fake, "-n", "-p", sys.argv[1]],
+                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print(late.pid)
+    sys.exit(0)
 with open(log, "wb") as out:
     proc = subprocess.Popen([fake, "-n", "-p", sys.argv[1]], stdin=subprocess.DEVNULL, stdout=out, stderr=out)
 deadline = time.monotonic() + float(os.environ.get("READY_TIMEOUT", "10"))
