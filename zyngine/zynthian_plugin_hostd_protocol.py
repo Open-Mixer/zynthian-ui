@@ -18,6 +18,7 @@
 import os
 import json
 import logging
+import importlib.util
 
 # Where the files are: libplugin-hostd-protocol0 (plugin-hostd 0.16.0 on) installs them in its own directory, the
 # daemon's as plugin-hostd.json; plugin-hostd before 0.16.0 installed that one as protocol.json in its directory.
@@ -158,6 +159,71 @@ def config_default(key, directory=None):
     return None
 
 
+# ---- An owner's code in the device's language (#6): the sentence of the code in its owner's installed catalog, read
+# through omx-contract's Python catalog reader, its English source sentence (the contract directory's vocabulary)
+# when the catalog has none. The number of a code is plugin-hostd-protocol's table's; nothing here restates a sentence.
+
+TABLE_FILE = "plugin-hostd-protocol.json"
+CONTRACT_DIR = (os.environ.get("OMX_CONTRACT_PATH") or "/usr/share/omx-contract/contract.d").split(":")[0]
+CATALOG_READER = os.environ.get("OMX_CONTRACT_CATALOG_PY", "/usr/share/omx-contract/omx_contract_catalog.py")
+
+
+def device_language():
+    """The language the device runs in, as its locale names it (LC_ALL, LC_MESSAGES, LANG): ca for ca_ES.UTF-8, en
+    for C, POSIX or none."""
+    for var in ("LC_ALL", "LC_MESSAGES", "LANG"):
+        value = os.environ.get(var)
+        if value:
+            lang = value.split(".")[0].split("@")[0].split("_")[0]
+            return "en" if lang in ("C", "POSIX", "") else lang
+    return "en"
+
+
+_reader = []
+
+
+def catalog_reader():
+    """omx-contract's catalog reader, loaded once from where omx-contract installs it; None when it is not there."""
+    if not _reader:
+        module = None
+        try:
+            spec = importlib.util.spec_from_file_location("omx_contract_catalog", CATALOG_READER)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        except (OSError, ImportError, AttributeError) as e:
+            logging.error("omx-contract's catalog reader %s is not readable (%s): codes read in English", CATALOG_READER, e)
+            module = None
+        _reader.append(module)
+    return _reader[0]
+
+
+def owner_sources(contract_dir=None):
+    """Every owner code the contract directory declares with its English source sentence: {code: (owner, sentence)}."""
+    out = {}
+
+    def walk(node, owner):
+        if isinstance(node, dict):
+            text = node.get("text")
+            if isinstance(node.get("code"), str) and isinstance(text, dict) and isinstance(text.get("en"), str):
+                out.setdefault(node["code"], (owner, text["en"]))
+            for v in node.values():
+                walk(v, owner)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v, owner)
+
+    root = os.path.join(contract_dir or CONTRACT_DIR, "3")
+    for owner in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        for name in sorted(os.listdir(os.path.join(root, owner))):
+            if name.endswith(".json"):
+                try:
+                    with open(os.path.join(root, owner, name)) as f:
+                        walk(json.load(f), owner)
+                except (OSError, ValueError):
+                    continue
+    return out
+
+
 class protocol:
     """plugin-hostd's codes by name and by number, read once from both files.
     needs: the names the caller branches on. A file that is missing or unreadable, or a name neither file
@@ -178,6 +244,10 @@ class protocol:
             self.names[e["code"]] = e["name"]
             if e.get("meaning"):
                 self.meanings[e["code"]] = e["meaning"]
+        # each number's owner code (reply.<group>.<reason>), and each code's owner and source sentence
+        table, _ = read(TABLE_FILE, directory)
+        self.keys = {r["resp"]: r["code"] for r in table.get("reply_codes", [])}
+        self.sources = owner_sources()
         missing = [n for n in needs if n not in self.codes]
         self.failure = daemon_failure or host_failure or (
             f"plugin-hostd's protocol files in {directory} do not declare {', '.join(missing)}"
@@ -193,6 +263,20 @@ class protocol:
     def name(self, code):
         return self.names.get(code, f"ERR_{-code}")
 
+    def sentence(self, code, lang=None):
+        """What an owner's code says to the operator in `lang` (the device's language by default): its owner's catalog
+        sentence, else its English source sentence; None for a number no owner code has."""
+        owner, source = self.sources.get(self.keys.get(code), (None, None))
+        if source is None:
+            return None
+        lang = lang or device_language()
+        reader = catalog_reader() if lang != "en" else None
+        if reader is None:
+            return source
+        key = reader.code_key(self.keys[code])
+        return reader.sentence_of(reader.load_catalog(owner, lang), key, source)
+
     def meaning(self, code):
-        """What a code means, from the protocol file; its name where the file says nothing."""
-        return self.meanings.get(code) or self.name(code)
+        """What a code says to the operator: its owner's sentence in the device's language (sentence), else what the
+        protocol file says it means, else its name."""
+        return self.sentence(code) or self.meanings.get(code) or self.name(code)

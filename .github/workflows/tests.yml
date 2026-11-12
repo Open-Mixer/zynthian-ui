@@ -37,8 +37,13 @@ jobs:
 
       - name: Install plugin-hostd from the channel
         run: |
-          apt-get install -y -qq --no-install-recommends plugin-hostd omx-contract-data
-          dpkg-query -W plugin-hostd omx-contract-data
+          apt-get install -y -qq --no-install-recommends plugin-hostd omx-contract-data plugin-hostd-protocol-contract
+          dpkg-query -W plugin-hostd omx-contract-data plugin-hostd-protocol-contract
+          # the owners' sentences are read through omx-contract's Python catalog reader, which omx-contract-data ships
+          # from 3.14.0 on (#6), and the catalogs of plugin-hostd-protocol-contract: a floor and the next major
+          v=$(dpkg-query -W -f '${Version}' omx-contract-data)
+          dpkg --compare-versions "$v" ge 3.14.0 && dpkg --compare-versions "$v" lt 4 \
+            || { echo "::error::omx-contract-data $v is not >= 3.14.0 and < 4: no Python catalog reader"; exit 1; }
           # the channel's omx-contract-data carries the vectors from omx-contract's release on; until then they come
           # from a named commit of omx-contract main, and the log says so
           if [ -f /usr/share/omx-contract/scale-vectors.json ]; then

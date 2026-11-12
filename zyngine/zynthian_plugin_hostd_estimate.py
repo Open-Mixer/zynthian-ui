@@ -24,20 +24,11 @@ class estimate_unavailable(Exception):
     """The daemon has no estimate verb (a plugin-hostd older than the one that brought it)."""
 
 
-# The reason of a member the records cannot answer for, by the code plugin-hostd gives it in the list
-# (the numbers are plugin-hostd's: looked up by name in its protocol file)
-REASON_TEXTS = {"NO_RECORD": "no record", "NO_CELL": "no grid point at this rate and quantum",
-                "UNKNOWN_PLUGIN": "not installed"}
-
-
 def reason(code):
-    """The words for the code of a member the records cannot answer for; 'code <n>' for any other."""
+    """Why the records cannot answer for a member, by the code plugin-hostd gives it in the list: the code's sentence
+    in the device's language, from its owner's catalog (#6); 'code <n>' for a number no owner code has."""
     from zyngine import zynthian_plugin_hostd_protocol
-    codes = zynthian_plugin_hostd_protocol.protocol().codes
-    for name, text in REASON_TEXTS.items():
-        if codes.get(name) == code:
-            return text
-    return "code %d" % code
+    return zynthian_plugin_hostd_protocol.protocol().sentence(code) or "code %d" % code
 
 
 def parse(text):

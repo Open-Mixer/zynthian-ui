@@ -15,6 +15,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_engine_plugin_hostd import plugin_hostd_case, ph  # noqa: E402
 from zyngine import zynthian_plugin_hostd_estimate as est  # noqa: E402
+from zyngine import zynthian_plugin_hostd_protocol as ph_protocol  # noqa: E402
 
 
 def wait_for(estimator, timeout=5.0):
@@ -46,7 +47,9 @@ class estimate_footer(plugin_hostd_case):
         self.serve(estimator=True)
         e = self.estimator()
         e.request("k", 96000, 128, ["urn:test:amp", "urn:test:big"])
-        self.assertEqual(wait_for(e)[1], "chain: +0 fr latency, 1.5 % CPU, RAM unknown, 1 workers, 1 unknown (member 2: no record)")
+        # the member's reason is NO_RECORD's sentence from its owner, in the device's language (#6)
+        no_record = est.reason(ph_protocol.protocol().code("NO_RECORD"))
+        self.assertEqual(wait_for(e)[1], "chain: +0 fr latency, 1.5 %% CPU, RAM unknown, 1 workers, 1 unknown (member 2: %s)" % no_record)
 
     def test_a_daemon_without_the_verb_says_unavailable_once_and_is_not_asked_again(self):
         fake = self.serve()
