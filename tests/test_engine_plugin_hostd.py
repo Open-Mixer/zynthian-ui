@@ -455,6 +455,31 @@ class test_protocol(plugin_hostd_case):
         self.assertIsNone(ph.daemon.pid)
 
 
+class test_command(unittest.TestCase):
+    """A command line is plugin-hostd's client's writing of it from the protocol table, not a string of this module."""
+
+    def test_a_line_is_the_client_s_encoding_of_the_verb_and_its_arguments(self):
+        client = plugin_hostd_protocol.Protocol()
+        for verb, args in (("worker_list", ()), ("add", ("urn:x", 1000)), ("add", ("urn:x", 1000, "own")),
+                           ("chain", (3, 1000, 1001)), ("param_set", (1000, "gain", 0.25)),
+                           ("param_set_many", (1000, "a", 1.0, "b", 0.5)), ("patch_set", (1000, "urn:p", "/a b.wav"))):
+            self.assertEqual(ph.command(verb, *args), client.encode(verb, list(args)), verb)
+
+    def test_a_number_has_the_protocol_s_one_spelling_and_a_word_is_quoted_when_it_has_to_be(self):
+        self.assertEqual(ph.command("param_set", 1000, "gain", 25.0), "param_set 1000 gain 25")
+        self.assertEqual(ph.command("param_set", 1000, "gain", 0.25), "param_set 1000 gain 0.25")
+        self.assertEqual(ph.command("patch_set", 1000, "urn:p", "/data/a.wav"), "patch_set 1000 urn:p /data/a.wav")
+        self.assertEqual(ph.command("patch_set", 1000, "urn:p", '/a "b".wav'), 'patch_set 1000 urn:p "/a \\"b\\".wav"')
+
+    def test_a_line_the_table_does_not_declare_is_not_written(self):
+        with self.assertRaises(plugin_hostd_protocol.ProtocolError):
+            ph.command("no_such_verb", 1)
+        with self.assertRaises(plugin_hostd_protocol.ProtocolError):
+            ph.command("remove")
+        with self.assertRaises(plugin_hostd_protocol.ProtocolError):
+            ph.command("remove", "not-a-number")
+
+
 class test_processor(plugin_hostd_case):
 
     def test_add_gives_the_jack_client_of_the_instance(self):
@@ -1250,7 +1275,7 @@ class test_compare(plugin_hostd_case):
         real = engine.send_quiet
         engine.send = lambda line, timeout=5.0: sent.append(line) or real(line)
         self.assertIsNone(engine.compare_step(("switch", "A")))
-        self.assertEqual(sent, [f"param_set {engine.instance} p1 25.0"], "one write, on the control path")
+        self.assertEqual(sent, [f"param_set {engine.instance} p1 25"], "one write, on the control path")
         self.assertEqual(self.values(fake)["p1"], 25.0)
         self.assertEqual(proc.controllers_dict["p1"].value, 25.0, "the screen follows")
         self.assertIsNone(engine.compare_step(("switch", "B")))
@@ -1720,7 +1745,7 @@ class test_protocol_03(plugin_hostd_case):
         ph.daemon.restore()
         sent = self.sent(fresh, "param_set ")
         self.assertEqual(len(sent), 10)
-        self.assertIn("param_set 1000 p4 33.0", sent)
+        self.assertIn("param_set 1000 p4 33", sent)
         self.assertEqual(fresh.params[1000]["p4"], 33.0)
 
 
