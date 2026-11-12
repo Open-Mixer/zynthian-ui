@@ -9,6 +9,17 @@ import os
 import sys
 import json
 
+
+def _refuse(kind, error, tb):
+    """Any failure of the stand-in is its answer: one line and exit 1, as the real command refuses, never an uncaught
+    exception (a crash handler such as abrt logs every one of those, a run of the suite at a time)."""
+    sys.stderr.write("omx-panel stub: %s: %s\n" % (kind.__name__, error))
+    sys.stderr.flush()
+    os._exit(1)
+
+
+sys.excepthook = _refuse
+
 argv = sys.argv[1:]
 if os.environ.get("OMX_PANEL_STUB_LOG"):
     with open(os.environ["OMX_PANEL_STUB_LOG"], "a") as f:
@@ -66,6 +77,8 @@ else:
     with open(path) as f:
         descriptor = json.load(f)
     sections, controls = [], []
+    if "controls" not in descriptor:
+        sys.exit("omx-panel stub: %s declares no controls" % argv[argv.index("--descriptor") + 1])
     for c in descriptor["controls"]:
         if c.get("hidden"):
             continue
