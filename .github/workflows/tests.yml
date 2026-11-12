@@ -37,8 +37,8 @@ jobs:
 
       - name: Install plugin-hostd from the channel
         run: |
-          apt-get install -y -qq --no-install-recommends plugin-hostd omx-contract-data plugin-hostd-protocol-contract
-          dpkg-query -W plugin-hostd omx-contract-data plugin-hostd-protocol-contract
+          apt-get install -y -qq --no-install-recommends plugin-hostd omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract
+          dpkg-query -W plugin-hostd omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract
           # the owners' sentences are read from the vocabularies omx-contract-data's contract directory holds, in the
           # layout it has from 3.14.0 on (#6), and the catalogs of plugin-hostd-protocol-contract: a floor and the
           # next major

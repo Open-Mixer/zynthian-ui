@@ -73,7 +73,7 @@ class OnThePi(plugin_hostd_case):
                   f"bars in {[s['key'] for s in layout['sections'] if s.get('bars')]}, "
                   f"screen {os.path.basename(engine.custom_gui_fpath or '-')}", flush=True)
             for k, d in enumerate(description.get("displays") or []):
-                if d["kind"] in pv.CURVE_KINDS:
+                if d["kind"] in pv.curve_words()[0]:
                     points = engine.curve(k)
                     print(f"  curve {k} {d['kind']} {d['basis']}: {len(points)} points, {points[:2]} .. {points[-1:]}",
                           flush=True)
