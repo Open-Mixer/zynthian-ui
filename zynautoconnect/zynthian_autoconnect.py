@@ -39,6 +39,7 @@ from threading import Thread, Lock
 import zynconf
 from zyncoder.zyncore import lib_zyncore
 from zyngui import zynthian_gui_config
+from zynautoconnect.mod_ui_routes import drop_mod_ui_routes
 
 # -------------------------------------------------------------------------------
 # Configure logging
@@ -960,10 +961,8 @@ def midi_autoconnect():
     # if get_port_aliases(port)[0] in zynthian_gui_config.enabled_midi_fb_ports:
     # required_routes[port.name].add("ZynMidiRouter:ctrl_out")
 
-    # Remove mod-ui routes
-    for dst in list(required_routes.keys()):
-        if dst.startswith("effect_"):
-            required_routes.pop(dst)
+    # Remove mod-ui routes; plugin-hostd's clients have the same names and keep theirs
+    drop_mod_ui_routes(required_routes, chain_manager.processors.values())
     # Workaround for mod-host auto routing
     try:
         port = jclient.get_port_by_name("mod-host:midi_in")
