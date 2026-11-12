@@ -15,6 +15,13 @@ from unittest import mock
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import test_engine_plugin_hostd  # noqa: F401  the stand-ins and the protocol fixture
+from zyngine import zynthian_plugin_hostd_protocol as protocol_files  # noqa: E402
+
+
+def pin_mismatch():
+    """What PIN_BINARY_MISMATCH says to the operator, as the protocol reads it from its owner."""
+    p = protocol_files.protocol()
+    return p.meaning(p.code("PIN_BINARY_MISMATCH"))
 from zyngine import zynthian_engine_plugin_hostd as ph
 
 # What the chain manager imports beside the engines: stand-ins, as the hardware ones are
@@ -142,8 +149,8 @@ class refused_add(unittest.TestCase):
 
     def test_the_refusal_says_the_daemons_word_and_what_it_means(self):
         self.man.add_processor(1, "PH/Piano", proc_id=1000)
-        self.assertEqual(self.man.add_refusal, "Piano: a pinned file is missing or its SHA-256 differs, or the plugin's "
-                         "manifest names a file the pin does not hold (PIN_BINARY_MISMATCH)")
+        # the daemon's word and its owner's sentence in the device's language (#6), never a copy of the sentence here
+        self.assertEqual(self.man.add_refusal, "Piano: %s (PIN_BINARY_MISMATCH)" % pin_mismatch())
 
     def test_a_refused_plugin_is_marked_not_working_and_adding_it_again_asks_no_engine(self):
         self.man.add_processor(1, "PH/Piano", proc_id=1000)
@@ -186,7 +193,7 @@ class refused_add(unittest.TestCase):
         self.assertEqual([p.id for p in self.chain.get_processors()], [1001])
         messages = [c.kwargs.get("message") for c in send.call_args_list if c.kwargs.get("message")]
         self.assertEqual(len(messages), 1, send.call_args_list)
-        self.assertIn("Piano: a pinned file is missing or its SHA-256 differs", messages[0])
+        self.assertIn("Piano: %s" % pin_mismatch(), messages[0])
 
 
 if __name__ == "__main__":
