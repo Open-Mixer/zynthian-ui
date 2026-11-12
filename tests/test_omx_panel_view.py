@@ -138,6 +138,21 @@ class CurveBinding(unittest.TestCase):
         for word in ("band_freq", "knee_start", "transfer_curve", "eq_response"):
             self.assertNotIn(f'"{word}"', source)
 
+    def test_the_module_keeps_no_list_of_the_gesture_words(self):
+        with open(view.__file__) as f:
+            source = f.read()
+        for word in ("drag", "second", "reset", "toggle", "paint"):
+            self.assertNotIn(f'"{word}"', source)
+        self.assertFalse(hasattr(view, "WORDS"))
+
+    def test_a_renderer_without_the_word_names_is_refused_with_its_reason(self):
+        # any library that lacks the renderer's functions stands for a renderer older than the one that names its words
+        with mock.patch.dict(os.environ, {"ZYNTHIAN_OMX_PANEL_RENDER": "libm.so.6"}), \
+                mock.patch.object(view, "_lib", None), mock.patch.object(view, "_lib_error", None):
+            with self.assertRaises(view.RendererAbsent) as refused:
+                view.library()
+            self.assertIn("older than this module needs", str(refused.exception))
+
     def test_the_points_of_a_reply(self):
         self.assertEqual(view.curve_points("3 -80.00,-80.00 -16.00,-17.56 0,-13.50"),
                          [(-80.0, -80.0), (-16.0, -17.56), (0.0, -13.5)])
@@ -196,6 +211,15 @@ class Drawn(unittest.TestCase):
         frame = self.draw(v)
         self.assertTrue(v.set_meter(0, -12.0, 0.0))
         self.assertTrue(self.differs(frame, self.draw(v)))
+
+    def test_the_word_names_are_the_librarys_in_the_declared_order(self):
+        # omx-panel's schema/gestures.json, the file the gesture tests read too
+        with open(os.environ["ZYNTHIAN_OMX_GESTURES"]) as f:
+            words = list(json.load(f)["words"])
+        # OMX_PANEL_WORD_NONE is 0, the declared words follow it in gestures.json's order
+        self.assertEqual([view.word_name(k + 1) for k in range(len(words))], words)
+        self.assertEqual(view.word_name(0), "")
+        self.assertIsNone(view.word_name(len(words) + 1))
 
     def test_a_drag_moves_a_bar_through_the_gestures(self):
         part, _ = view.screen_part(fixture("omx-geq")["layout"], {"band01"})

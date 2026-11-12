@@ -106,7 +106,7 @@ jobs:
         run: |
           apt-get install -y -qq --no-install-recommends git ca-certificates build-essential pkgconf libcjson-dev \
             libomx-contract-dev libomxdsp-dev binutils
-          SHA=28a5f4a9e9e00428b50e0480e5652f41d69c8a34
+          SHA=1b04102ce1388a658b658ca1ac3775d91aa4e0c0
           git clone -q https://github.com/Open-Mixer/omx-panel /tmp/omx-panel
           git -C /tmp/omx-panel checkout -q "$SHA"
           test -f /tmp/omx-panel/schema/gestures.json
