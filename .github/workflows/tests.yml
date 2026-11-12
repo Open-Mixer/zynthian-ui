@@ -74,6 +74,25 @@ jobs:
             echo "CLIENT FROM BRANCH $SHA"
           fi
 
+      - name: Fetch plugin-db's Python reader and its golden answers
+        run: |
+          # plugin_db, the reader the menus ask about a plugin (#4), and the golden answers the tests ask it with:
+          # python3-plugin-db from plugin-db 0.3.2 on; until that release from a named commit of its main, and the
+          # log says so. The golden answers always come from the checkout.
+          SHA=4a9d62dce6b64d6fe141880c63905ab8255a9219
+          apt-get install -y -qq --no-install-recommends git ca-certificates
+          git clone -q https://github.com/Open-Mixer/plugin-db /tmp/plugin-db
+          git -C /tmp/plugin-db checkout -q "$SHA"
+          test -f /tmp/plugin-db/tests/golden/qualified.json
+          echo "ZYNTHIAN_PLUGIN_DB_GOLDEN=/tmp/plugin-db/tests/golden" >> "$GITHUB_ENV"
+          if python3 -c 'import plugin_db' 2>/dev/null; then
+            echo "READER FROM INSTALLED PACKAGE"
+          else
+            test -f /tmp/plugin-db/python/plugin_db/__init__.py
+            echo "PYTHONPATH=/tmp/plugin-db/python${PYTHONPATH:+:$PYTHONPATH}" >> "$GITHUB_ENV"
+            echo "READER FROM BRANCH $SHA"
+          fi
+
       - name: Fetch omx-panel's gesture declaration and build its renderer
         run: |
           apt-get install -y -qq --no-install-recommends git ca-certificates build-essential pkgconf libcjson-dev \

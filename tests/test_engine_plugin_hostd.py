@@ -1346,21 +1346,24 @@ class test_snapshot(plugin_hostd_case):
 
 
 class test_below_bar(plugin_hostd_case):
-    """A plugin below our bar, chosen by the user, loads in plugin-hostd in a worker of its own; a refused one is
-    first accepted as the user's choice. Nothing is handed to another host."""
+    """A plugin plugin-db does not answer shared for, chosen by the user, loads in plugin-hostd in a worker of its own;
+    a refused one is first accepted as the user's choice. Nothing is handed to another host. The answers are plugin-db's
+    golden ones (plugin_db_stub)."""
 
-    def qualify(self, pins="", records=None):
-        path = os.path.join(self.tmp, "pins")
-        with open(path, "w") as f:
-            f.write(pins)
-        patcher = mock.patch.dict(os.environ, {"ZYNTHIAN_QUALIFICATION_PINS": path,
-                                               "ZYNTHIAN_QUALIFICATION_DIR": records or os.path.join(self.tmp, "none")})
+    def qualify(self, case=None):
+        """plugin-db answers for urn:test:amp with this golden case; with none, its store does not hold the plugin."""
+        import plugin_db_stub
+        from zyngine import zynthian_plugin_qualification as qual
+        directory = os.path.join(self.tmp, "plugin-db-stub")
+        os.makedirs(directory, exist_ok=True)
+        self.commands = plugin_db_stub.commands(directory, {"lv2:urn:test:amp": case} if case else {})
+        patcher = mock.patch.object(ph, "qualification",
+                                    qual.qualification(None, self.commands.plugin_db, self.commands.plugin_qualify))
         patcher.start()
         self.addCleanup(patcher.stop)
-        ph.qualification.stamp = None
 
     def test_a_refused_plugin_is_accepted_and_added_in_a_worker_of_its_own(self):
-        self.qualify("pin_set urn:test:amp amp.so=00 omx-layout/1:00 verdict=refused\n")
+        self.qualify("refused")
         with mock.patch.object(fake_plugin_hostd, "REFUSED", {"urn:test:amp"}):
             fake = self.serve()
             proc = self.add(self.chain(), "PH/Amp")
@@ -1368,19 +1371,20 @@ class test_below_bar(plugin_hostd_case):
         self.assertEqual(lines, ["pin_accept urn:test:amp", "add urn:test:amp 1000 own"])
         self.assertEqual(proc.engine.replay_lines()[0], "add urn:test:amp 1000 own")
         self.assertIsNone(ph.member_of(proc, "urn:test:amp"), "it joins no run")
+        self.assertEqual(self.commands.calls()[0][:3], ["query", "--json", "lv2:urn:test:amp"])
 
     def test_a_refused_plugin_is_not_accepted_under_qualified_only_and_its_add_says_why(self):
-        self.qualify("pin_set urn:test:amp amp.so=00 omx-layout/1:00 verdict=refused\n")
+        self.qualify("refused")
         with mock.patch.object(fake_plugin_hostd, "REFUSED", {"urn:test:amp"}), \
                 mock.patch.dict(os.environ, {"ZYNTHIAN_PLUGIN_BAR": "qualified-only"}):
             fake = self.serve()
             with self.assertRaises(ph.plugin_hostd_error):
                 self.add(self.chain(), "PH/Amp")
-        self.assertNotIn("pin_accept", [l.split()[0] for l in fake.lines], "the user said no to plugins below the bar")
+        self.assertNotIn("pin_accept", [l.split()[0] for l in fake.lines], "the user said no to refused plugins")
 
     def test_the_choice_taken_back_under_qualified_only_reaches_the_daemon_and_the_add_is_refused(self):
         # accepted under load-all (the daemon keeps the choice across restarts), then the bar is raised
-        self.qualify("pin_set urn:test:amp amp.so=00 omx-layout/1:00 verdict=refused\n")
+        self.qualify("refused")
         with mock.patch.object(fake_plugin_hostd, "REFUSED", {"urn:test:amp"}):
             fake = self.serve()
             fake.accepted = {"urn:test:amp"}
@@ -1391,24 +1395,34 @@ class test_below_bar(plugin_hostd_case):
                          ["pin_clear urn:test:amp", "pin_reload", "add urn:test:amp 1000 own"])
         self.assertEqual(refused.exception.code, -516)
 
-    def test_a_plugin_that_crashed_in_qualification_runs_alone_and_nothing_is_accepted(self):
-        records = os.path.join(self.tmp, "records")
-        os.mkdir(records)
-        with open(os.path.join(records, "run.json"), "w") as f:
-            json.dump({"format": "lv2-plugin-measurements", "run": {"measuredAt": "2026-11-01"},
-                       "plugins": [{"uri": "urn:test:amp"}],
-                       "verdicts": [{"uri": "urn:test:amp", "rating": "unsuitable",
-                                     "deciding": "hosting.stability.crashed-attributed-plugin"}]}, f)
-        self.qualify(records=records)
+    def alone(self, case):
+        """A plugin plugin-db answers alone for runs in a worker of its own, and nothing is accepted."""
+        self.qualify(case)
         fake = self.serve()
         self.add(self.chain(), "PH/Amp")
         self.assertEqual([l for l in fake.lines if l.split()[0] in ("pin_accept", "add")], ["add urn:test:amp 1000 own"])
 
+    def test_an_isolated_only_plugin_runs_alone(self):
+        self.alone("isolated-only")
+
+    def test_a_plugin_not_measured_yet_runs_alone(self):
+        self.alone("measurement-pending")
+
+    def test_a_plugin_whose_conditions_are_not_met_runs_alone(self):
+        self.alone("conditions-no-cell")
+
     def test_a_qualified_plugin_is_added_as_before(self):
-        self.qualify("pin_set urn:test:amp amp.so=00 omx-layout/1:00 verdict=in-process\n")
+        self.qualify("qualified")
         fake = self.serve()
         self.add(self.chain(), "PH/Amp")
         self.assertEqual([l for l in fake.lines if l.split()[0] in ("pin_accept", "add")], ["add urn:test:amp 1000"])
+
+    def test_a_plugin_plugin_db_has_no_answer_for_is_added_as_before(self):
+        self.qualify()
+        fake = self.serve()
+        self.add(self.chain(), "PH/Amp")
+        self.assertEqual([l for l in fake.lines if l.split()[0] in ("pin_accept", "add")], ["add urn:test:amp 1000"])
+        self.assertEqual(self.commands.calls()[0][:3], ["query", "--json", "lv2:urn:test:amp"], "it was asked")
 
 
 class test_catalogue(plugin_hostd_case):

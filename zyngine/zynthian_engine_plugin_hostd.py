@@ -35,6 +35,7 @@ from zyngine import zynthian_plugin_hostd_grouping
 from zyngine import zynthian_plugin_hostd_estimate
 from zyngine import zynthian_plugin_qualification
 from zyngine import zynthian_plugin_tiers
+from plugin_db import vocabulary as plugin_db_words
 from zyngine import zynthian_omx_panel_view as panel_view
 from zyngine.zynthian_engine import zynthian_engine
 from zyngine.zynthian_controller import zynthian_controller
@@ -57,7 +58,6 @@ ACCEPT_VERB = "pin_accept"
 REVOKE_VERB = "pin_clear"
 RELOAD_VERB = "pin_reload"
 # Below-bar reasons that run a plugin in a worker of its own
-ISOLATE_REASONS = ("refused", "crashed", "hung")
 qualification = zynthian_plugin_qualification.qualification()
 RETRY_S = 60.0  # a run the daemon refused, or planned alone for a reason that can change, is asked again after this
 RETRY_REASONS = ("no-verdict", "plan-refused:")  # plan_get reasons that the qualification sync or a pin can lift
@@ -1271,22 +1271,24 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
         processor.refresh_controllers()
 
     def below_bar_placement(self):
-        """own for a plugin below our bar (its pin refused, a crash or a hang in qualification, an RT-safety fault),
-        after telling the daemon a refused one is the user's choice; None for the rest. It runs in plugin-hostd
-        either way: no plugin is handed to another host."""
+        """own for a plugin plugin-db does not answer shared for (it runs alone, or it is refused), after telling the
+        daemon a refused one is the user's choice; None for the rest. It runs in plugin-hostd either way: no plugin is
+        handed to another host."""
         try:
-            facts = qualification.refresh().facts(self.plugin_uri, None)
+            answer = qualification.refresh().answer(self.plugin_uri, *(audio_format(self.state_manager) or (None, None)))
         except Exception as e:
-            logging.warning(f"Can't read the qualification of {self.plugin_uri} => {e}")
+            logging.warning(f"Can't ask plugin-db about {self.plugin_uri} => {e}")
             return None
-        reason = zynthian_plugin_tiers.place(facts).reason
-        if reason == "refused":
-            if zynthian_plugin_tiers.plugin_bar() != "qualified-only":
+        if answer is None:
+            return None
+        refused = answer["state"] == plugin_db_words.states.refused
+        if refused:
+            if zynthian_plugin_tiers.plugin_bar() != plugin_db_words.bar.qualifiedOnly:
                 daemon.accept_below_bar(self.plugin_uri)
             else:
-                # qualified-only is the user saying no to plugins below the bar: the pin is refused again and the add says why
+                # qualified-only is the user saying no to refused plugins: the pin is refused again and the add says why
                 daemon.revoke_below_bar(self.plugin_uri)
-        return "own" if reason in ISOLATE_REASONS or facts.rt_safe is False else None
+        return "own" if refused or answer["runs"] == plugin_db_words.runs.alone else None
 
     def main_widths(self):
         """(main input channels, main output channels) from the plugin's scanned descriptor, asked once; None when

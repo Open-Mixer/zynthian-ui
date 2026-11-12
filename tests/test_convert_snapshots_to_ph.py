@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 #
-# tools/convert_snapshots_to_ph.py on fixture snapshots, and a converted processor loaded by the real
-# zynthian_processor into the PH engine against the fake plugin-hostd.
+# tools/convert_snapshots_to_ph.py on fixture snapshots, with plugin-db's golden answers for what it reports
+# (plugin_db_stub: the two commands are found on PATH, as the tool finds them), and a converted processor loaded by
+# the real zynthian_processor into the PH engine against the fake plugin-hostd.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
@@ -21,8 +22,13 @@ FIXTURES = os.path.join(HERE, "fixtures", "snapshots")
 sys.path[:0] = [HERE, os.path.join(ROOT, "tools")]
 
 import convert_snapshots_to_ph as conv  # noqa: E402
+import plugin_db_stub  # noqa: E402
 import test_engine_plugin_hostd as phtest  # noqa: E402
 import fake_plugin_hostd  # noqa: E402
+
+
+SURGE = "lv2:https://surge-synthesizer.github.io/lv2/surge-xt"
+ZAMCOMP_ADDRESS = "lv2:urn:zamaudio:ZamComp"
 
 
 def load(path):
@@ -44,37 +50,53 @@ class converter_case(unittest.TestCase):
         shutil.copytree(FIXTURES, self.dir)
         self.config = os.path.join(self.dir, "engine_config.json")
 
-    def run_tool(self, *paths, pins="", qualification=None):
+    def run_tool(self, *paths, answers=None, store=None, commands=True):
+        """The tool, with plugin-db answering these addresses with these golden cases (an address it is not given is
+        an entry its store does not hold). commands=False: neither command is installed."""
         out = io.StringIO()
-        qualification = qualification or os.path.join(self.dir, "no-qualification")
-        code = conv.main(["--engine-config", self.config, "--pins", pins, "--qualification", qualification, *paths],
-                         out=out)
+        bin_dir = os.path.join(os.path.dirname(self.dir), "bin")
+        os.makedirs(bin_dir, exist_ok=True)
+        if commands:
+            self.commands = plugin_db_stub.commands(bin_dir, answers)
+        argv = ["--engine-config", self.config] + (["--store", store] if store else []) + list(paths)
+        with mock.patch.dict(os.environ, {"PATH": bin_dir + os.pathsep + os.environ.get("PATH", "")}), \
+                mock.patch.dict(os.environ, {} if commands else {"PATH": bin_dir}):
+            code = conv.main(argv, out=out)
         return code, out.getvalue()
 
-    def test_a_plugin_plugin_hostd_refuses_is_converted_and_reported_with_why(self):
-        pins = os.path.join(self.dir, "pins")
-        code, report = self.run_tool(self.dir, pins=pins)
+    def test_a_refused_plugin_is_converted_and_reported_in_plugin_dbs_sentences(self):
+        code, report = self.run_tool(self.dir, answers={ZAMCOMP_ADDRESS: "refused", SURGE: "isolated-only"})
         new = load(os.path.join(self.dir, "one-jv-one-zy.ph.zss"))
         self.assertEqual(new["chains"]["1"]["slots"], [{"1": "ZY"}, {"2": "PH/ZamComp"}], "nothing is left on jalv")
+        said = conv.tiers.answer_text(plugin_db_stub.expect("refused"))
         self.assertIn("converted  processor 2 JV/ZamComp -> PH/ZamComp (urn:zamaudio:ZamComp)\n"
-                      "  below bar  processor 2 PH/ZamComp: Below our bar: plugin-hostd's qualification refused it. "
-                      "You can still load it: plugin-hostd runs it in a worker of its own.", report)
+                      f"  not loaded processor 2 PH/ZamComp: {said}\n", report)
         self.assertIn("3 snapshots read, 2 written; 2 processors converted, 4 left as they are; "
-                      "1 converted processor below our bar (listed above)", report)
-        # verdict=isolated is hosted, in a worker of its own
+                      "1 converted processor not loaded (listed above)", report)
+        # one that runs alone is loaded: converted, and nothing more is said of it
         self.assertIn("converted  processor 4 JV/Surge XT -> PH/Surge XT", report)
+        self.assertNotIn("not loaded processor 4", report)
 
-    def test_the_reason_names_what_the_qualification_record_decided(self):
-        records = os.path.join(self.dir, "records")
-        os.makedirs(records)
-        with open(os.path.join(records, "run.json"), "w") as f:
-            json.dump({"format": "lv2-plugin-measurements", "formatVersion": "1.0", "run": {"measuredAt": "2026-11-01"},
-                       "plugins": [{"uri": "urn:zamaudio:ZamComp"}],
-                       "verdicts": [{"uri": "urn:zamaudio:ZamComp", "rating": "unsuitable",
-                                     "deciding": "hosting.features.required-not-provided"}]}, f)
-        code, report = self.run_tool(os.path.join(self.dir, "one-jv-one-zy.zss"), pins=os.path.join(self.dir, "pins"),
-                                     qualification=records)
-        self.assertIn("refused it: a feature it needs is not provided (hosting.features.required-not-provided)", report)
+    def test_a_plugin_whose_files_are_gone_is_reported_too_and_the_named_store_is_the_one_asked(self):
+        store = os.path.join(self.dir, "store")
+        code, report = self.run_tool(os.path.join(self.dir, "one-jv-one-zy.zss"), answers={ZAMCOMP_ADDRESS: "absent"},
+                                     store=store)
+        said = conv.tiers.answer_text(plugin_db_stub.expect("absent"))
+        self.assertIn(f"  not loaded processor 2 PH/ZamComp: {said}\n", report)
+        self.assertEqual(self.commands.calls()[0][:5], ["--store", store, "query", "--json", ZAMCOMP_ADDRESS])
+
+    def test_a_plugin_the_store_does_not_hold_is_converted_and_nothing_is_said_of_it(self):
+        code, report = self.run_tool(os.path.join(self.dir, "one-jv-one-zy.zss"))
+        self.assertEqual(self.commands.calls()[0][:3], ["query", "--json", ZAMCOMP_ADDRESS], "it was asked")
+        self.assertNotIn("not loaded processor", report)
+        self.assertIn("0 converted processors not loaded", report)
+
+    def test_without_the_commands_the_snapshots_are_converted_and_the_report_says_plugin_db_is_not_asked(self):
+        code, report = self.run_tool(self.dir, commands=False)
+        self.assertEqual(code, 0)
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "one-jv-one-zy.ph.zss")))
+        self.assertEqual(report.count("plugin-db is not asked: "), 1, "said once, not per plugin")
+        self.assertIn("2 processors converted", report)
 
     def test_the_jalv_plugin_becomes_a_ph_one_and_the_rest_stays(self):
         src = os.path.join(self.dir, "one-jv-one-zy.zss")
@@ -174,7 +196,7 @@ class converted_snapshot_loads(phtest.plugin_hostd_case):
         self.addCleanup(tmp.cleanup)
         src = os.path.join(tmp.name, "one.zss")
         shutil.copy(os.path.join(FIXTURES, "one-jv-one-zy.zss"), src)
-        conv.main(["--engine-config", os.path.join(FIXTURES, "engine_config.json"), "--pins", "", src], out=io.StringIO())
+        conv.main(["--engine-config", os.path.join(FIXTURES, "engine_config.json"), src], out=io.StringIO())
         snapshot = load(os.path.join(tmp.name, "one.ph.zss"))
         code = snapshot["chains"]["1"]["slots"][1]["2"]
         state = snapshot["zs3"]["zs3-0"]["processors"]["2"]
