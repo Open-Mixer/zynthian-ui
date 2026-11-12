@@ -247,6 +247,8 @@ class protocol:
         # each number's owner code (reply.<group>.<reason>), and each code's owner and source sentence
         table, _ = read(TABLE_FILE, directory)
         self.keys = {r["resp"]: r["code"] for r in table.get("reply_codes", [])}
+        # the JACK metadata a worker sets on an instance's client (plugin-hostd-protocol 0.5.5, plugin-hostd#33)
+        self.node_metadata = {r["name"]: r for r in table.get("node_metadata", [])}
         self.sources = owner_sources()
         missing = [n for n in needs if n not in self.codes]
         self.failure = daemon_failure or host_failure or (
@@ -255,6 +257,11 @@ class protocol:
         self.loaded = self.failure is None
         if self.failure:
             logging.error("%s: the plugin-hostd engine will not start", self.failure)
+
+    def instance_key(self):
+        """The JACK metadata key a worker sets on each instance's client, its value the instance: what tells a
+        plugin-hostd client from any other, never its name; None from a protocol before 0.5.5, which declares none."""
+        return self.node_metadata.get("instance", {}).get("key")
 
     def code(self, name):
         """The number a name stands for; KeyError for a name the protocol does not declare."""

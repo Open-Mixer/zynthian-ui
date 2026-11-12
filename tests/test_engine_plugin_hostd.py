@@ -136,6 +136,9 @@ class plugin_hostd_case(unittest.TestCase):
         cat.add_catalogue(self.info, clap=cat.parse_clap_scan(CLAP_SCAN), binary=FAKE)
         # The graph as a worker leaves it after a chain: a member it runs in the head's client has no port
         sys.modules["zynautoconnect"].get_ports.return_value = []
+        # a protocol before 0.5.5 declares no instance key; test_hosted_client gives one
+        sys.modules["zynautoconnect"].hosted_key.return_value = None
+        sys.modules["zynautoconnect"].hosted_client.side_effect = None
         self.sm = mock.MagicMock()
         self.sm.chain_manager.engine_info = self.info
         self.sm.chain_manager.chains = {}
@@ -440,6 +443,18 @@ class test_protocol(plugin_hostd_case):
 
 
 class test_processor(plugin_hostd_case):
+
+    def test_the_jack_client_is_the_one_carrying_the_instance_key(self):
+        """plugin-hostd#33: with a protocol that declares the instance key, the processor's client is the one whose key
+        names its instance, whatever that client is called"""
+        ac = sys.modules["zynautoconnect"]
+        ac.hosted_key.return_value = "http://openmixer.org/ns/plugin-hostd#instance"
+        ac.hosted_client.side_effect = lambda instance: "Amp (%d)" % instance
+        self.serve()
+        chain = self.chain()
+        a = self.add(chain, "PH/Amp")
+        self.assertEqual(a.jackname, "Amp (1000)")
+        ac.hosted_client.assert_called_with(1000)
 
     def test_add_gives_the_jack_client_of_the_instance(self):
         fake = self.serve()

@@ -62,7 +62,9 @@ class test_mod_ui_routes(unittest.TestCase):
     def test_the_autoconnect_asks_with_its_chain_processors(self):
         with open(AUTOCONNECT) as f:
             source = f.read()
-        self.assertIn("drop_mod_ui_routes(required_routes, chain_manager.processors.values())", source)
+        self.assertIn("drop_mod_ui_routes(required_routes, chain_manager.processors.values(),", source)
+        self.assertIn("hosted=(lambda client: hosted_instance(jclient, client, key) is not None)", source,
+                      "the autoconnect tells plugin-hostd's clients by their instance key")
         self.assertNotIn('if dst.startswith("effect_"):\n            required_routes.pop(dst)', source,
                          "the rule that dropped every effect_ destination is gone")
 

@@ -1248,11 +1248,24 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
         self.monitored = {}  # meter symbol => the feedback connection its monitor_output was set on
         self.options['ctrl_fb'] = False
 
+    def client_name(self):
+        """The JACK client of this instance: the one carrying plugin-hostd's instance key, whatever it is called
+        (plugin-hostd-protocol's node_metadata, plugin-hostd#33). The worker sets the key before it answers the add.
+        A protocol before 0.5.5 declares no key, and its daemon's client is effect_<instance>."""
+        if zynautoconnect.hosted_key() is None:
+            return f"effect_{self.instance}"
+        name = zynautoconnect.hosted_client(self.instance)
+        if name is None:
+            logging.error("plugin-hostd instance %s: no JACK client carries its instance key; is the worker older than "
+                          "the protocol, or the server one that keeps no metadata?", self.instance)
+            return f"effect_{self.instance}"
+        return name
+
     def add_processor(self, processor):
         if self.instance is None:
             self.placement = self.below_bar_placement()
             self.instance = daemon.add(self, self.plugin_uri, self.placement)
-            self.jackname = f"effect_{self.instance}"
+            self.jackname = self.client_name()
             self.zctrls = self.build_controllers()
             self.compare_settled = self.compare_values()
             self.generate_ctrl_screens(self.zctrls)
