@@ -55,6 +55,7 @@ from zyngine.zynthian_ctrldev_manager import zynthian_ctrldev_manager
 from zyngine.zynthian_audio_recorder import zynthian_audio_recorder
 from zyngine.zynthian_legacy_snapshot import zynthian_legacy_snapshot, SNAPSHOT_SCHEMA_VERSION
 from zyngine import zynthian_midi_filter
+from zyngine import zynthian_release_target
 
 from zyngui import zynthian_gui_config
 
@@ -2981,16 +2982,11 @@ class zynthian_state_manager:
                     stable_branch = os.environ.get('ZYNTHIAN_STABLE_BRANCH', "oram")
                     for repo in repos:
                         path = f"/zynthian/{repo}"
-                        branch = get_repo_branch(path)
                         # Get last tag release
                         check_output(["git", "-C", path, "remote", "update", "origin", "--prune"],
                                      encoding="utf-8", stderr=STDOUT)
-                        stags = check_output(["git", "-C", path, "tag", "-l", f"{stable_branch}-*"],
-                                             encoding="utf-8", stderr=STDOUT).strip().split("\n")
-                        last_stag = stags[-1].strip()
-                        #logging.debug(f"STABLE TAG RELEASES => {stags}")
-                        if branch != last_stag:
-                            #logging.info(f"For reposiroty '{repo}', current branch ({branch}) != last tag release ({last_stag})!")
+                        # The tag the updater would take, not the last one listed
+                        if zynthian_release_target.update_available(path, stable_branch):
                             self.update_available = True
                             break
                 # else => Check for commits to pull
