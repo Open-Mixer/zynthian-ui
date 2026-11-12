@@ -40,6 +40,7 @@ import zynconf
 from zyncoder.zyncore import lib_zyncore
 from zyngui import zynthian_gui_config
 from zynautoconnect.mod_ui_routes import drop_mod_ui_routes
+from zynautoconnect.unrouted_chains import say_unrouted
 
 # -------------------------------------------------------------------------------
 # Configure logging
@@ -85,6 +86,7 @@ exit_flag = False				# True to exit thread
 paused_flag = False				# True id autoconnect task is paused
 state_manager = None			# State Manager object
 chain_manager = None			# Chain Manager object
+unrouted_said = set()			# IDs of the chains named as unroutable (no mixer strip), said once each
 xruns = 0						# Quantity of xruns since startup or last reset
 # True to perform MIDI connect on next port check cycle
 deferred_midi_connect = False
@@ -1049,7 +1051,8 @@ def audio_autoconnect():
     for dst in all_audio_dst:
         required_routes[dst.name] = set()
 
-    # Chain audio routing
+    # Chain audio routing: a chain is routed through its mixer strip; one with a sound source and none is named
+    say_unrouted(chain_manager.chains, unrouted_said)
     for chain_id in chain_manager.chains:
         chain = chain_manager.get_chain(chain_id)
         if not chain.is_audio():
