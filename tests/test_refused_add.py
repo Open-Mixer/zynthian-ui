@@ -20,8 +20,8 @@ from zyngine import zynthian_plugin_hostd_protocol as protocol_files  # noqa: E4
 
 def pin_mismatch():
     """What PIN_BINARY_MISMATCH says to the operator, as the protocol reads it from its owner."""
-    p = protocol_files.protocol()
-    return p.meaning(p.code("PIN_BINARY_MISMATCH"))
+    p = protocol_files.reply_codes()
+    return p.meaning(p.code("reply.plugin-hostd.pin-binary-mismatch"))
 from zyngine import zynthian_engine_plugin_hostd as ph
 
 # What the chain manager imports beside the engines: stand-ins, as the hardware ones are
@@ -92,7 +92,7 @@ class refusing_engine:
 
 
 class barred_engine(refusing_engine):
-    """The daemon refusing a plugin whose pin says refused, the user's bar not accepting it (-516 PIN_REFUSED)."""
+    """The daemon refusing a plugin whose pin says refused, the user's bar not accepting it (-516, reply.plugin-hostd.pin-refused)."""
 
     def add_processor(self, processor):
         raise ph.plugin_hostd_error(-516, "add urn:test:piano 1000")
@@ -150,7 +150,7 @@ class refused_add(unittest.TestCase):
     def test_the_refusal_says_the_daemons_word_and_what_it_means(self):
         self.man.add_processor(1, "PH/Piano", proc_id=1000)
         # the daemon's word and its owner's sentence in the device's language (#6), never a copy of the sentence here
-        self.assertEqual(self.man.add_refusal, "Piano: %s (PIN_BINARY_MISMATCH)" % pin_mismatch())
+        self.assertEqual(self.man.add_refusal, "Piano: %s (reply.plugin-hostd.pin-binary-mismatch)" % pin_mismatch())
 
     def test_a_refused_plugin_is_marked_not_working_and_adding_it_again_asks_no_engine(self):
         self.man.add_processor(1, "PH/Piano", proc_id=1000)
@@ -168,7 +168,7 @@ class refused_add(unittest.TestCase):
     def test_a_refusal_that_is_the_bars_own_leaves_no_mark_so_a_lowered_bar_asks_the_daemon_again(self):
         self.man.engine_info["PH/Piano"]["ENGINE"] = barred_engine
         self.assertIsNone(self.man.add_processor(1, "PH/Piano", proc_id=1000))
-        self.assertIn("PIN_REFUSED", self.man.add_refusal, "the add still says why")
+        self.assertIn("reply.plugin-hostd.pin-refused", self.man.add_refusal, "the add still says why")
         self.assertFalse(self.man.engine_info["PH/Piano"].get("NOT_WORKING"))
         self.man.engine_info["PH/Piano"]["ENGINE"] = accepting_engine  # the bar was lowered and the daemon took it
         self.assertIsNotNone(self.man.add_processor(1, "PH/Piano", proc_id=1001))

@@ -39,11 +39,12 @@ jobs:
         run: |
           apt-get install -y -qq --no-install-recommends plugin-hostd omx-contract-data plugin-hostd-protocol-contract
           dpkg-query -W plugin-hostd omx-contract-data plugin-hostd-protocol-contract
-          # the owners' sentences are read through omx-contract's Python catalog reader, which omx-contract-data ships
-          # from 3.14.0 on (#6), and the catalogs of plugin-hostd-protocol-contract: a floor and the next major
+          # the owners' sentences are read from the vocabularies omx-contract-data's contract directory holds, in the
+          # layout it has from 3.14.0 on (#6), and the catalogs of plugin-hostd-protocol-contract: a floor and the
+          # next major
           v=$(dpkg-query -W -f '${Version}' omx-contract-data)
           dpkg --compare-versions "$v" ge 3.14.0 && dpkg --compare-versions "$v" lt 4 \
-            || { echo "::error::omx-contract-data $v is not >= 3.14.0 and < 4: no Python catalog reader"; exit 1; }
+            || { echo "::error::omx-contract-data $v is not >= 3.14.0 and < 4"; exit 1; }
           # the channel's omx-contract-data carries the vectors from omx-contract's release on; until then they come
           # from a named commit of omx-contract main, and the log says so
           if [ -f /usr/share/omx-contract/scale-vectors.json ]; then
@@ -60,17 +61,22 @@ jobs:
 
       - name: Fetch plugin-hostd's Python client
         run: |
-          # plugin_hostd_protocol, the client the words of a line are read through (#4): python3-plugin-hostd-protocol
-          # from plugin-hostd's next release on; until then from a named commit of its branch, and the log says so
+          # plugin_hostd_protocol, the client the words of a line and the reply codes are read through (#4):
+          # python3-plugin-hostd-protocol from plugin-hostd's next release on; until then from a named commit of its
+          # main, and the log says so. The package knows where the table and the contract directory are installed;
+          # a checkout is told
           if python3 -c 'import plugin_hostd_protocol' 2>/dev/null; then
             echo "CLIENT FROM INSTALLED PACKAGE"
           else
-            SHA=406bf4f2ad4bc72470c828af90bbf46d47359d7b
+            SHA=b4c8a2078bfd11151d69f7ab73e2411dfda9b3e8
             apt-get install -y -qq --no-install-recommends git ca-certificates
             git clone -q https://github.com/Open-Mixer/plugin-hostd /tmp/plugin-hostd
             git -C /tmp/plugin-hostd checkout -q "$SHA"
             test -f /tmp/plugin-hostd/clients/python/plugin_hostd_protocol/__init__.py
             echo "PYTHONPATH=/tmp/plugin-hostd/clients/python" >> "$GITHUB_ENV"
+            test -f /usr/share/plugin-hostd-protocol/plugin-hostd-protocol.json
+            echo "PLUGIN_HOSTD_PROTOCOL_TABLE=/usr/share/plugin-hostd-protocol/plugin-hostd-protocol.json" >> "$GITHUB_ENV"
+            echo "OMX_CONTRACT_PATH=/usr/share/omx-contract/contract.d" >> "$GITHUB_ENV"
             echo "CLIENT FROM BRANCH $SHA"
           fi
 
