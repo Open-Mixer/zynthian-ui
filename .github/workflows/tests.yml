@@ -58,6 +58,22 @@ jobs:
             echo "VECTORS FROM BRANCH $SHA"
           fi
 
+      - name: Fetch plugin-hostd's Python client
+        run: |
+          # plugin_hostd_protocol, the client the words of a line are read through (#4): python3-plugin-hostd-protocol
+          # from plugin-hostd's next release on; until then from a named commit of its branch, and the log says so
+          if python3 -c 'import plugin_hostd_protocol' 2>/dev/null; then
+            echo "CLIENT FROM INSTALLED PACKAGE"
+          else
+            SHA=406bf4f2ad4bc72470c828af90bbf46d47359d7b
+            apt-get install -y -qq --no-install-recommends git ca-certificates
+            git clone -q https://github.com/Open-Mixer/plugin-hostd /tmp/plugin-hostd
+            git -C /tmp/plugin-hostd checkout -q "$SHA"
+            test -f /tmp/plugin-hostd/clients/python/plugin_hostd_protocol/__init__.py
+            echo "PYTHONPATH=/tmp/plugin-hostd/clients/python" >> "$GITHUB_ENV"
+            echo "CLIENT FROM BRANCH $SHA"
+          fi
+
       - name: Fetch omx-panel's gesture declaration and build its renderer
         run: |
           apt-get install -y -qq --no-install-recommends git ca-certificates build-essential pkgconf libcjson-dev \
