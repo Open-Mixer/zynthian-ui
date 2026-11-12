@@ -49,9 +49,7 @@ DEFAULT_PORT = int(os.environ.get("ZYNTHIAN_PLUGIN_HOSTD_PORT", "5570"))
 FIRST_INSTANCE = 1000
 LAST_INSTANCE = 9989
 TIMEOUT = 5.0
-COMPARE_SLOTS = ("A", "B", "C", "D")  # omx-panel's COMPARE_SLOTS, the menu's rows
 COMPARE_PAUSE = 1.0  # seconds: controller moves closer than this are one undo step
-COMPARE_QUEUE = 64  # steps waiting for the next omx-panel run, its ring's bound
 RUN_NUMBERS = 1000  # a chain's serial runs numbered to the daemon, see run_number
 # The verb that tells plugin-hostd the user chose a plugin below our bar (its pin refused, or it crashed in qualification)
 ACCEPT_VERB = "pin_accept"
@@ -110,6 +108,30 @@ def log_once(key, msg, *args):
     if key not in _logged:
         _logged.add(key)
         logging.warning(msg, *args)
+
+
+compare_declared = {}  # {the omx-panel command: (its slots, its ring's bound) or None}
+
+
+def compare_declaration():
+    """What omx-panel says of Compare (`omx-panel compare describe`): (the slots, the ring's bound), asked once per
+    command. None without an omx-panel, or with one that does not say it (the reason logged once): then no Compare."""
+    panel = shutil.which("omx-panel")
+    if not panel:
+        return None
+    if panel not in compare_declared:
+        try:
+            out = subprocess.run([panel, "compare", "describe"], stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                                 check=True, timeout=30)
+            said = json.loads(out.stdout)
+            slots, bound = tuple(said["slots"]), int(said["ringBound"])
+            if not slots or bound < 1 or not all(isinstance(slot, str) for slot in slots):
+                raise ValueError(f"slots {slots!r}, ring bound {bound!r}")
+            compare_declared[panel] = (slots, bound)
+        except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as e:
+            log_once(("compare describe", panel), "omx-panel compare describe failed (%s): no Compare", e)
+            compare_declared[panel] = None
+    return compare_declared[panel]
 
 
 class plugin_hostd_error(Exception):
@@ -1734,11 +1756,17 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
     def compare_values(self):
         return {s: float(z.value) for s, z in self.zctrls.items() if z is not self.bypass_zctrl and not isinstance(z.value, str)}
 
+    def compare_queue_step(self, values):
+        """A step waiting for the next omx-panel run, kept within its ring's bound. Without Compare nothing waits."""
+        declared = compare_declaration()
+        if declared:
+            self.compare_queue = (self.compare_queue + [values])[-declared[1]:]
+
     def compare_settle(self):
         """The values changed by something other than a controller: a step to come back to."""
         values = self.compare_values()
         if self.compare_settled and values != self.compare_settled:
-            self.compare_queue = (self.compare_queue + [self.compare_settled])[-COMPARE_QUEUE:]
+            self.compare_queue_step(self.compare_settled)
         self.compare_settled = values
 
     def compare_note_move(self, zctrl):
@@ -1747,7 +1775,7 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
             return
         now = time.monotonic()
         if now - self.compare_last_move > COMPARE_PAUSE and self.compare_settled:
-            self.compare_queue = (self.compare_queue + [dict(self.compare_settled)])[-COMPARE_QUEUE:]
+            self.compare_queue_step(dict(self.compare_settled))
         self.compare_last_move = now
         self.compare_settled[zctrl.symbol] = float(zctrl.value)
 
@@ -1784,13 +1812,16 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
     def compare_options(self):
         """The rows of the processor's options: [(the step, title, help)]. None without an omx-panel that has it, the release
         of the compare verbs, or a control to compare."""
-        panel = shutil.which("omx-panel")
-        if not panel or not self.compare_values():
+        declared = compare_declaration()
+        if not declared or not self.compare_values():
             return []
-        active = self.compare_doc["active"] if self.compare_doc else COMPARE_SLOTS[0]
+        slots = declared[0]
+        active = self.compare_doc["active"] if self.compare_doc else slots[0]
+        if active not in slots:
+            return []
         rows = [(("switch", s), f"{chr(0x2612) if s == active else chr(0x2610)} Compare {s}",
-                 "Compare settings of this processor. Presets are not touched.") for s in COMPARE_SLOTS]
-        to = COMPARE_SLOTS[(COMPARE_SLOTS.index(active) + 1) % len(COMPARE_SLOTS)]
+                 "Compare settings of this processor. Presets are not touched.") for s in slots]
+        to = slots[(slots.index(active) + 1) % len(slots)]
         rows.append((("copy", to), f"Copy {active} to {to}", f"Put the running values in slot {to}."))
         rows.append((("undo", None), "Undo", "Step back this processor's last change."))
         rows.append((("redo", None), "Redo", "Step forward again."))

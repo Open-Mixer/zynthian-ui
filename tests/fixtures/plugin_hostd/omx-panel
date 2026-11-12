@@ -26,6 +26,14 @@ if os.environ.get("OMX_PANEL_STUB_LOG"):
         f.write(" ".join(argv) + "\n")
 if argv[:1] == ["compare"]:
     # The stand-in for `omx-panel compare`: what the engine's wiring needs of tools/compare.mjs, no more
+    if argv[1:] == ["describe"]:
+        # what tools/compare.mjs holds, or what a test says an omx-panel holds ($OMX_PANEL_STUB_COMPARE, JSON)
+        said = os.environ.get("OMX_PANEL_STUB_COMPARE")
+        if said == "absent":
+            sys.stderr.write("omx-panel: compare: unknown subcommand describe\n")
+            sys.exit(2)
+        print(said or json.dumps({"format": "org.openmixer.compare/1", "slots": ["A", "B", "C", "D"], "ringBound": 64}))
+        sys.exit(0)
     op, to = argv[1], argv[argv.index("--to") + 1] if "--to" in argv else None
     data = json.load(sys.stdin)
     values = data.get("values", {})

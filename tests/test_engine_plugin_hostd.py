@@ -1329,6 +1329,32 @@ class test_compare(plugin_hostd_case):
         titles = [t for _, t, _ in engine.compare_options()]
         self.assertEqual(titles[3:5], ["\u2612 Compare D", "Copy D to A"])
 
+    def test_the_slots_and_the_queue_bound_are_what_omx_panel_says(self):
+        # an omx-panel with two slots and a ring of two steps: the menu and the queue follow it, the engine holds neither
+        os.environ["OMX_PANEL_STUB_COMPARE"] = json.dumps({"format": "org.openmixer.compare/1", "slots": ["A", "B"],
+                                                           "ringBound": 2})
+        fake, proc = self.easy_plugin()
+        engine = proc.engine
+        titles = [t for _, t, _ in engine.compare_options()]
+        self.assertEqual(titles, ["\u2612 Compare A", "\u2610 Compare B", "Copy A to B", "Undo", "Redo"])
+        for value in (10.0, 20.0, 30.0, 40.0):
+            engine.compare_last_move = 0
+            proc.controllers_dict["p1"].set_value(value)
+        self.assertEqual(len(engine.compare_queue), 2)
+        self.assertFalse(hasattr(ph, "COMPARE_SLOTS") or hasattr(ph, "COMPARE_QUEUE"))
+
+    def test_an_omx_panel_that_does_not_describe_compare_has_no_compare(self):
+        os.environ["OMX_PANEL_STUB_COMPARE"] = "absent"
+        fake, proc = self.easy_plugin()
+        engine = proc.engine
+        with self.assertLogs(level="WARNING") as logs:
+            self.assertEqual(engine.compare_options(), [])
+            self.assertEqual(engine.compare_options(), [])
+        self.assertEqual(len([r for r in logs.output if "compare describe failed" in r]), 1)
+        engine.compare_last_move = 0
+        proc.controllers_dict["p1"].set_value(75.0)
+        self.assertEqual(engine.compare_queue, [], "nothing waits for a Compare that is not there")
+
     def test_no_omx_panel_no_compare(self):
         os.unlink(os.path.join(self.bin, "omx-panel"))
         fake = self.serve()
