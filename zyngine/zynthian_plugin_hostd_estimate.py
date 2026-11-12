@@ -4,8 +4,8 @@
 #
 # What a chain will cost, as plugin-hostd's estimate verb answers it from the qualification records:
 #   estimate <rate> <quantum> <plugin-ref>...  =>  resp 0 <latency_frames> <cpu_percent> <ram_bytes> <workers> <unknown_count>
-# The figures are the daemon's; this file parses the reply, words it for a one-line footer, and asks for it
-# off the UI thread: debounced, one request in flight, the newest question the only one answered.
+# The figures are the daemon's, read by plugin-hostd's client (read_estimate); this file words them for a one-line
+# footer, and asks for them off the UI thread: debounced, one request in flight, the newest question the only one answered.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 #
@@ -31,33 +31,18 @@ def reason(code):
     return zynthian_plugin_hostd_protocol.reply_codes().sentence(code) or "code %d" % code
 
 
-def parse(text):
-    """The reply after 'resp 0': one line, 'latency cpu ram workers unknown list'. ram is '-' (None) unless
-    every member has a figure; list is '-' or '<member>:<code>,...' with members counted from 0.
-    {'latency', 'cpu', 'ram', 'workers', 'unknown', 'members': {index: code}}; ValueError if it is not that."""
-    words = text.split()
-    if len(words) < 6:
-        raise ValueError(f"estimate reply '{text[:64]}' has fewer than six fields")
-    latency, cpu, ram, workers, unknown, listed = words[:6]
-    members = {}
-    if listed != "-":
-        for item in listed.split(","):
-            index, _, code = item.partition(":")
-            members[int(index)] = int(code)
-    return {"latency": int(float(latency)), "cpu": float(cpu), "ram": None if ram == "-" else int(float(ram)),
-            "workers": int(workers), "unknown": int(unknown), "members": members}
-
-
 def footer(est):
     """'chain: +64 fr latency, 12.5 % CPU, 48.0 MB, 2 workers[, 2 unknown (member 2: no record, ...)]';
-    'RAM unknown' where the daemon gives none. Members are counted from 1 here."""
-    ram = "RAM unknown" if est["ram"] is None else "%.1f MB" % (est["ram"] / 1e6)
-    text = "chain: +%d fr latency, %.1f %% CPU, %s, %d workers" % (est["latency"], est["cpu"], ram, est["workers"])
-    if est["unknown"]:
-        text += ", %d unknown" % est["unknown"]
+    'RAM unknown' where the daemon gives none. est: the figures as plugin-hostd's client reads them (read_estimate).
+    Members are counted from 1 here."""
+    ram = "RAM unknown" if est["ram_bytes"] is None else "%.1f MB" % (est["ram_bytes"] / 1e6)
+    text = "chain: +%d fr latency, %.1f %% CPU, %s, %d workers" % (est["latency_frames"], est["cpu_percent"], ram,
+                                                                  est["workers"])
+    if est["unknown_count"]:
+        text += ", %d unknown" % est["unknown_count"]
         if est["members"]:
-            text += " (" + ", ".join(f"member {i + 1}: {reason(c)}"
-                                     for i, c in sorted(est["members"].items())) + ")"
+            text += " (" + ", ".join(f"member {m['member'] + 1}: {reason(m['code'])}"
+                                     for m in sorted(est["members"], key=lambda m: m["member"])) + ")"
     return text
 
 
