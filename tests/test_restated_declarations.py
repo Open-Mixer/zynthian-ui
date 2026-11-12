@@ -39,6 +39,14 @@ class test_restated_declarations(unittest.TestCase):
             shutil.copy(os.path.join(ROOT, path), os.path.join(self.tmp, path))
         return self.tmp
 
+    def a_row_left(self):
+        """(group, file, name) of a row still in the modules, one a module assigns at its top level."""
+        for group, path, what in check.left():
+            with open(os.path.join(ROOT, path)) as f:
+                if "\n%s = " % what in f.read():
+                    return group, path, what
+        self.skipTest("no assigned name is left")
+
     def test_what_is_left_is_what_the_file_says(self):
         out = run()
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
@@ -49,7 +57,7 @@ class test_restated_declarations(unittest.TestCase):
 
     def test_a_declaration_restated_again_is_refused(self):
         root = self.tree()
-        group, path, name = next(row[:3] for row in check.TABLE if row[2] is not None)
+        group, path, name = self.a_row_left()
         before = len(check.left(root))
         with open(os.path.join(root, path), "a") as f:
             f.write("\n\ndef a_new_name():\n    pass\n")
@@ -72,10 +80,9 @@ class test_restated_declarations(unittest.TestCase):
 
     def test_a_replaced_row_lowers_the_number(self):
         root = self.tree()
-        group, path, name = next(row[:3] for row in check.TABLE if row[2] is not None)
+        group, path, name = self.a_row_left()
         with open(os.path.join(root, path)) as f:
             text = f.read()
-        self.assertIn("\n%s = " % name, text)
         with open(os.path.join(root, path), "w") as f:
             f.write(text.replace("\n%s = " % name, "\n_gone = ", 1))
         out = run("--root", root)
