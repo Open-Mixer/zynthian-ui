@@ -3,8 +3,8 @@
 # ZYNTHIAN PROJECT: plugin-hostd protocol (zynthian_plugin_hostd_protocol)
 #
 # What plugin-hostd declares about its own protocol, read from the files its package installs:
-# its reply codes and mod-host's, the defaults of its configuration, and the grammar of a word of its lines
-# (quoted words, percent-encoded paths). Nothing here is typed twice: a code is looked up by its name.
+# its reply codes and mod-host's and the defaults of its configuration. Nothing here is typed twice: a code is looked
+# up by its name, and the grammar of a word of its lines is its Python client's (plugin_hostd_protocol).
 # The line the daemon prints when it is ready is read by zynthian-sys's sbin/plugin-hostd-start.sh,
 # which starts every plugin-hostd on a Zynthian.
 #
@@ -19,6 +19,8 @@ import os
 import json
 import logging
 import importlib.util
+
+from plugin_hostd_protocol import words, quote, encode_path, decode_path, uri_word, pin_key  # noqa: F401
 
 # Where the files are: libplugin-hostd-protocol0 (plugin-hostd 0.16.0 on) installs them in its own directory, the
 # daemon's as plugin-hostd.json; plugin-hostd before 0.16.0 installed that one as protocol.json in its directory.
@@ -50,103 +52,10 @@ def read(name, directory=None):
         return {}, f"plugin-hostd's protocol file {path} is not readable ({e})"
 
 
-# ---- The words of a line, as plugin-hostd-protocol's grammar (core.abnf: word, quoted, escaped-quote) and its
-# "Pins and qualification" section write them: a word is bare or in quotation marks, \" is the only escape inside
-# them, and the path of a clap: uri is percent-encoded (PHD_PIN_PATH_ESCAPE) so any file name is one bare word.
-# The installed grammar file is checked against this by the tests (test_the_words_follow_the_installed_grammar).
-
-CLAP_PREFIX = "clap:"
-ESCAPE = "%"
-EXCLUDED = ",= \t\r\n"  # PHD_PIN_PATH_EXCLUDED: the separators of pin_set's words, and whitespace
-
-
-def words(line):
-    """The words of a line as the daemon reads them: split at whitespace, a word that starts with a quotation mark
-    runs to the next quotation mark that no backslash escapes, \" in it is a quote, the quotes are not part of the
-    value. A quoted word that never closes runs to the end of the line, as the daemon's tokenizer ends it."""
-    out, i, n = [], 0, len(line)
-    while i < n:
-        if line[i].isspace():
-            i += 1
-        elif line[i] == '"':
-            i += 1
-            word = []
-            while i < n and line[i] != '"':
-                if line[i] == "\\" and i + 1 < n and line[i + 1] == '"':
-                    i += 1
-                word.append(line[i])
-                i += 1
-            i += 1
-            out.append("".join(word))
-        else:
-            j = i
-            while j < n and not line[j].isspace():
-                j += 1
-            out.append(line[i:j])
-            i = j
-    return out
-
-
-def quote(value):
-    """A value as one word of a line: in quotation marks, \" for a quote, a backslash as it is (the grammar
-    does not unescape it)."""
-    return '"' + value.replace('"', '\\"') + '"'
-
-
-def escaped(c):
-    return ord(c) < 0x20 or ord(c) == 0x7F or c == ESCAPE or c == '"' or c == "\\" or c in EXCLUDED
-
-
-def encode_path(path):
-    """A path as the word of a pin: every byte PHD_PIN_PATH_EXCLUDED names, the escape, a quote, a backslash and a
-    control byte as %XX (uppercase hex), the rest as it is."""
-    return "".join("".join("%%%02X" % b for b in c.encode()) if escaped(c) else c for c in path)
-
-
-def decode_path(word):
-    """A percent-encoded path as it is; ValueError for a % not followed by two hex digits, as the daemon refuses it."""
-    out, i = bytearray(), 0
-    raw = word.encode()
-    while i < len(raw):
-        if raw[i] == ord(ESCAPE):
-            digits = raw[i + 1:i + 3]
-            if len(digits) != 2 or not all(chr(d) in "0123456789abcdefABCDEF" for d in digits):
-                raise ValueError(f"'%' not followed by two hex digits in {word}")
-            out.append(int(digits, 16))
-            i += 3
-        else:
-            out.append(raw[i])
-            i += 1
-    return out.decode(errors="surrogateescape")
-
-
-def split_uri(uri):
-    """(prefix, path, id) of a clap: uri clap:<path>#<id>; None for any other uri (an LV2 one)."""
-    if not uri.startswith(CLAP_PREFIX) or "#" not in uri:
-        return None
-    path, _, plugin_id = uri[len(CLAP_PREFIX):].rpartition("#")
-    return CLAP_PREFIX, path, plugin_id
-
-
-def uri_word(uri):
-    """A plugin uri as the daemon takes it in an add, estimate, pin_accept or descriptor_get: the path of a clap: uri
-    percent-encoded, so a path with spaces is one word; any other uri as it is."""
-    parts = split_uri(uri)
-    if parts is None:
-        return uri
-    return f"{parts[0]}{encode_path(parts[2 - 1])}#{parts[2]}"
-
-
-def pin_key(uri):
-    """What a pin is keyed by: a clap: uri's path decoded, so the spaced, the quoted and the encoded spelling of
-    one uri are one key; any other uri as it is."""
-    parts = split_uri(uri)
-    if parts is None:
-        return uri
-    try:
-        return f"{parts[0]}{decode_path(parts[1])}#{parts[2]}"
-    except ValueError:
-        return uri
+# ---- The words of a line (words, quote), the percent-encoded path of a clap: uri (encode_path, decode_path) and what
+# a plugin's uri is as a word and as the key of a pin (uri_word, pin_key) are plugin-hostd's own: its Python client,
+# plugin_hostd_protocol (python3-plugin-hostd-protocol), writes them once for every controller. They keep their names
+# here for the modules that read them from this one.
 
 
 def config_default(key, directory=None):

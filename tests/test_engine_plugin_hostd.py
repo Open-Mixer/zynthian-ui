@@ -20,6 +20,7 @@ import logging
 import tempfile
 import unittest
 from unittest import mock
+import plugin_hostd_protocol
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -390,8 +391,9 @@ class test_protocol(plugin_hostd_case):
             self.assertIn(command, declared, f"the engine sends {command}, which the installed protocol lacks")
 
     def test_the_words_follow_the_installed_grammar(self):
-        """The reader of words is the grammar's: quoted words with \\" as the only escape (core.abnf), a path percent-encoded
-        (the section Pins and qualification). The installed grammar file says so, or this reader is stale."""
+        """The reader of words is plugin-hostd's Python client, and the installed grammar is the one it was written to:
+        quoted words with \\" as the only escape (core.abnf), a path percent-encoded (the section Pins and
+        qualification). An installed grammar that says otherwise needs a newer client."""
         directory, _ = ph.zynthian_plugin_hostd_protocol.daemon_file()
         with open(os.path.join(directory, "plugin-hostd-protocol.abnf")) as f:
             grammar_text = f.read()
@@ -401,7 +403,7 @@ class test_protocol(plugin_hostd_case):
         limits = ph.zynthian_plugin_hostd_protocol.read(*reversed(ph.zynthian_plugin_hostd_protocol.daemon_file()))[0]["pin_limits"]
         path_rule = next(entry["meaning"] for entry in limits if entry["name"] == "PATH")
         self.assertIn("percent-encoded", path_rule)
-        for char in ph.zynthian_plugin_hostd_protocol.EXCLUDED.strip() + "%":
+        for char in plugin_hostd_protocol.EXCLUDED.strip() + "%":
             self.assertIn(char, path_rule + " ", f"{char!r} is escaped by the grammar's path rule")
 
     def test_ready_is_the_start_scripts_to_say(self):
