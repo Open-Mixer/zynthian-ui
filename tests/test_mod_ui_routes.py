@@ -66,6 +66,18 @@ class test_mod_ui_routes(unittest.TestCase):
         self.assertNotIn('if dst.startswith("effect_"):\n            required_routes.pop(dst)', source,
                          "the rule that dropped every effect_ destination is gone")
 
+    def test_a_plugin_hostd_client_keeps_its_route_by_its_key_not_its_name(self):
+        """plugin-hostd#33: a client carrying the instance key is plugin-hostd's, whatever its name and whether or not
+        a chain processor holds it now; an effect_ client without it is mod-host's, MOD-UI's to connect"""
+        routes = {
+            "effect_3:midi_in": set(),
+            "effect_1004:midi_in": {"ZynMidiRouter:ch0_out"},
+        }
+        hosted = {"effect_1004"}
+        load().drop_mod_ui_routes(routes, [processor("effect_1000")], hosted=lambda client: client in hosted)
+        self.assertNotIn("effect_3:midi_in", routes)
+        self.assertEqual(routes["effect_1004:midi_in"], {"ZynMidiRouter:ch0_out"})
+
 
 if __name__ == "__main__":
     unittest.main()
