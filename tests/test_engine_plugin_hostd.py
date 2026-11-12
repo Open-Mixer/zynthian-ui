@@ -608,7 +608,7 @@ class test_processor(plugin_hostd_case):
         with tempfile.TemporaryDirectory() as my_data:
             proc.engine.my_data_dir = my_data
             path = proc.engine.save_preset(None, 'a\\b "c"')
-            self.assertIn('preset_save 1000 %s "a\\b \\"c\\""' % path, fake.lines)
+            self.assertIn('preset_save 1000 %s %s "a\\b \\"c\\""' % os.path.split(path), fake.lines)
             with open(path) as f:
                 self.assertEqual(json.load(f)["name"], 'a\\b "c"')
 
@@ -624,7 +624,8 @@ class test_processor(plugin_hostd_case):
             self.assertFalse(engine.preset_exists(user, "Gig Pad"))
             path = engine.save_preset(None, "Gig Pad")
             self.assertTrue(path and path.startswith(engine.user_dir() + os.sep) and " " not in path, path)
-            self.assertIn(f'preset_save 1000 {path} "Gig Pad"', fake.lines, "saved by the worker, the name quoted")
+            self.assertIn('preset_save 1000 %s %s "Gig Pad"' % os.path.split(path), fake.lines,
+                          "saved by the worker: the directory, the file name and the label, the label quoted")
             self.assertTrue(engine.preset_exists(user, "Gig Pad"))
             self.assertEqual(proc.bank_info[0], "user", "the processor is in User after a save")
             presets = engine.get_preset_list(user, proc)

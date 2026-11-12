@@ -1908,10 +1908,10 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
         """The instance into a user preset file through the worker (preset_save), whatever the bank asked; its path,
         None when the save failed."""
         name = preset_name.strip()
-        path = os.path.join(self.user_dir(), re.sub(r"[^A-Za-z0-9._-]+", "_", name) + ".json")
+        file = re.sub(r"[^A-Za-z0-9._-]+", "_", name) + ".json"
+        path = os.path.join(self.user_dir(), file)
         os.makedirs(self.user_dir(), exist_ok=True)
-        # written here: the table declares mod-host's four words, the CLAP worker takes a file and a name (plugin-hostd#38)
-        if self.send(f'preset_save {self.instance} {path} {zynthian_plugin_hostd_protocol.quote(name)}') is None:
+        if self.send(command("preset_save", self.instance, self.user_dir(), file, name)) is None:
             return None
         self.preset_key = path
         files = {self.path_uris[s]: z.value for s, z in self.path_zctrls.items() if z.value}
