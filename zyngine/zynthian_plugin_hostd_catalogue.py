@@ -13,8 +13,8 @@
 # ******************************************************************************
 
 import os
-import re
 import json
+import math
 import shutil
 import logging
 import subprocess
@@ -31,40 +31,25 @@ CLAP_CATS = {
     "transient-shaper": "Dynamics", "equalizer": "Filter & EQ", "filter": "Filter & EQ", "chorus": "Modulation",
     "flanger": "Modulation", "phaser": "Modulation", "tremolo": "Modulation", "pitch-shifter": "Pitch",
     "pitch-correction": "Pitch", "analyzer": "Analyzer", "surround": "Spatial", "ambisonic": "Spatial"}
-# omx-clap-scan's text output: a "file <path>" line, then per plugin a "  plugin" line and its
-# indented features, param, port and error lines (omx-clap-core src/scan.c)
-CLAP_PLUGIN_RE = re.compile(r'^  plugin (\S+) "((?:[^"\\]|\\.)*)" vendor (.*) version (.*)$')
-CLAP_PARAM_RE = re.compile(r'^param (\d+) (.*) \[(\S+) \.\. (\S+)\] default (\S+)\s*(\S*)$')
-
-clap_plugins = {}  # engine key => the plugin as parse_clap_scan reads it
+clap_plugins = {}  # engine key => the plugin as scanned_plugins gives it
 
 
-def parse_clap_scan(text):
-    """The plugins in the text output of omx-clap-scan, the ones that loaded."""
-    plugins, path, cur = [], None, None
-    for line in text.splitlines():
-        if line.startswith("file "):
-            path, cur = line[5:], None
-            continue
-        m = CLAP_PLUGIN_RE.match(line)
-        if m:
-            cur = {"path": path, "id": m[1], "name": m[2].replace('\\"', '"'), "vendor": m[3], "version": m[4],
-                   "features": [], "params": []}
-            plugins.append(cur)
-            continue
-        words = line.strip()
-        if cur is None:
-            continue
-        if words.startswith("features "):
-            cur["features"] = words.split()[1:]
-        elif words.startswith("error:"):
-            cur["error"] = words[6:].strip()
-        else:
-            m = CLAP_PARAM_RE.match(words)
-            if m:
-                cur["params"].append({"id": m[1], "name": m[2], "min": float(m[3]), "max": float(m[4]),
-                                      "default": float(m[5]), "stepped": "stepped" in m[6].split(",")})
-    return [p for p in plugins if "error" not in p]
+def scanned_plugins(document):
+    """The plugins of the document `omx-clap-scan --json` writes (omx-clap-core docs/scan.md, its schema
+    omx-clap-scan.schema.json), the ones that loaded, each with the file it is in. A file that gave no listing has
+    no plugins, and a plugin that failed to create has an error and is left out."""
+    plugins = []
+    for file in document["files"]:
+        for plugin in file.get("plugins", ()):
+            if "error" in plugin:
+                continue
+            # a bound the plugin leaves open is null in the document
+            params = [{"id": str(p["id"]), "name": p["name"], "min": -math.inf if p["min"] is None else float(p["min"]),
+                       "max": math.inf if p["max"] is None else float(p["max"]), "default": float(p["default"]),
+                       "stepped": "stepped" in p["flags"]} for p in plugin["params"]]
+            plugins.append({"path": file["path"], "id": plugin["id"], "name": plugin["name"], "vendor": plugin["vendor"],
+                            "version": plugin["version"], "features": plugin["features"], "params": params})
+    return plugins
 
 
 def clap_dirs():
@@ -92,9 +77,9 @@ def scan_clap(cache_path=None):
     plugins = []
     for d in stamp:
         try:
-            out = subprocess.run([scanner, d], capture_output=True, text=True, timeout=300).stdout
-            plugins += parse_clap_scan(out)
-        except (OSError, subprocess.SubprocessError) as e:
+            out = subprocess.run([scanner, "--json", d], capture_output=True, text=True, timeout=300).stdout
+            plugins += scanned_plugins(json.loads(out))
+        except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as e:
             logging.error(f"omx-clap-scan {d} => {e}")
     try:
         with open(cache_path, "w") as f:

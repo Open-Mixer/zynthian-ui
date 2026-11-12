@@ -41,7 +41,7 @@ class samples_case(plugin_hostd_case):
         super().setUp()
         self.info["JV/Sampler"] = lv2_info("Sampler", "urn:test:sampler", "MIDI Synth")
         self.info["JV/Kit"] = lv2_info("Kit", "urn:test:kit", "MIDI Synth")
-        base.cat.add_catalogue(self.info, clap=base.cat.parse_clap_scan(base.CLAP_SCAN), binary=base.FAKE)
+        base.cat.add_catalogue(self.info, clap=base.cat.scanned_plugins(base.CLAP_SCAN), binary=base.FAKE)
 
 
 class test_the_file_reaches_the_plugin(samples_case):
