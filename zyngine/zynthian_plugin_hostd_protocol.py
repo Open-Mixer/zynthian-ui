@@ -97,6 +97,15 @@ class reply_codes:
             self.client = Protocol(table=table)
         except (ProtocolError, KeyError, TypeError) as e:
             failure = f"plugin-hostd's protocol table is not usable: {e}"
+        # the JACK metadata a worker sets on an instance's client (plugin-hostd-protocol 0.5.5, plugin-hostd#33), from
+        # the table the client read
+        self.node_metadata = {}
+        if self.client is not None:
+            try:
+                with open(self.client.table_path) as f:
+                    self.node_metadata = {r["name"]: r for r in json.load(f).get("node_metadata", [])}
+            except (OSError, ValueError, KeyError, TypeError) as e:
+                logging.error("plugin-hostd's protocol table %s gives no node metadata (%s)", self.client.table_path, e)
         host, host_failure = read(HOST_FILE, directory)
         self.host_codes, self.host_names = {}, {}
         for e in host.get("host_errors", []):
@@ -108,6 +117,11 @@ class reply_codes:
         self.loaded = self.failure is None
         if self.failure:
             logging.error("%s: the plugin-hostd engine will not start", self.failure)
+
+    def instance_key(self):
+        """The JACK metadata key a worker sets on each instance's client, its value the instance: what tells a
+        plugin-hostd client from any other, never its name; None from a protocol before 0.5.5, which declares none."""
+        return self.node_metadata.get("instance", {}).get("key")
 
     def find(self, name):
         """The number a name stands for; None for a name no file declares."""

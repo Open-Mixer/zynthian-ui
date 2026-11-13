@@ -137,6 +137,9 @@ class plugin_hostd_case(unittest.TestCase):
         cat.add_catalogue(self.info, clap=cat.parse_clap_scan(CLAP_SCAN), binary=FAKE)
         # The graph as a worker leaves it after a chain: a member it runs in the head's client has no port
         sys.modules["zynautoconnect"].get_ports.return_value = []
+        # a protocol before 0.5.5 declares no instance key; test_hosted_client gives one
+        sys.modules["zynautoconnect"].hosted_key.return_value = None
+        sys.modules["zynautoconnect"].hosted_client.side_effect = None
         self.sm = mock.MagicMock()
         self.sm.chain_manager.engine_info = self.info
         self.sm.chain_manager.chains = {}
@@ -290,14 +293,17 @@ class test_protocol(plugin_hostd_case):
     """The reply codes are plugin-hostd's Python client's, read from the installed table; mod-host's names from
     mod-host.json stand for the numbers the table gives no code."""
 
-    def declared(self, reply_codes=None, host_errors=None):
+    def declared(self, reply_codes=None, host_errors=None, node_metadata=None):
         """(table, directory) of a protocol with the given codes, for a daemon that declares something else."""
         directory = os.path.join(self.tmp, "protocol")
         os.makedirs(directory, exist_ok=True)
         table = os.path.join(directory, "table.json")
         with open(table, "w") as f:
-            json.dump({"commands": [], "feedback": [], "protocol_errors": [],
-                       "reply_codes": [{"resp": c, "code": n} for n, c in (reply_codes or {}).items()]}, f)
+            table_data = {"commands": [], "feedback": [], "protocol_errors": [],
+                          "reply_codes": [{"resp": c, "code": n} for n, c in (reply_codes or {}).items()]}
+            if node_metadata is not None:
+                table_data["node_metadata"] = node_metadata
+            json.dump(table_data, f)
         with open(os.path.join(directory, "mod-host.json"), "w") as f:
             json.dump({"host_errors": host_errors or []}, f)
         return table, directory
@@ -314,6 +320,14 @@ class test_protocol(plugin_hostd_case):
         self.assertEqual(p.name(-501), "ERR_501", "a code the files do not declare is a bare number")
         with self.assertRaises(KeyError):
             p.code("reply.plugin-hostd.placement-invalid")
+
+    def test_the_instance_key_is_the_table_s(self):
+        """plugin-hostd#33: the key a worker sets on an instance's client is the one the client's table declares, and a
+        table before 0.5.5, which declares none, gives None"""
+        key = "http://example.org/test#instance"
+        p = self.codes(*self.declared(node_metadata=[{"name": "instance", "key": key}]))
+        self.assertEqual(p.instance_key(), key)
+        self.assertIsNone(self.codes(*self.declared()).instance_key())
 
     def test_the_installed_files_name_what_the_engine_branches_on(self):
         self.assertEqual(ph.protocol.name(-101), "ERR_HOST_INVALID_URI", "mod-host.json's name, not a retyped one")
@@ -481,6 +495,18 @@ class test_command(unittest.TestCase):
 
 
 class test_processor(plugin_hostd_case):
+
+    def test_the_jack_client_is_the_one_carrying_the_instance_key(self):
+        """plugin-hostd#33: with a protocol that declares the instance key, the processor's client is the one whose key
+        names its instance, whatever that client is called"""
+        ac = sys.modules["zynautoconnect"]
+        ac.hosted_key.return_value = "http://openmixer.org/ns/plugin-hostd#instance"
+        ac.hosted_client.side_effect = lambda instance: "Amp (%d)" % instance
+        self.serve()
+        chain = self.chain()
+        a = self.add(chain, "PH/Amp")
+        self.assertEqual(a.jackname, "Amp (1000)")
+        ac.hosted_client.assert_called_with(1000)
 
     def test_add_gives_the_jack_client_of_the_instance(self):
         fake = self.serve()
