@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 #
-# The position law of a plugin-hostd controller: a Python twin of omx-contract's scalePosition and scaleValue, held to
-# the golden vectors the omx-contract-data package installs (/usr/share/omx-contract/scale-vectors.json, or
-# ZYNTHIAN_OMX_SCALE_VECTORS). Without that file the tests FAIL: there is no copy of the vectors in this tree.
+# The position law of a plugin-hostd controller: omx-contract's Python reader (omx_contract_scale.py, found in
+# /usr/share/omx-contract or ZYNTHIAN_OMX_CONTRACT_SHARE), which the fork calls and does not restate. The reader the
+# fork finds is held here to the golden vectors the same package installs (scale-vectors.json beside it, or
+# ZYNTHIAN_OMX_SCALE_VECTORS). Without either file the tests FAIL: there is no copy of them in this tree.
 # Every other engine's controller keeps upstream's is_logarithmic law, and the tests say so by value.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+import json
 import math
 import os
 import sys
@@ -64,13 +66,17 @@ def close(a, b):
     return a == b or abs(a - b) <= ULP * max(abs(a), abs(b), 1e-300)
 
 
+VECTORS_PATH = os.environ.get("ZYNTHIAN_OMX_SCALE_VECTORS", os.path.join(law.SHARE_PATH, "scale-vectors.json"))
+
+
 def vectors():
     # fails loudly, never skips: the installed vectors are the oracle
     try:
-        return law.load_vectors()
+        with open(VECTORS_PATH) as f:
+            return json.load(f)
     except OSError as e:
         raise AssertionError(
-            f"the installed scale vectors are absent ({law.VECTORS_PATH}): install omx-contract-data "
+            f"the installed scale vectors are absent ({VECTORS_PATH}): install omx-contract-data "
             f"or set ZYNTHIAN_OMX_SCALE_VECTORS ({e})")
 
 
