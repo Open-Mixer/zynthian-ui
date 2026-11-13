@@ -98,16 +98,15 @@ class plugin_engine_case(unittest.TestCase):
         self.assertIn("not installed", logs.output[0])
         self.assertNotIn("jalv", logs.output[0])
 
-    def test_a_plugin_its_pins_refuse_is_listed_once_under_plugin_hostd_never_moved_to_jalv(self):
-        pins = os.path.join(os.path.dirname(self.binary), "qualified.pins")
-        with open(pins, "w") as f:
-            f.write("pin_set urn:surge surge.so=00 omx-layout/1:00 verdict=refused\n"
-                    "pin_set urn:zamaudio:ZamComp z.so=00 omx-layout/1:00 verdict=refused\n")
-        with mock.patch.dict(os.environ, {"ZYNTHIAN_QUALIFICATION_PINS": pins}):
+    def test_the_catalogue_asks_nothing_about_a_plugin_and_puts_up_no_wall_of_its_own(self):
+        # what plugin-db says of a plugin is a mark of the menu: the catalogue lists it once, under plugin-hostd
+        from zyngine import zynthian_plugin_qualification as qual
+        with mock.patch.object(qual.qualification, "answer", side_effect=AssertionError("the catalogue asked")), \
+                mock.patch.object(qual, "here_facts", side_effect=AssertionError("the catalogue asked")):
             self.catalogue()
         self.assertEqual(self.menu("Audio Effect"), ["PH/ZamComp"], "listed once, through plugin-hostd")
         self.assertEqual(self.menu("MIDI Synth"), ["PH/Surge", "ZY"])
-        self.assertNotIn("NOT_WORKING", self.engines["PH/ZamComp"], "below the bar is a mark of the menu, not a wall")
+        self.assertNotIn("NOT_WORKING", self.engines["PH/ZamComp"])
 
     def test_under_jalv_the_user_chose_both_rows_stay(self):
         self.catalogue("jalv")

@@ -450,12 +450,14 @@ class fake_plugin_hostd:
         key, name, _ = presets[int(index)]
         return f"resp 0 {key} {name}"
 
-    def verb_preset_save(self, instance, path, *name):
-        # what omx-clap-host writes for preset_save <N> <file> <name>: the file, its name the rest of the line (one
-        # quoted word as sent), its parameters the instance's values; a preset file there keeps its other members
+    def verb_preset_save(self, instance, directory, file=None, *label):
+        # what omx-clap-host writes for preset_save <N> <dir> <file name> <label>, the four words of the protocol
+        # table: <dir>/<file name>, its name the label, its parameters the instance's values; a preset file there
+        # keeps its other members. Another count of words is refused, as the worker refuses it
         n = int(instance)
-        if not path.startswith("/") or not name:
+        if not directory.startswith("/") or not file or "/" in file or len(label) != 1:
             return "resp -104 PRESET_INVALID"
+        path, name = os.path.join(directory, file), label
         doc = {}
         if os.path.exists(path):
             with open(path) as f:

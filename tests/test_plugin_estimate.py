@@ -48,7 +48,7 @@ class estimate_footer(plugin_hostd_case):
         e = self.estimator()
         e.request("k", 96000, 128, ["urn:test:amp", "urn:test:big"])
         # the member's reason is NO_RECORD's sentence from its owner, in the device's language (#6)
-        no_record = est.reason(ph_protocol.protocol().code("NO_RECORD"))
+        no_record = est.reason(ph_protocol.reply_codes().code("reply.plugin-hostd.no-record"))
         self.assertEqual(wait_for(e)[1], "chain: +0 fr latency, 1.5 %% CPU, RAM unknown, 1 workers, 1 unknown (member 2: %s)" % no_record)
 
     def test_a_daemon_without_the_verb_says_unavailable_once_and_is_not_asked_again(self):

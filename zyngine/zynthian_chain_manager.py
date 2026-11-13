@@ -94,9 +94,10 @@ engine2class = {
 # ----------------------------------------------------------------------------
 
 
-# plugin-hostd refusals that say nothing of the plugin: the next add may be taken (PIN_REFUSED is the user's bar: lowered,
+# plugin-hostd refusals that say nothing of the plugin: the next add may be taken (pin-refused is the user's bar: lowered,
 # the plugin loads, so the menu keeps no mark on it)
-TRANSIENT_REFUSALS = ("WORKER_SPAWN", "GAVE_UP", "VERB_DROPPED", "PIN_REFUSED")
+TRANSIENT_REFUSALS = ("reply.plugin-hostd.worker-spawn", "reply.plugin-hostd.gave-up", "reply.plugin-hostd.verb-dropped",
+                      "reply.plugin-hostd.pin-refused")
 
 
 class zynthian_chain_manager:
@@ -1129,7 +1130,7 @@ class zynthian_chain_manager:
             info = self.engine_info[eng_code]
             if getattr(e, "code", None) is not None:
                 why = refusal_text(getattr(e, "name", None), getattr(e, "meaning", None))
-                if (getattr(e, "name", "") or "").removeprefix("PHD_ERR_") not in TRANSIENT_REFUSALS:
+                if getattr(e, "name", None) not in TRANSIENT_REFUSALS:
                     # it does not load: the menu lists it as not working, with this cause, until the catalogue is made again
                     info.update(NOT_WORKING="does not load", NOT_WORKING_WHY=why)
             else:
@@ -1660,6 +1661,7 @@ class zynthian_chain_manager:
                             # not built, not lost: the next snapshot writes it back where it was
                             self.keep_unbuilt(chain_id, slot_index, proc_id, eng_code, eng_config, self.add_refusal)
                     slot += 1
+            self.restore_mixer_strip(chain_id)
             if "zctrls" in chain_state:
                 self.chains[chain_id].set_zctrls_state(chain_state["zctrls"])
         self.rebuild_optimisation_cache()
@@ -1668,6 +1670,23 @@ class zynthian_chain_manager:
             logging.error("The snapshot was loaded without: " + "; ".join(dropped) + " (kept in the snapshot until the chain is removed)")
             zynsigman.send_queued(zynsigman.S_GUI, zynsigman.SS_GUI_SHOW_MESSAGE,
                                   message="Not loaded: " + "; ".join(dropped), timeout=8)
+
+    def restore_mixer_strip(self, chain_id):
+        """Give a restored chain that makes sound its mixer strip, if the snapshot left it out
+
+        The UI adds the strip when it creates a chain with a synth, and the audio autoconnect routes a chain's outputs
+        only through it: a snapshot written without it (by hand, by a tool) would leave the chain silent.
+        chain_id : ID of the restored chain
+        Returns : the strip's processor if one was added, else None
+        """
+
+        chain = self.chains.get(chain_id)
+        if chain_id == 0 or chain is None or chain.zynmixer_proc or not chain.synth_slots:
+            return None
+        logging.warning(f"The snapshot holds chain {chain_id} without its mixer strip: adding one, so its audio is routed")
+        # a proc_id, as for every processor of a snapshot: no add signal while it loads
+        return self.add_processor(chain_id, "MI", proc_id=self.get_available_processor_id(), fast_refresh=False,
+                                  midi_autolearn=False)
 
     def restore_presets(self):
         """Restore presets in active chain"""

@@ -2,57 +2,35 @@
 # ******************************************************************************
 # ZYNTHIAN PROJECT: plugin tiers (zynthian_plugin_tiers)
 #
-# The rules that turn what qualification found about a plugin into its place in the plugin menus:
-# a tier word, a short tag after its name, and whether it is below the bar.
+# A plugin's place in the plugin menus, from plugin-db's answer for it (zynthian_plugin_qualification). Every word
+# shown is plugin-db's: nothing here works out a state, a tier or where a plugin runs.
 #
-#   pin / found                 RT-safe  worst latency  soak       tier        tag                       below bar
-#   no record                   -        -              -          unverified  not qualified             no
-#   verdict=refused             any      any            any        below       below bar · refused       yes
-#   crashed in qualification    any      any            any        below       below bar · crashed       yes
-#   hung in qualification       any      any            any        below       below bar · hung          yes
-#   measured                    yes      <= live ms     soaked     live        live · <figures>          no
-#   measured                    yes      <= live ms     unsoaked   live        live · <figures> · unsoaked  no
-#   measured                    yes      > live ms      any        studio      studio · <figures>        no
-#   measured                    no or unknown  any      any        studio      studio · <figures>        no
+#   a row     <title>  <state> · <runs>[ · <standing>]     qualified · shared · within
+#                                                          unqualified · alone
+#                                                          refused · not-loaded
+#   the detail panel: the sentences of the state, of its reason, of where it runs and of its source, the record's
+#   tier (in-process, isolated) and, where the record holds it, the latency at this rate and quantum against the line.
 #
-# <figures> are the record's, as it holds them, at the current rate and quantum, separated by a space
-# and short enough that a row of half the 1024 px screen shows all three after a long title:
-#   latency  64/0fr           measured/declared frames, 64fr when the record declares none; ?/64fr when only the
-#                             plugin's declared figure is known (a note that did not sound); lat? unknown
-#   RT       RT-ok            no allocation, lock, syscall or thread violation under the sweep;
-#                             RT-alone: some, so plugin-hostd isolates it in its own worker, never
-#                             grouped with RT-safe plugins (it is not refused); RT-?: no
-#                             interposer count, or not swept
-#   cost     19.4ns           the median ns per sample measured at this rate and quantum; cost? unknown
-# The record read is the one of the format the row stands for: the LV2 uri's for an LV2 row, the
-# clap:<path>#<id> one for a CLAP row. A run with interposer events or process errors is RT-alone
-# even where the allocation, lock and syscall counts read zero.
+# A row plugin-db has no answer for (a jalv row, which plugin-hostd's records do not judge; an entry that is no
+# plugin; an entry the store does not hold) keeps its plain title.
 #
-# live is the gate of the plugin catalogue: RT-safe and a measured latency of at most LIVE_MAX_MS
-# (5 ms, ZYNTHIAN_PLUGIN_LIVE_MS), read at the worst measured rate so a rate change does not move a
-# plugin between tiers.
+# The bar is the user's setting, ZYNTHIAN_PLUGIN_BAR, one of plugin-db's three words; it filters the view and never
+# changes an answer: qualified-only offers the qualified plugins only; warn-on-crashes, the default, every plugin
+# that is not refused and whose files are there; load-all every plugin, the refused ones too. A refused plugin that
+# is added under a bar that offers it is the user's choice: plugin-hostd is told, and runs it alone. A row whose
+# plugin is not loaded as things stand (refused, absent) carries the style BELOW (the screen paints it in the
+# warning colour) and comes after the others. An entry the catalogue or a refused add marked NOT_WORKING (it does
+# not load at all) is listed last, greyed, with its word; the detail panel says why.
 #
-# The bar is a recommendation, never a wall, and no plugin is handed to another host. ZYNTHIAN_PLUGIN_BAR (or the
-# list options) says what the menus do with a plugin below it: qualified-only lists only the plugins that passed
-# (no below-bar and no unqualified ones); warn-on-crashes, the default, lists every plugin, the ones below the bar
-# after the others with their mark, and asks before adding one whose qualification recorded a crash; load-all lists
-# them the same and asks nothing. Under qualified-only a plugin the user let in before is refused again (plugin-hostd's
-# pin_clear). A below-bar plugin that is added runs in plugin-hostd in a worker of its own. A
-# plugin-hostd pin judges plugin-hostd's rows only: a jalv row (JV/), there when the user chose jalv, is placed
-# without it. An entry the catalogue or a refused add marked NOT_WORKING (it does not load at all) is listed last,
-# greyed, with its word; the detail panel says why. A below-bar row carries the style BELOW (the screen paints it in
-# the warning colour), a not-working row True (greyed), the rest False.
-#
-# A menu is ordered by tier (live, studio, the rest) or by one figure: name, cost, latency or RT safety,
-# by the value shown, a figure the record does not hold after the ones it does. In every order the rows
-# with figures come first, then the ones without (not qualified, entries that are not plugins), then the
-# ones below the bar, then the ones that do not work. hosted_only keeps the rows plugin-hostd runs (PH/).
+# A menu is ordered by state (the states in the order STATE_ORDER lists them, then in their own order), by name, or
+# by the latency plugin-db answers with, a row without one after the ones that have it. hosted_only keeps the rows
+# plugin-hostd runs (PH/).
 #
 # A plugin installed both as CLAP and as LV2 is one row, never two: formats are invisible to the user. A CLAP row and an
-# LV2 row of one name are one plugin, and the one placed worse gives way: working before not working, then by tier
-# (live, studio, not qualified, below the bar), then CLAP before LV2 (omx-clap-host's own format), then plugin-hostd
-# before jalv. Rows of one format stay as they are: two plugins that share a name, and an LV2 plugin's jalv row beside
-# its plugin-hostd one, which is a choice of engine and not of format.
+# LV2 row of one name are one plugin, and the one placed worse gives way: working before not working, then by state,
+# then CLAP before LV2 (omx-clap-host's own format), then plugin-hostd before jalv. Rows of one format stay as they
+# are: two plugins that share a name, and an LV2 plugin's jalv row beside its plugin-hostd one, which is a choice of
+# engine and not of format.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 #
@@ -63,27 +41,23 @@
 
 import os
 import logging
-from collections import namedtuple
 
-LIVE_MAX_MS = 5.0
-RANK = {"live": 0, "studio": 1, "unverified": 2, None: 2, "below": 3, "not working": 4}  # entries that are not plugins rank as unverified
-BARS = ("qualified-only", "warn-on-crashes", "load-all")
-BAR_TITLES = {"qualified-only": "Qualified only", "warn-on-crashes": "Warn on crashes", "load-all": "Load all"}
-DEFAULT_BAR = "warn-on-crashes"
-SEP = " · "
-BELOW = "below"  # the style of a row below the bar: not greyed, it can be loaded, but marked
-ORDERS = ("tier", "name", "cost", "latency", "rt")
-RT_WORDS = {True: "RT-ok", False: "RT-alone", None: "RT-?"}
+import plugin_db
+from plugin_db import vocabulary as v
 
-Placement = namedtuple("Placement", "tier tag below reason")
+from zyngine import zynthian_plugin_hostd_protocol
 
-
-def live_max_ms():
-    try:
-        return float(os.environ.get("ZYNTHIAN_PLUGIN_LIVE_MS", "").strip() or LIVE_MAX_MS)
-    except ValueError:
-        logging.warning(f"ZYNTHIAN_PLUGIN_LIVE_MS={os.environ['ZYNTHIAN_PLUGIN_LIVE_MS']} is not a number: using {LIVE_MAX_MS}")
-        return LIVE_MAX_MS
+BARS = tuple(v.bar.values())
+BAR_TITLES = {v.bar.qualifiedOnly: "Qualified only", v.bar.warnOnCrashes: "Warn on crashes", v.bar.loadAll: "Load all"}
+DEFAULT_BAR = v.bar.warnOnCrashes
+SEP = " \u00b7 "
+BELOW = "below"  # the style of a row whose plugin is not loaded as things stand: not greyed, but marked
+ORDERS = ("state", "name", "latency")
+# the order the menus list the states in: what runs as its record allows first, what is not loaded last
+STATE_ORDER = (v.states.qualified, v.states.isolatedOnly, v.states.conditionsUnmet, v.states.unqualified,
+               v.states.refused, v.states.absent)
+NO_ANSWER_RANK = STATE_ORDER.index(v.states.unqualified)  # a row without an answer is listed with the unqualified
+NOT_WORKING_RANK = len(STATE_ORDER)
 
 
 def plugin_bar():
@@ -116,79 +90,52 @@ def bar_menu_options():
     return {f"{chr(0x2612) if bar == current else chr(0x2610)} {title}": bar for bar, title in BAR_TITLES.items()}
 
 
-# What a qualification code says, in plain words, by its group
-CAUSES = (("hosting.stability.crash", "a crash"), ("hosting.stability.crashed", "a crash"),
-          ("hosting.stability.unsoaked", "the soak was not run"), ("hosting.rt-safety.", "an RT-safety fault"),
-          ("hosting.features.", "a feature it needs is not provided"), ("hosting.latency.", "its latency was not measured"),
-          ("hosting.pin.", "a pin mismatch"), ("probe.crashed", "a crash at probe"), ("probe.timeout", "the probe timed out"))
-WHAT = {"refused": "plugin-hostd's qualification refused it", "crashed": "it crashed during qualification",
-        "hung": "its qualification run did not finish"}
+def offered(answer, bar):
+    """Whether the bar offers the plugin of this answer in the default view."""
+    if bar == v.bar.qualifiedOnly:
+        return answer["state"] == v.states.qualified
+    if bar == v.bar.warnOnCrashes:
+        return answer["state"] not in (v.states.refused, v.states.absent)
+    return True
 
 
-def cause_text(code):
-    """A qualification code in plain words, the code itself after them; None for none."""
-    if not code:
-        return None
-    plain = next((text for prefix, text in CAUSES if code.startswith(prefix)), None)
-    return f"{plain} ({code})" if plain else code
-
-
-def below_bar_text(facts):
-    """Why a plugin is below our bar, in plain words, for the detail panel; None when it is not."""
-    reason = place(facts).reason
-    if not reason:
-        return None
-    cause = cause_text(facts.deciding) or ("a crash" if reason == "crashed" else "the probe timed out" if reason == "hung" else None)
-    return f"Below our bar: {WHAT[reason]}" + (f": {cause}" if cause else "") + \
-        ". You can still load it: plugin-hostd runs it in a worker of its own."
-
-
-def crash_question(name, facts, bar):
-    """The question asked before adding a plugin whose qualification recorded a crash, under warn-on-crashes;
-    None for every other plugin and bar: a below-bar reason that is no crash is information only."""
-    if bar != "warn-on-crashes" or not facts.crashed:
-        return None
-    return f"{name} crashed during qualification: {cause_text(facts.deciding) or 'a crash'}. Load it anyway?"
+def tag(answer):
+    """The words of an answer a row shows after its title: its state, where it runs and, when the record holds a
+    figure at this rate and quantum, where its latency stands against the line."""
+    words = [answer["state"], answer["runs"]]
+    if answer.get("figures"):
+        words.append(answer["figures"]["standing"])
+    return SEP.join(words)
 
 
 def number_text(n):
-    return f"{n:.1f}" if isinstance(n, float) and n < 100 and n != int(n) else f"{n:.0f}"
+    return f"{n:.1f}" if isinstance(n, float) and n != int(n) else f"{n:.0f}"
 
 
-def latency_text(facts):
-    if facts.frames is None:
-        return "lat?" if facts.declared_frames is None else f"?/{number_text(facts.declared_frames)}fr"
-    declared = "" if facts.declared_frames is None else f"/{number_text(facts.declared_frames)}"
-    return f"{number_text(facts.frames)}{declared}fr"
+def answer_text(answer, lang=None):
+    """An answer in sentences, for the detail panel, in the device's language: the state, its reason, where it runs,
+    its source, the record's tier and the latency against the line. None for no answer."""
+    if not answer:
+        return None
+    lang = lang or zynthian_plugin_hostd_protocol.device_language()
+    lines = [plugin_db.text(v.states, answer["state"], lang), plugin_db.why(answer, lang),
+             plugin_db.text(v.runs, answer["runs"], lang), plugin_db.text(v.sources, answer["source"], lang)]
+    if answer.get("tier"):
+        lines.append(answer["tier"])
+    figures = answer.get("figures")
+    if figures:
+        line = plugin_db.text(v.latency, figures["standing"], lang)
+        if figures.get("latencyMs") is not None:
+            against = "" if figures.get("lineMs") is None else f" / {number_text(figures['lineMs'])} ms"
+            line += f" {number_text(figures['latencyMs'])} ms{against} ({figures['rate']} Hz, {figures['quantum']})"
+        lines.append(line)
+    return " ".join(lines)
 
 
-def cost_text(facts):
-    return "cost?" if facts.cost_ns is None else f"{number_text(facts.cost_ns)}ns"
-
-
-def place(facts, live_ms=LIVE_MAX_MS):
-    """The Placement of a plugin from its qualification Facts."""
-    reason = "refused" if facts.pin == "refused" else "crashed" if facts.crashed else "hung" if facts.hung else None
-    if reason:
-        return Placement("below", SEP.join(("below bar", reason)), True, reason)
-    if not facts.record:
-        return Placement("unverified", "not qualified", False, None)
-    live = facts.rt_safe is True and facts.worst_latency_ms is not None and facts.worst_latency_ms <= live_ms
-    tier = "live" if live else "studio"
-    words = [tier, latency_text(facts), RT_WORDS[facts.rt_safe], cost_text(facts)]
-    if facts.soaked is False:
-        words.append("unsoaked")
-    return Placement(tier, " ".join(words), False, None)
-
-
-def figure(facts, order):
+def figure(answer, order):
     """The shown value a menu is sorted by, None when the row does not show it."""
-    if order == "cost":
-        return facts.cost_ns
-    if order == "latency":
-        return facts.frames
-    if order == "rt":
-        return {True: 0, False: 1}.get(facts.rt_safe)
+    if order == "latency" and answer and answer.get("figures"):
+        return answer["figures"].get("latencyMs")
     return None
 
 
@@ -224,13 +171,13 @@ def one_row_per_plugin(rows):
     return [row for row in rows if id(row) not in dropped]
 
 
-def menu_entries(engines, facts_of, live_ms=LIVE_MAX_MS, bar=DEFAULT_BAR, order="tier", hosted_only=False):
-    """[(key, text, style)] of one menu's engines {key: info}, in order (one of ORDERS): by tier, live
-    first, then studio, then the rest in their own order; or by name or by a figure, the rows with
-    figures first, then the rest. Then the plugins below the bar, with their mark (left out under qualified-only,
-    with the ones not qualified), then the entries that do not load at all, greyed. hosted_only keeps the PH rows.
-    A plugin present in more than one format is one row, the best placed (one_row_per_plugin).
-    facts_of(url) gives a plugin's Facts; entries that are not plugins keep their title."""
+def menu_entries(engines, answer_of, bar=DEFAULT_BAR, order="state", hosted_only=False):
+    """[(key, text, style)] of one menu's engines {key: info}, in order (one of ORDERS): by state, in the order of
+    STATE_ORDER and then in their own; or by name or by latency, the rows with a figure first. The plugins that are
+    not loaded as things stand (refused, absent) come after the others, with their mark, when the bar offers them;
+    then the entries that do not load at all, greyed. hosted_only keeps the PH rows. A plugin present in more than
+    one format is one row, the best placed (one_row_per_plugin). answer_of(url) gives plugin-db's answer for a
+    plugin-hostd row, None when it has none; the other rows keep their title."""
     rows = []
     marked = set()
     for n, (key, info) in enumerate(engines.items()):
@@ -238,27 +185,29 @@ def menu_entries(engines, facts_of, live_ms=LIVE_MAX_MS, bar=DEFAULT_BAR, order=
             continue
         title = info["TITLE"]
         if not is_plugin(key):
-            rows.append((RANK[None], n, key, title, False, None, None))
+            rows.append((NO_ANSWER_RANK, n, key, title, False, None, None))
             continue
         ident = plugin_identity(key, info)
         if info.get("NOT_WORKING"):
-            rows.append((RANK["not working"], n, key, f"{title}  not working{SEP}{info['NOT_WORKING']}", True, None, ident))
+            rows.append((NOT_WORKING_RANK, n, key, f"{title}  not working{SEP}{info['NOT_WORKING']}", True, None, ident))
             continue
-        facts = facts_of(info.get("URL", ""))
-        if not key.startswith("PH/"):
-            facts = facts._replace(pin=None)  # plugin-hostd's pin does not judge jalv
-        p = place(facts, live_ms)
-        if bar == "qualified-only" and (p.below or p.tier == "unverified"):
+        # plugin-db's records are plugin-hostd's: they do not judge a jalv row
+        answer = answer_of(info.get("URL", "")) if key.startswith("PH/") else None
+        if answer is None:
+            if bar != v.bar.qualifiedOnly or not key.startswith("PH/"):
+                rows.append((NO_ANSWER_RANK, n, key, title, False, None, ident))
             continue
-        if p.below:
+        if not offered(answer, bar):
+            continue
+        if answer["runs"] == v.runs.notLoaded:
             marked.add(key)
-        rows.append((RANK[p.tier], n, key, f"{title}  {p.tag}", False,
-                     figure(facts, order) if p.tier not in ("unverified", "below") else None, ident))
+        rows.append((STATE_ORDER.index(answer["state"]), n, key, f"{title}  {tag(answer)}", False,
+                     figure(answer, order), ident))
     rows = one_row_per_plugin(rows)
-    below_keys = {key for _, _, key, _, _, _, _ in rows if key in marked}
-    if order == "tier":
+    if order == "state":
         rows.sort(key=lambda r: r[:2])
     else:
-        # live and studio are one group: the figure orders them
-        rows.sort(key=lambda r: (max(r[0], RANK["studio"]), r[5] is None, r[5] or 0, r[3].lower(), r[1]))
-    return [(key, text, greyed or (BELOW if key in below_keys else False)) for _, _, key, text, greyed, _, _ in rows]
+        # the rows that load are one group, ordered by the figure; the ones not loaded and not working follow
+        group = lambda r: 2 if r[4] else 1 if r[2] in marked else 0
+        rows.sort(key=lambda r: (group(r), r[5] is None, r[5] or 0, r[3].lower(), r[1]))
+    return [(key, text, greyed or (BELOW if key in marked else False)) for _, _, key, text, greyed, _, _ in rows]
