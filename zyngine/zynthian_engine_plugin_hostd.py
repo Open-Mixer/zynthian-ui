@@ -83,7 +83,7 @@ _descriptor_none = (protocol.need("reply.plugin-hostd.descriptor-absent"),
 DESCRIPTOR_PENDING = protocol.need("reply.plugin-hostd.descriptor-pending")
 protocol.need("reply.host.invalid-operation")
 protocol.need("reply.host.memory-allocation")
-INSTANCE_EXISTS = "ERR_INSTANCE_ALREADY_EXISTS"  # mod-host's name: the table has no code for it (omx-clap-core#34)
+INSTANCE_EXISTS = "reply.host.instance-already-exists"  # a second add of one instance: the table's name from 0.5.8 on
 protocol.need(INSTANCE_EXISTS)
 protocol.verify()
 uri_word = zynthian_plugin_hostd_protocol.uri_word
