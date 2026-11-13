@@ -1,0 +1,21 @@
+# The literals of an owner's installed contract files that the plugin-hostd modules still write, which
+# tools/restated_declarations.py finds: <module> <literal> <sites> reason=<what the owner is to provide>. It only gets
+# shorter: a literal read from its owner leaves its line, and the line goes in the same change. Each line says what
+# the owner is to declare so that the site can ask for it (a per-site allowance, see the tool's header); sites are
+# counted per module and literal.
+# Not here: the name argument of a call into the owner's library, and a host's id (the VERB_HOSTS table).
+
+# the four refusals the chain manager treats as transient: a table of codes, which the owner is to publish as a class
+zyngine/zynthian_chain_manager.py reply.plugin-hostd.gave-up 1 reason=plugin-hostd-protocol is to mark which refusals are transient, so the chain manager can ask instead of listing them
+zyngine/zynthian_chain_manager.py reply.plugin-hostd.pin-refused 1 reason=plugin-hostd-protocol is to mark which refusals are transient, so the chain manager can ask instead of listing them
+zyngine/zynthian_chain_manager.py reply.plugin-hostd.verb-dropped 1 reason=plugin-hostd-protocol is to mark which refusals are transient, so the chain manager can ask instead of listing them
+zyngine/zynthian_chain_manager.py reply.plugin-hostd.worker-spawn 1 reason=plugin-hostd-protocol is to mark which refusals are transient, so the chain manager can ask instead of listing them
+
+# a verb or a line compared with a decoded word
+zyngine/zynthian_engine_plugin_hostd.py hide_external_ui 1 reason=plugin-hostd-protocol's client is to give a decoded line's verb as a value to compare with
+zyngine/zynthian_engine_plugin_hostd.py show_external_ui 2 reason=plugin-hostd-protocol's client is to give a decoded line's verb as a value to compare with
+zyngine/zynthian_omx_panel_view.py output_set 1 reason=plugin-hostd-protocol's client is to give a decoded line's verb as a value to compare with
+
+# a grouping reason compared with a decoded word
+zyngine/zynthian_engine_plugin_hostd.py grouping-off 1 reason=plugin-hostd is to declare its grouping reasons in its client, so a reason is compared by name, not by its text
+zyngine/zynthian_plugin_hostd_grouping.py plan-refused 1 reason=plugin-hostd is to declare its grouping reasons in its client, so a reason is compared by name, not by its text
