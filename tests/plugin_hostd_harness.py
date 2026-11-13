@@ -84,3 +84,19 @@ def stand_in(case):
     _replace(case, LV2, "get_plugin_ports", lambda uri: LV2_PORTS.get(uri, {}))
     _replace(case, LV2, "get_plugin_presets_cache", lambda name: LV2_PRESETS.get(name, {}))
 
+
+def sabotage_tree(tmp, copied=("zyngine", "tests")):
+    """A tree in tmp that runs this suite as this one does and that a sabotage arm may break: the copied directories
+    are copies, every other entry of this tree is linked (the harness imports zynautoconnect, zyngui, zynconf...)."""
+    import os
+    import shutil
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for name in os.listdir(root):
+        if name in (".git", "venv") or name.startswith(".pytest") or name.startswith(".ruff"):
+            continue
+        if name in copied:
+            shutil.copytree(os.path.join(root, name), os.path.join(tmp, name),
+                            ignore=shutil.ignore_patterns("__pycache__", "build"))
+        else:
+            os.symlink(os.path.join(root, name), os.path.join(tmp, name))
+    return tmp
