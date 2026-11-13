@@ -53,7 +53,10 @@ jobs:
           echo "plugin-hostd and its contract at $v, the newest pair this cell serves together:$pins"
           echo "HOSTD_PINS=$pins" >> "$GITHUB_ENV"
           # shellcheck disable=SC2086 # one word per pin
-          apt-get install -y -qq --no-install-recommends $pins omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract
+          apt-get install -y -qq --no-install-recommends $pins omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract \
+            plugin-hostd-protocol-l10n-ca
+          # the contract the series is built and tested against: every declared package inside its range
+          python3 -m tools.contract_versions
           dpkg-query -W plugin-hostd omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract
           # the owners' sentences are read from the vocabularies omx-contract-data's contract directory holds, in the
           # layout it has from 3.14.0 on (#6), and the catalogs of plugin-hostd-protocol-contract: a floor and the

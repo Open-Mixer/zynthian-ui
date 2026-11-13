@@ -1,0 +1,5 @@
+# The contract versions this series is built and tested against (tools/contract_versions.py checks the installed set
+# against them). Outward requires the latest: when the channel serves a newer contract, the floor line moves.
+# <name> >= <floor> < <ceiling> [: <binary packages that carry it>]
+plugin-hostd-protocol >= 0.5.8 < 0.6 : libplugin-hostd-protocol0 plugin-hostd-protocol-contract plugin-hostd-protocol-l10n-ca
+plugin-hostd-contract >= 0.20.4 < 0.21
