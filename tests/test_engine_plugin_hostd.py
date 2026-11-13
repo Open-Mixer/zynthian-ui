@@ -295,7 +295,7 @@ class test_daemon(plugin_hostd_case):
         for expected in ("add urn:test:amp 1000", "add urn:test:amp 1001", "param_set 1001 gain 4.5",
                          "chain 1 1000 1001"):
             self.assertIn(expected, lines)
-        self.assertEqual(lines[-1], "param_set 1000 gain -2.0", "the command that met the dead daemon is sent last")
+        self.assertEqual(lines[-1], "param_set 1000 gain -2", "the command that met the dead daemon is sent last")
         self.assertLess(lines.index("param_set 1001 gain 4.5"), lines.index("chain 1 1000 1001"))
 
 
@@ -1769,14 +1769,14 @@ class test_protocol_03(plugin_hostd_case):
 
     def test_a_restored_daemon_gets_the_values_in_one_line(self):
         lines = self.killed_and_replayed()
-        many = lines.index("param_set_many 1000 gain -2.0")
+        many = lines.index("param_set_many 1000 gain -2")
         self.assertLess(lines.index("add urn:test:amp 1000"), many)
-        self.assertNotIn("param_set 1000 gain -2.0", lines[:many + 1], "the replay sent no line of its own for the value")
+        self.assertNotIn("param_set 1000 gain -2", lines[:many + 1], "the replay sent no line of its own for the value")
 
     def test_a_restored_daemon_that_serves_no_bulk_gets_one_line_per_value(self):
         lines = self.killed_and_replayed(bulk="0")
-        self.assertIn("param_set_many 1000 gain -2.0", lines, "asked once, refused")
-        self.assertEqual(lines.count("param_set 1000 gain -2.0"), 2, "the replay's, and the command that met the dead daemon")
+        self.assertIn("param_set_many 1000 gain -2", lines, "asked once, refused")
+        self.assertEqual(lines.count("param_set 1000 gain -2"), 2, "the replay's, and the command that met the dead daemon")
 
     def test_replay_lines_group_the_values_of_a_bulk_daemon(self):
         fake = self.big(**self.NEW)
