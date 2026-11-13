@@ -20,6 +20,7 @@ import logging
 import tempfile
 import unittest
 from unittest import mock
+import plugin_hostd_protocol
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -249,12 +250,12 @@ class test_daemon(plugin_hostd_case):
         client = ph.plugin_hostd_client(self.port)
         with self.assertRaises(ph.plugin_hostd_error) as refused:
             client.call("frobnicate 1")
-        self.assertEqual((refused.exception.code, refused.exception.name), (-902, "ERR_INVALID_OPERATION"))
+        self.assertEqual((refused.exception.code, refused.exception.name), (-902, "reply.host.invalid-operation"))
         with self.assertRaises(ph.plugin_hostd_error) as refused:
             client.call("descriptor_get urn:test:none")
-        self.assertEqual(refused.exception.name, "DESCRIPTOR_ABSENT")
-        self.assertEqual(ph.plugin_hostd_error(-501, "x").name, "PLACEMENT_INVALID")
-        self.assertEqual(ph.plugin_hostd_error(-531, "x").name, "DESCRIPTOR_SCAN_FAILED")
+        self.assertEqual(refused.exception.name, "reply.plugin-hostd.descriptor-absent")
+        self.assertEqual(ph.plugin_hostd_error(-501, "x").name, "reply.plugin-hostd.placement-invalid")
+        self.assertEqual(ph.plugin_hostd_error(-531, "x").name, "reply.plugin-hostd.descriptor-scan-failed")
 
     def test_a_daemon_that_does_not_answer_times_out(self):
         silent = socket.socket()
@@ -281,38 +282,57 @@ class test_daemon(plugin_hostd_case):
         for expected in ("add urn:test:amp 1000", "add urn:test:amp 1001", "param_set 1001 gain 4.5",
                          "chain 1 1000 1001"):
             self.assertIn(expected, lines)
-        self.assertEqual(lines[-1], "param_set 1000 gain -2.0", "the command that met the dead daemon is sent last")
+        self.assertEqual(lines[-1], "param_set 1000 gain -2", "the command that met the dead daemon is sent last")
         self.assertLess(lines.index("param_set 1001 gain 4.5"), lines.index("chain 1 1000 1001"))
 
 
 class test_protocol(plugin_hostd_case):
-    """The reply codes and the readiness line are read from plugin-hostd's installed files."""
+    """The reply codes are plugin-hostd's Python client's, read from the installed table; mod-host's names from
+    mod-host.json stand for the numbers the table gives no code."""
 
-    def declared(self, daemon_errors=None, ready="plugin-hostd ready!", host_errors=None):
-        """A protocol directory with the given codes, for a daemon that declares something else."""
+    def declared(self, reply_codes=None, host_errors=None):
+        """(table, directory) of a protocol with the given codes, for a daemon that declares something else."""
         directory = os.path.join(self.tmp, "protocol")
         os.makedirs(directory, exist_ok=True)
-        with open(os.path.join(directory, "protocol.json"), "w") as f:
-            json.dump({"errors": daemon_errors or [], "readiness": {"daemon_line": ready}}, f)
+        table = os.path.join(directory, "table.json")
+        with open(table, "w") as f:
+            json.dump({"commands": [], "feedback": [], "protocol_errors": [],
+                       "reply_codes": [{"resp": c, "code": n} for n, c in (reply_codes or {}).items()]}, f)
         with open(os.path.join(directory, "mod-host.json"), "w") as f:
             json.dump({"host_errors": host_errors or []}, f)
-        return directory
+        return table, directory
+
+    def codes(self, table, directory, needs=()):
+        return ph.zynthian_plugin_hostd_protocol.reply_codes(needs=needs, table=table, directory=directory)
 
     def test_a_code_is_named_by_the_file_not_by_the_engine(self):
-        directory = self.declared(
-            [{"name": "ODD", "macro": "ODD", "code": -777}],
-            host_errors=[{"name": "ERR_HOST_INVALID_URI", "value": -101}, {"name": "ERR_LV2_INVALID_URI", "value": -101}])
-        p = ph.zynthian_plugin_hostd_protocol.protocol(directory)
-        self.assertEqual((p.name(-777), p.code("ODD"), p.name(-101)), ("ODD", -777, "ERR_HOST_INVALID_URI"))
+        p = self.codes(*self.declared(
+            {"reply.test.odd": -777},
+            host_errors=[{"name": "ERR_HOST_INVALID_URI", "value": -101}, {"name": "ERR_LV2_INVALID_URI", "value": -101}]))
+        self.assertEqual((p.name(-777), p.code("reply.test.odd"), p.name(-101)),
+                         ("reply.test.odd", -777, "ERR_HOST_INVALID_URI"))
         self.assertEqual(p.name(-501), "ERR_501", "a code the files do not declare is a bare number")
+        with self.assertRaises(KeyError):
+            p.code("reply.plugin-hostd.placement-invalid")
 
     def test_the_installed_files_name_what_the_engine_branches_on(self):
         self.assertEqual(ph.protocol.name(-101), "ERR_HOST_INVALID_URI", "mod-host.json's name, not a retyped one")
-        for code, name in ((-2, "ERR_INSTANCE_ALREADY_EXISTS"), (-529, "DESCRIPTOR_ABSENT"),
-                           (-902, "ERR_INVALID_OPERATION")):
+        for code, name in ((-2, "ERR_INSTANCE_ALREADY_EXISTS"), (-529, "reply.plugin-hostd.descriptor-absent"),
+                           (-902, "reply.host.invalid-operation")):
             self.assertEqual(ph.protocol.name(code), name)
         self.assertEqual(ph.CHAIN_FALLBACK_CODES, (-501, -519, -520, -521))
         self.assertEqual((ph.DESCRIPTOR_PENDING, ph.DESCRIPTOR_NONE), (-530, (-529, -531)))
+
+    def test_the_codes_are_the_client_s_reading_of_the_table(self):
+        """Every code of the installed table has the number, the name and the English sentence the client gives."""
+        import plugin_hostd_protocol
+        client = plugin_hostd_protocol.Protocol()
+        self.assertGreater(len(client.codes), 40, "the installed table declares its codes")
+        english = {"LANG": "C", "LC_ALL": "", "LC_MESSAGES": ""}
+        with mock.patch.dict(os.environ, english):
+            for name, code in client.codes.items():
+                self.assertEqual((ph.protocol.code(name), ph.protocol.name(code)), (code, name))
+                self.assertEqual(ph.protocol.sentence(code), client.sentence(code), name)
 
     def test_the_engine_types_no_reply_code(self):
         with open(ph.__file__) as f:
@@ -320,60 +340,55 @@ class test_protocol(plugin_hostd_case):
         self.assertEqual(re.findall(r"(?<![\w.\[])-(?:[1-9]|[1-9]\d\d)\b(?![.\w\]])", source), [],
                          "a reply code in the engine's source is a retyped one")
 
-    def test_without_the_protocol_files_there_is_no_daemon_to_trust(self):
+    def test_without_the_protocol_table_there_is_no_daemon_to_trust(self):
+        table = os.path.join(self.tmp, "none", "table.json")
         with self.assertLogs(level=logging.ERROR) as logs:
-            empty = ph.zynthian_plugin_hostd_protocol.protocol(os.path.join(self.tmp, "none"), needs=ph.NEEDS)
+            empty = self.codes(table, self.declared()[1], needs=ph.NEEDS)
         self.assertFalse(empty.loaded)
         self.assertEqual(len(logs.records), 1, "said once, when the files are read")
-        self.assertIn(os.path.join(self.tmp, "none", "plugin-hostd.json"), logs.output[0])
+        self.assertIn(table, logs.output[0])
         with mock.patch.object(ph, "protocol", empty):
             with self.assertRaises(ph.plugin_hostd_down) as down:
                 ph.daemon.ensure()
-        self.assertIn(os.path.join(self.tmp, "none", "plugin-hostd.json"), str(down.exception),
-                      "the refusal names the file")
-
-    def test_the_files_are_read_where_libplugin_hostd_protocol0_installs_them(self):
-        """plugin-hostd 0.16.0 moved them: /usr/share/plugin-hostd-protocol/plugin-hostd.json, no protocol.json."""
-        new_home = self.declared([{"name": "ODD", "macro": "ODD", "code": -777}])
-        os.rename(os.path.join(new_home, "protocol.json"), os.path.join(new_home, "plugin-hostd.json"))
-        old_home = os.path.join(self.tmp, "old")
-        os.makedirs(old_home)
-        with open(os.path.join(old_home, "protocol.json"), "w") as f:
-            json.dump({"errors": [{"name": "ODD", "macro": "OLD", "code": -778}]}, f)
-        with open(os.path.join(old_home, "mod-host.json"), "w") as f:
-            json.dump({"host_errors": []}, f)
-        places = ((new_home, "plugin-hostd.json"), (old_home, "protocol.json"))
-        with mock.patch.object(ph.zynthian_plugin_hostd_protocol, "PROTOCOL_DIR", None), \
-                mock.patch.object(ph.zynthian_plugin_hostd_protocol, "PLACES", places):
-            p = ph.zynthian_plugin_hostd_protocol.protocol()
-            self.assertTrue(p.loaded, p.failure)
-            self.assertEqual(p.code("ODD"), -777, "the new home is read first")
-            self.assertEqual(ph.zynthian_plugin_hostd_protocol.protocol(new_home).code("ODD"), -777,
-                             "a directory given holds the daemon's file under its new name")
-            os.remove(os.path.join(new_home, "plugin-hostd.json"))
-            self.assertEqual(ph.zynthian_plugin_hostd_protocol.protocol().code("ODD"), -778,
-                             "a plugin-hostd before 0.16.0 still has its files read")
+        self.assertIn(table, str(down.exception), "the refusal names the file")
 
     def test_mod_host_json_missing_is_a_failure_too(self):
-        directory = self.declared()
+        table, directory = self.declared()
         os.remove(os.path.join(directory, "mod-host.json"))
         with self.assertLogs(level=logging.ERROR):
-            p = ph.zynthian_plugin_hostd_protocol.protocol(directory)
+            p = self.codes(table, directory)
         self.assertFalse(p.loaded)
         self.assertIn(os.path.join(directory, "mod-host.json"), p.failure)
 
     def test_a_name_the_engine_branches_on_and_the_files_do_not_declare_is_a_failure(self):
-        declared = [{"name": n, "macro": n, "code": -700 - i} for i, n in enumerate(ph.NEEDS)
-                    if n != "DESCRIPTOR_PENDING" and not n.startswith("ERR_")]
+        declared = {n: -700 - i for i, n in enumerate(ph.NEEDS)
+                    if n != ph.DESCRIPTOR_PENDING_NAME and n.startswith("reply.")}
         host = [{"name": n, "value": -800 - i} for i, n in enumerate(ph.NEEDS) if n.startswith("ERR_")]
         with self.assertLogs(level=logging.ERROR):
-            p = ph.zynthian_plugin_hostd_protocol.protocol(self.declared(declared, host_errors=host), needs=ph.NEEDS)
+            p = self.codes(*self.declared(declared, host_errors=host), needs=ph.NEEDS)
         self.assertFalse(p.loaded)
-        self.assertIn("do not declare DESCRIPTOR_PENDING", p.failure)
+        self.assertIn("do not declare " + ph.DESCRIPTOR_PENDING_NAME, p.failure)
         with mock.patch.object(ph, "protocol", p):
             with self.assertRaises(ph.plugin_hostd_down) as down:
                 ph.daemon.ensure()
-        self.assertIn("DESCRIPTOR_PENDING", str(down.exception))
+        self.assertIn(ph.DESCRIPTOR_PENDING_NAME, str(down.exception))
+
+    def test_the_daemon_file_is_read_where_libplugin_hostd_protocol0_installs_it(self):
+        """plugin-hostd 0.16.0 moved it: /usr/share/plugin-hostd-protocol/plugin-hostd.json, no protocol.json. The
+        defaults of its configuration are read from the first place that holds it."""
+        new_home, old_home = os.path.join(self.tmp, "new"), os.path.join(self.tmp, "old")
+        for home, name, value in ((new_home, "plugin-hostd.json", 7), (old_home, "protocol.json", 8)):
+            os.makedirs(home)
+            with open(os.path.join(home, name), "w") as f:
+                json.dump({"config": [{"key": "odd", "default": value}]}, f)
+        places = ((new_home, "plugin-hostd.json"), (old_home, "protocol.json"))
+        files = ph.zynthian_plugin_hostd_protocol
+        with mock.patch.object(files, "PROTOCOL_DIR", None), mock.patch.object(files, "PLACES", places):
+            self.assertEqual(files.config_default("odd"), 7, "the new home is read first")
+            self.assertEqual(files.config_default("odd", new_home), 7,
+                             "a directory given holds the daemon's file under its new name")
+            os.remove(os.path.join(new_home, "plugin-hostd.json"))
+            self.assertEqual(files.config_default("odd"), 8, "a plugin-hostd before 0.16.0 still has its file read")
 
     def test_the_engine_reads_the_files_once_at_import(self):
         with mock.patch.object(ph.zynthian_plugin_hostd_protocol, "read", side_effect=AssertionError("read again")):
@@ -390,8 +405,9 @@ class test_protocol(plugin_hostd_case):
             self.assertIn(command, declared, f"the engine sends {command}, which the installed protocol lacks")
 
     def test_the_words_follow_the_installed_grammar(self):
-        """The reader of words is the grammar's: quoted words with \\" as the only escape (core.abnf), a path percent-encoded
-        (the section Pins and qualification). The installed grammar file says so, or this reader is stale."""
+        """The reader of words is plugin-hostd's Python client, and the installed grammar is the one it was written to:
+        quoted words with \\" as the only escape (core.abnf), a path percent-encoded (the section Pins and
+        qualification). An installed grammar that says otherwise needs a newer client."""
         directory, _ = ph.zynthian_plugin_hostd_protocol.daemon_file()
         with open(os.path.join(directory, "plugin-hostd-protocol.abnf")) as f:
             grammar_text = f.read()
@@ -401,7 +417,7 @@ class test_protocol(plugin_hostd_case):
         limits = ph.zynthian_plugin_hostd_protocol.read(*reversed(ph.zynthian_plugin_hostd_protocol.daemon_file()))[0]["pin_limits"]
         path_rule = next(entry["meaning"] for entry in limits if entry["name"] == "PATH")
         self.assertIn("percent-encoded", path_rule)
-        for char in ph.zynthian_plugin_hostd_protocol.EXCLUDED.strip() + "%":
+        for char in plugin_hostd_protocol.EXCLUDED.strip() + "%":
             self.assertIn(char, path_rule + " ", f"{char!r} is escaped by the grammar's path rule")
 
     def test_ready_is_the_start_scripts_to_say(self):
@@ -437,6 +453,31 @@ class test_protocol(plugin_hostd_case):
         with mock.patch.object(ph.daemon, "identify", side_effect=[False, True]):
             ph.daemon.ensure()
         self.assertIsNone(ph.daemon.pid)
+
+
+class test_command(unittest.TestCase):
+    """A command line is plugin-hostd's client's writing of it from the protocol table, not a string of this module."""
+
+    def test_a_line_is_the_client_s_encoding_of_the_verb_and_its_arguments(self):
+        client = plugin_hostd_protocol.Protocol()
+        for verb, args in (("worker_list", ()), ("add", ("urn:x", 1000)), ("add", ("urn:x", 1000, "own")),
+                           ("chain", (3, 1000, 1001)), ("param_set", (1000, "gain", 0.25)),
+                           ("param_set_many", (1000, "a", 1.0, "b", 0.5)), ("patch_set", (1000, "urn:p", "/a b.wav"))):
+            self.assertEqual(ph.command(verb, *args), client.encode(verb, list(args)), verb)
+
+    def test_a_number_has_the_protocol_s_one_spelling_and_a_word_is_quoted_when_it_has_to_be(self):
+        self.assertEqual(ph.command("param_set", 1000, "gain", 25.0), "param_set 1000 gain 25")
+        self.assertEqual(ph.command("param_set", 1000, "gain", 0.25), "param_set 1000 gain 0.25")
+        self.assertEqual(ph.command("patch_set", 1000, "urn:p", "/data/a.wav"), "patch_set 1000 urn:p /data/a.wav")
+        self.assertEqual(ph.command("patch_set", 1000, "urn:p", '/a "b".wav'), 'patch_set 1000 urn:p "/a \\"b\\".wav"')
+
+    def test_a_line_the_table_does_not_declare_is_not_written(self):
+        with self.assertRaises(plugin_hostd_protocol.ProtocolError):
+            ph.command("no_such_verb", 1)
+        with self.assertRaises(plugin_hostd_protocol.ProtocolError):
+            ph.command("remove")
+        with self.assertRaises(plugin_hostd_protocol.ProtocolError):
+            ph.command("remove", "not-a-number")
 
 
 class test_processor(plugin_hostd_case):
@@ -493,7 +534,7 @@ class test_processor(plugin_hostd_case):
             self.assertEqual(proc.engine.get_preset_list(None, proc), [["", None, ph.zynthian_engine_plugin_hostd.NO_PRESETS, ""]])
             logging.warning("end")
         self.assertEqual(len(logs.records), 2, "NO_PRESET_LIST is logged once")
-        self.assertIn("NO_PRESET_LIST", logs.output[0])
+        self.assertIn("reply.plugin-hostd.no-preset-list", logs.output[0])
 
     def lv2_amp_presets(self, my_data):
         """The cache Zynthian keeps for the LV2 Amp: two banks of its bundle and one of the user's, saved under jalv."""
@@ -567,7 +608,7 @@ class test_processor(plugin_hostd_case):
         with tempfile.TemporaryDirectory() as my_data:
             proc.engine.my_data_dir = my_data
             path = proc.engine.save_preset(None, 'a\\b "c"')
-            self.assertIn('preset_save 1000 %s "a\\b \\"c\\""' % path, fake.lines)
+            self.assertIn('preset_save 1000 %s %s "a\\b \\"c\\""' % os.path.split(path), fake.lines)
             with open(path) as f:
                 self.assertEqual(json.load(f)["name"], 'a\\b "c"')
 
@@ -583,7 +624,8 @@ class test_processor(plugin_hostd_case):
             self.assertFalse(engine.preset_exists(user, "Gig Pad"))
             path = engine.save_preset(None, "Gig Pad")
             self.assertTrue(path and path.startswith(engine.user_dir() + os.sep) and " " not in path, path)
-            self.assertIn(f'preset_save 1000 {path} "Gig Pad"', fake.lines, "saved by the worker, the name quoted")
+            self.assertIn('preset_save 1000 %s %s "Gig Pad"' % os.path.split(path), fake.lines,
+                          "saved by the worker: the directory, the file name and the label, the label quoted")
             self.assertTrue(engine.preset_exists(user, "Gig Pad"))
             self.assertEqual(proc.bank_info[0], "user", "the processor is in User after a save")
             presets = engine.get_preset_list(user, proc)
@@ -655,7 +697,7 @@ class test_chain(plugin_hostd_case):
             logging.warning("end")
         refused = [r for r in logs.output if "separate workers" in r]
         self.assertEqual(len(refused), 1)
-        self.assertIn("PLACEMENT_INVALID", refused[0])
+        self.assertIn("reply.plugin-hostd.placement-invalid", refused[0])
         self.assertNotIn(1, fake.chains, "the chain it had is cleared, each member back in a worker of its own")
         self.assertEqual(fake.lines.count("chain 1 1000 1001 1002"), 1, "refused members are not sent again")
 
@@ -897,7 +939,7 @@ class test_plan(plugin_hostd_case):
             logging.warning("end")
         self.assertEqual([p.jackname for p in procs], ["effect_1000", "effect_1001", "effect_1002"])
         self.assertEqual([p.engine.grouping_reason() for p in procs], ["plan-refused:-501"] * 3)
-        self.assertEqual(procs[0].engine.grouping_text(), "Not grouped: the daemon refused the plan (PLACEMENT_INVALID)")
+        self.assertEqual(procs[0].engine.grouping_text(), "Not grouped: the daemon refused the plan (reply.plugin-hostd.placement-invalid)")
         self.assertEqual(len([r for r in logs.output if "every member runs alone" in r]), 2, "one per change of members")
 
     def test_a_malformed_reply_is_logged_and_leaves_the_members_as_they_were(self):
@@ -932,7 +974,7 @@ class test_grouping_texts(unittest.TestCase):
 
     def test_the_text_of_a_refusal_names_the_code_by_the_daemons_name(self):
         self.assertEqual(grouping.text("plan-refused:-518", ph.protocol.name),
-                         "Not grouped: the daemon refused the plan (CHAIN_UNKNOWN_INSTANCE)")
+                         "Not grouped: the daemon refused the plan (reply.plugin-hostd.chain-unknown-instance)")
         self.assertEqual(grouping.text("plan-refused:-1234", ph.protocol.name),
                          "Not grouped: the daemon refused the plan (ERR_1234)")
         self.assertEqual(grouping.text("plan-refused:x"), "Not grouped: the daemon refused the plan (x)")
@@ -1234,7 +1276,7 @@ class test_compare(plugin_hostd_case):
         real = engine.send_quiet
         engine.send = lambda line, timeout=5.0: sent.append(line) or real(line)
         self.assertIsNone(engine.compare_step(("switch", "A")))
-        self.assertEqual(sent, [f"param_set {engine.instance} p1 25.0"], "one write, on the control path")
+        self.assertEqual(sent, [f"param_set {engine.instance} p1 25"], "one write, on the control path")
         self.assertEqual(self.values(fake)["p1"], 25.0)
         self.assertEqual(proc.controllers_dict["p1"].value, 25.0, "the screen follows")
         self.assertIsNone(engine.compare_step(("switch", "B")))
@@ -1344,21 +1386,24 @@ class test_snapshot(plugin_hostd_case):
 
 
 class test_below_bar(plugin_hostd_case):
-    """A plugin below our bar, chosen by the user, loads in plugin-hostd in a worker of its own; a refused one is
-    first accepted as the user's choice. Nothing is handed to another host."""
+    """A plugin plugin-db does not answer shared for, chosen by the user, loads in plugin-hostd in a worker of its own;
+    a refused one is first accepted as the user's choice. Nothing is handed to another host. The answers are plugin-db's
+    golden ones (plugin_db_stub)."""
 
-    def qualify(self, pins="", records=None):
-        path = os.path.join(self.tmp, "pins")
-        with open(path, "w") as f:
-            f.write(pins)
-        patcher = mock.patch.dict(os.environ, {"ZYNTHIAN_QUALIFICATION_PINS": path,
-                                               "ZYNTHIAN_QUALIFICATION_DIR": records or os.path.join(self.tmp, "none")})
+    def qualify(self, case=None):
+        """plugin-db answers for urn:test:amp with this golden case; with none, its store does not hold the plugin."""
+        import plugin_db_stub
+        from zyngine import zynthian_plugin_qualification as qual
+        directory = os.path.join(self.tmp, "plugin-db-stub")
+        os.makedirs(directory, exist_ok=True)
+        self.commands = plugin_db_stub.commands(directory, {"lv2:urn:test:amp": case} if case else {})
+        patcher = mock.patch.object(ph, "qualification",
+                                    qual.qualification(None, self.commands.plugin_db, self.commands.plugin_qualify))
         patcher.start()
         self.addCleanup(patcher.stop)
-        ph.qualification.stamp = None
 
     def test_a_refused_plugin_is_accepted_and_added_in_a_worker_of_its_own(self):
-        self.qualify("pin_set urn:test:amp amp.so=00 omx-layout/1:00 verdict=refused\n")
+        self.qualify("refused")
         with mock.patch.object(fake_plugin_hostd, "REFUSED", {"urn:test:amp"}):
             fake = self.serve()
             proc = self.add(self.chain(), "PH/Amp")
@@ -1366,19 +1411,20 @@ class test_below_bar(plugin_hostd_case):
         self.assertEqual(lines, ["pin_accept urn:test:amp", "add urn:test:amp 1000 own"])
         self.assertEqual(proc.engine.replay_lines()[0], "add urn:test:amp 1000 own")
         self.assertIsNone(ph.member_of(proc, "urn:test:amp"), "it joins no run")
+        self.assertEqual(self.commands.calls()[0][:3], ["query", "--json", "lv2:urn:test:amp"])
 
     def test_a_refused_plugin_is_not_accepted_under_qualified_only_and_its_add_says_why(self):
-        self.qualify("pin_set urn:test:amp amp.so=00 omx-layout/1:00 verdict=refused\n")
+        self.qualify("refused")
         with mock.patch.object(fake_plugin_hostd, "REFUSED", {"urn:test:amp"}), \
                 mock.patch.dict(os.environ, {"ZYNTHIAN_PLUGIN_BAR": "qualified-only"}):
             fake = self.serve()
             with self.assertRaises(ph.plugin_hostd_error):
                 self.add(self.chain(), "PH/Amp")
-        self.assertNotIn("pin_accept", [l.split()[0] for l in fake.lines], "the user said no to plugins below the bar")
+        self.assertNotIn("pin_accept", [l.split()[0] for l in fake.lines], "the user said no to refused plugins")
 
     def test_the_choice_taken_back_under_qualified_only_reaches_the_daemon_and_the_add_is_refused(self):
         # accepted under load-all (the daemon keeps the choice across restarts), then the bar is raised
-        self.qualify("pin_set urn:test:amp amp.so=00 omx-layout/1:00 verdict=refused\n")
+        self.qualify("refused")
         with mock.patch.object(fake_plugin_hostd, "REFUSED", {"urn:test:amp"}):
             fake = self.serve()
             fake.accepted = {"urn:test:amp"}
@@ -1389,24 +1435,34 @@ class test_below_bar(plugin_hostd_case):
                          ["pin_clear urn:test:amp", "pin_reload", "add urn:test:amp 1000 own"])
         self.assertEqual(refused.exception.code, -516)
 
-    def test_a_plugin_that_crashed_in_qualification_runs_alone_and_nothing_is_accepted(self):
-        records = os.path.join(self.tmp, "records")
-        os.mkdir(records)
-        with open(os.path.join(records, "run.json"), "w") as f:
-            json.dump({"format": "lv2-plugin-measurements", "run": {"measuredAt": "2026-11-01"},
-                       "plugins": [{"uri": "urn:test:amp"}],
-                       "verdicts": [{"uri": "urn:test:amp", "rating": "unsuitable",
-                                     "deciding": "hosting.stability.crashed-attributed-plugin"}]}, f)
-        self.qualify(records=records)
+    def alone(self, case):
+        """A plugin plugin-db answers alone for runs in a worker of its own, and nothing is accepted."""
+        self.qualify(case)
         fake = self.serve()
         self.add(self.chain(), "PH/Amp")
         self.assertEqual([l for l in fake.lines if l.split()[0] in ("pin_accept", "add")], ["add urn:test:amp 1000 own"])
 
+    def test_an_isolated_only_plugin_runs_alone(self):
+        self.alone("isolated-only")
+
+    def test_a_plugin_not_measured_yet_runs_alone(self):
+        self.alone("measurement-pending")
+
+    def test_a_plugin_whose_conditions_are_not_met_runs_alone(self):
+        self.alone("conditions-no-cell")
+
     def test_a_qualified_plugin_is_added_as_before(self):
-        self.qualify("pin_set urn:test:amp amp.so=00 omx-layout/1:00 verdict=in-process\n")
+        self.qualify("qualified")
         fake = self.serve()
         self.add(self.chain(), "PH/Amp")
         self.assertEqual([l for l in fake.lines if l.split()[0] in ("pin_accept", "add")], ["add urn:test:amp 1000"])
+
+    def test_a_plugin_plugin_db_has_no_answer_for_is_added_as_before(self):
+        self.qualify()
+        fake = self.serve()
+        self.add(self.chain(), "PH/Amp")
+        self.assertEqual([l for l in fake.lines if l.split()[0] in ("pin_accept", "add")], ["add urn:test:amp 1000"])
+        self.assertEqual(self.commands.calls()[0][:3], ["query", "--json", "lv2:urn:test:amp"], "it was asked")
 
 
 class test_catalogue(plugin_hostd_case):
@@ -1579,7 +1635,7 @@ class test_protocol_03(plugin_hostd_case):
         client = ph.plugin_hostd_client(self.port)
         with self.assertRaises(ph.plugin_hostd_error) as refused:
             client.call("chain_get 7")
-        self.assertEqual((refused.exception.name, refused.exception.word), ("NO_SUCH_CHAIN", None))
+        self.assertEqual((refused.exception.name, refused.exception.word), ("reply.plugin-hostd.no-such-chain", None))
 
     def test_a_refusal_with_a_position_keeps_the_position_and_no_word(self):
         self.serve(**self.NEW)
@@ -1588,7 +1644,7 @@ class test_protocol_03(plugin_hostd_case):
         with self.assertRaises(ph.plugin_hostd_error) as refused:
             client.call("param_set_many 1000 gain 1 nope 2")
         self.assertEqual((refused.exception.code, refused.exception.position, refused.exception.word), (-103, 2, None))
-        self.assertEqual(refused.exception.name, "ERR_103" if ph.protocol.name(-103) == "ERR_103" else ph.protocol.name(-103))
+        self.assertEqual(refused.exception.name, "reply.host.param-symbol-invalid")
 
     # ---- bulk reads ----
 
@@ -1656,14 +1712,14 @@ class test_protocol_03(plugin_hostd_case):
 
     def test_a_restored_daemon_gets_the_values_in_one_line(self):
         lines = self.killed_and_replayed()
-        many = lines.index("param_set_many 1000 gain -2.0")
+        many = lines.index("param_set_many 1000 gain -2")
         self.assertLess(lines.index("add urn:test:amp 1000"), many)
-        self.assertNotIn("param_set 1000 gain -2.0", lines[:many + 1], "the replay sent no line of its own for the value")
+        self.assertNotIn("param_set 1000 gain -2", lines[:many + 1], "the replay sent no line of its own for the value")
 
     def test_a_restored_daemon_that_serves_no_bulk_gets_one_line_per_value(self):
         lines = self.killed_and_replayed(bulk="0")
-        self.assertIn("param_set_many 1000 gain -2.0", lines, "asked once, refused")
-        self.assertEqual(lines.count("param_set 1000 gain -2.0"), 2, "the replay's, and the command that met the dead daemon")
+        self.assertIn("param_set_many 1000 gain -2", lines, "asked once, refused")
+        self.assertEqual(lines.count("param_set 1000 gain -2"), 2, "the replay's, and the command that met the dead daemon")
 
     def test_replay_lines_group_the_values_of_a_bulk_daemon(self):
         fake = self.big(**self.NEW)
@@ -1690,7 +1746,7 @@ class test_protocol_03(plugin_hostd_case):
         ph.daemon.restore()
         sent = self.sent(fresh, "param_set ")
         self.assertEqual(len(sent), 10)
-        self.assertIn("param_set 1000 p4 33.0", sent)
+        self.assertIn("param_set 1000 p4 33", sent)
         self.assertEqual(fresh.params[1000]["p4"], 33.0)
 
 

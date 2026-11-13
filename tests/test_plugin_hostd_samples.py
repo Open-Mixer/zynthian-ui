@@ -54,7 +54,7 @@ class test_the_file_reaches_the_plugin(samples_case):
         self.assertEqual(zctrl.path_file_types, ["wav"], "the types are the TTL's")
         zctrl.set_value("/data/sound.wav")
         self.assertEqual(fake.patches[1000], {SAMPLE: "/data/sound.wav"})
-        self.assertIn(f'patch_set 1000 {SAMPLE} "/data/sound.wav"', fake.lines)
+        self.assertIn(f'patch_set 1000 {SAMPLE} /data/sound.wav', fake.lines, "a bare word: nothing in it asks for quotes")
 
     def test_a_path_with_a_space_is_one_word(self):
         fake = self.serve()

@@ -28,7 +28,7 @@ def reason(code):
     """Why the records cannot answer for a member, by the code plugin-hostd gives it in the list: the code's sentence
     in the device's language, from its owner's catalog (#6); 'code <n>' for a number no owner code has."""
     from zyngine import zynthian_plugin_hostd_protocol
-    return zynthian_plugin_hostd_protocol.protocol().sentence(code) or "code %d" % code
+    return zynthian_plugin_hostd_protocol.reply_codes().sentence(code) or "code %d" % code
 
 
 def parse(text):

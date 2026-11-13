@@ -127,8 +127,8 @@ def short_meaning(meaning):
 
 
 def refusal_text(word, meaning=None):
-    """Why plugin-hostd did not load a plugin: what the code means, then the daemon's word for it (PHD_ERR_ left out)."""
-    word = (word or "").removeprefix("PHD_ERR_")
+    """Why plugin-hostd did not load a plugin: what the code means, then the name its owner gives the code."""
+    word = word or ""
     return f"{short_meaning(meaning) or 'plugin-hostd refused it'} ({word})"
 
 
