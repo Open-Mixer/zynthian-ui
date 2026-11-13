@@ -68,7 +68,7 @@ jobs:
           if python3 -c 'import plugin_hostd_protocol' 2>/dev/null; then
             echo "CLIENT FROM INSTALLED PACKAGE"
           else
-            SHA=b4c8a2078bfd11151d69f7ab73e2411dfda9b3e8
+            SHA=ad132cf7ddb560afd1f6929f7d93ef0ef8f630dc
             apt-get install -y -qq --no-install-recommends git ca-certificates
             git clone -q https://github.com/Open-Mixer/plugin-hostd /tmp/plugin-hostd
             git -C /tmp/plugin-hostd checkout -q "$SHA"

@@ -220,9 +220,6 @@ class test_daemon_as_it_answers_today(signal_path_case):
                          ("w1", "clap", "up", "own", None, [1000]))
         self.assertEqual(ph.worker_record("w3:4513:clap:up:1:qualified:chain:2001.0:1000,1001")[4], "2001.0")
 
-    def test_the_cores_after_a_plan_are_not_read_as_segments(self):
-        self.assertEqual(ph.parse_segments("1000,1001;1002 -,-;-"), [[1000, 1001], [1002]])
-
     def test_a_worker_that_keeps_a_client_per_member_is_routed_member_by_member(self):
         # plugin-hostd 0.15.4 answers resp 0 when the worker refuses the chain line: the graph says what runs
         self.serve()
@@ -291,7 +288,7 @@ class test_figures_follow_the_signal(signal_path_case):
         chain = self.chain()
         self.add(chain, "PH/Amp"), self.add(chain, "PH/NoPin")
         self.assertEqual(ph.chain_steps(chain), [(("urn:test:amp", "urn:test:nopin"),)])
-        self.assertEqual(self.figures(chain)["latency"], 64)
+        self.assertEqual(self.figures(chain)["latency_frames"], 64)
         self.assertEqual(len([line for line in fake.lines if line.startswith("estimate ")]), 1)
 
     def test_a_parallel_slot_takes_the_longest_latency_and_adds_the_rest(self):
@@ -302,9 +299,9 @@ class test_figures_follow_the_signal(signal_path_case):
         self.parallel(chain, c)
         self.assertEqual(ph.chain_steps(chain), [(("urn:test:amp",),), (("urn:test:amp",), ("urn:test:nopin",))])
         est = self.figures(chain)
-        self.assertEqual(est["latency"], 10 + 40, "not the sum of the two branches")
-        self.assertAlmostEqual(est["cpu"], 1.0 + 1.0 + 2.0)
-        self.assertEqual(est["ram"], 400)
+        self.assertEqual(est["latency_frames"], 10 + 40, "not the sum of the two branches")
+        self.assertAlmostEqual(est["cpu_percent"], 1.0 + 1.0 + 2.0)
+        self.assertEqual(est["ram_bytes"], 400)
         self.assertEqual(est["workers"], 3)
 
     def test_the_strip_splits_the_figures_as_it_splits_the_workers(self):
@@ -323,8 +320,8 @@ class test_figures_follow_the_signal(signal_path_case):
         self.foreign(chain)
         self.add(chain, "PH/Big")
         est = self.figures(chain)
-        self.assertEqual(est["unknown"], 1)
-        self.assertEqual(est["members"].keys(), {1}, "the second plugin of the chain's, not the first of its group")
+        self.assertEqual(est["unknown_count"], 1)
+        self.assertEqual([m["member"] for m in est["members"]], [1], "the second plugin of the chain's, not the first of its group")
 
     def test_the_menu_counts_the_candidate_before_the_strip_where_it_will_go(self):
         self.serve(estimator=True)

@@ -60,7 +60,6 @@ RELOAD_VERB = "pin_reload"
 # Below-bar reasons that run a plugin in a worker of its own
 qualification = zynthian_plugin_qualification.qualification()
 RETRY_S = 60.0  # a run the daemon refused, or planned alone for a reason that can change, is asked again after this
-RETRY_REASONS = ("no-verdict", "plan-refused:")  # plan_get reasons that the qualification sync or a pin can lift
 WATCH_S = 2.0  # how often the grouped workers are read back, to follow what the daemon moves by itself
 SLOW_TIMEOUT = 30.0  # add, chain, state_save and state_load spawn or move workers
 START_TIMEOUT = 10.0  # the wait for the daemon's declared line, in plugin-hostd-start.sh
@@ -677,7 +676,7 @@ def menu_refs(chain, eng_code, info, replacing=None):
 
 def estimate(rate, quantum, refs):
     """The daemon's figures for a chain of these plugin refs at this rate and quantum, from its qualification
-    records: plugin_hostd_estimate.parse's dict. estimate_unavailable once the daemon has refused the verb as
+    records, as plugin-hostd's client reads them (read_estimate). estimate_unavailable once the daemon has refused the verb as
     mod-host does, and for the rest of the session, so it is not asked again; a refusal of the question itself
     (a plugin it does not know) is a plugin_hostd_error, and no figure."""
     if daemon.estimate_verb is False:
@@ -691,27 +690,28 @@ def estimate(rate, quantum, refs):
             raise zynthian_plugin_hostd_estimate.estimate_unavailable()
         raise
     daemon.estimate_verb = True
-    return zynthian_plugin_hostd_estimate.parse(reply)
+    return protocol.client.read_estimate(reply.split())
 
 
 def estimate_steps(rate, quantum, steps):
     """The figures of a chain as signal_steps gives it, one estimate for each branch: a branch is what one worker
     runs. Latency adds along the steps, and a step takes its longest branch; everything else adds up. A member the
-    records lack is named by its place among all of them. plugin_hostd_estimate.parse's dict."""
-    total = {"latency": 0, "cpu": 0.0, "ram": 0, "workers": 0, "unknown": 0, "members": {}}
+    records lack is named by its place among all of them. The figures by the names read_estimate gives them."""
+    total = {"latency_frames": 0, "cpu_percent": 0.0, "ram_bytes": 0, "workers": 0, "unknown_count": 0, "members": []}
     place = 0
     for step in steps:
         longest = 0
         for branch in step:
             est = estimate(rate, quantum, branch)
-            longest = max(longest, est["latency"])
-            total["cpu"] += est["cpu"]
-            total["ram"] = None if total["ram"] is None or est["ram"] is None else total["ram"] + est["ram"]
+            longest = max(longest, est["latency_frames"])
+            total["cpu_percent"] += est["cpu_percent"]
+            total["ram_bytes"] = None if total["ram_bytes"] is None or est["ram_bytes"] is None \
+                else total["ram_bytes"] + est["ram_bytes"]
             total["workers"] += est["workers"]
-            total["unknown"] += est["unknown"]
-            total["members"].update({place + i: code for i, code in est["members"].items()})
+            total["unknown_count"] += est["unknown_count"]
+            total["members"] += [{**m, "member": place + m["member"]} for m in est["members"]]
             place += len(branch)
-        total["latency"] += longest
+        total["latency_frames"] += longest
     return total
 
 
@@ -855,7 +855,7 @@ def read_clients(number):
     """The clients of a run as the daemon and the graph say they are now: a plan's segments, or a declared chain."""
     if number in daemon.plans:
         try:
-            segments = parse_segments(daemon.call(command("plan_get", number))[1])
+            segments = protocol.client.read_plan_get(daemon.call(command("plan_get", number))[1].split())["segments"]
         except (OSError, ValueError, *FAILURES):
             return daemon.clients.get(number, {})
         return segment_clients(number, segments)
@@ -970,23 +970,6 @@ def due(number):
 
 # ---- The plan: the daemon says which of the members run together ----
 
-def parse_segments(text):
-    """'1,2;3;4,5' => [[1, 2], [3], [4, 5]]; the cores that follow the segments in a plan's reply are not read."""
-    return [[int(i) for i in segment.split(",")] for segment in text.split()[0].split(";")]
-
-
-def parse_reasons(text):
-    """'3:verdict-isolated,5:plan-refused:<code>' => {3: 'verdict-isolated', 5: 'plan-refused:<code>'}; '-' is none.
-    The instance ends at the first colon: a reason may hold more of them."""
-    reasons = {}
-    if text and text != "-":
-        for item in text.split(","):
-            instance, _, reason = item.partition(":")
-            if instance.isdigit() and reason:
-                reasons.setdefault(int(instance), reason)
-    return reasons
-
-
 def plan_answered():
     """False when the daemon does not know the plan verbs, asked with a read that a daemon which has
     them answers: plan_get of a chain nobody planned is the daemon's no-such-plan refusal, a daemon without them
@@ -1052,7 +1035,8 @@ def plan_chain(chain_id, members):
     if daemon.chains.get(chain_id):  # a chain of the same number the controller declared before
         declare_whole_chain(chain_id, ())
     try:
-        segments = parse_segments(daemon.call(command("plan", chain_id, *members), SLOW_TIMEOUT)[1])
+        reply = daemon.call(command("plan", chain_id, *members), SLOW_TIMEOUT)[1]
+        segments = protocol.client.read_plan(reply.split())["segments"]
     except plugin_hostd_error as e:
         if e.code == protocol.code(INVALID_OPERATION) and not plan_answered():
             daemon.plan_verbs = False
@@ -1065,11 +1049,13 @@ def plan_chain(chain_id, members):
         return True
     daemon.plan_verbs = True
     try:
-        # <segments> <reasons> <cores>
-        reasons = parse_reasons((daemon.call(command("plan_get", chain_id))[1].split() + [""])[1])
+        read = protocol.client.read_plan_get(daemon.call(command("plan_get", chain_id))[1].split())["reasons"]
     except (OSError, ValueError, *FAILURES) as e:
         logging.error(f"plugin-hostd plan_get {chain_id} => {e}")
-        reasons = {}
+        read = []
+    reasons = {}
+    for r in read:  # an instance's first reason is its reason
+        reasons.setdefault(r["instance"], r["reason"])
     if "grouping-off" in reasons.values():
         # The daemon answered the plan and moved nothing: the setting grouping is off, so the chain is
         # declared whole, as it was before there was a plan
@@ -1084,7 +1070,7 @@ def plan_chain(chain_id, members):
     daemon.plans[chain_id] = members
     daemon.reasons.update(reasons)
     daemon.clients[chain_id] = segment_clients(chain_id, segments)
-    if any(r.startswith(RETRY_REASONS) for r in reasons.values()):
+    if any(r["retry"] for r in read):  # a reason the qualification sync or a pin can lift
         daemon.asked_at[chain_id] = time.monotonic()
     else:
         daemon.asked_at.pop(chain_id, None)
