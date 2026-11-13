@@ -124,6 +124,10 @@ class zynthian_chain_manager:
         self.zyngines = {}  # Map of instantiated engines, indexed by engine code
         self.processors = {}  # Dictionary of processor objects indexed by UID
         self.add_refusal = None  # why the engine refused the last add_processor, None when it did not
+        # Processors a snapshot named that could not be built now (the daemon was down, the plugin refused): processor id
+        # (as in the snapshot) => where it sat, its engine code and configuration, and why. They are written back into
+        # every snapshot taken while they wait, so a chain is never saved without what it was meant to hold.
+        self.unbuilt = {}
         self.active_chain = None  # Active chain object => This should NEVER be None!!!
         self.active_midi_chain = None # Chain currently receiving active MIDI input
         self._pinned_chains = 1 # Quantity of pinned chains (shown pinned to right edge of mixer in UI)
@@ -386,6 +390,8 @@ class zynthian_chain_manager:
 
         if chain_id not in self.chains:
             return False
+        # Removing a chain is the user giving up what it was meant to hold
+        self.forget_unbuilt(chain_id)
         self.state_manager.start_busy("remove_chain", "Removing Chain")
         chain_pos = self.get_chain_index(chain_id)
         # List of associated chains that shold be removed simultaneously
@@ -1163,6 +1169,7 @@ class zynthian_chain_manager:
         self.state_manager.end_busy("add_processor")
 
         # Success!! => Return processor
+        self.__dict__.get("unbuilt", {}).pop(str(proc_id), None)
         return processor
 
     def can_move_processor(self, processor):
@@ -1582,12 +1589,32 @@ class zynthian_chain_manager:
     # ------------------------------------------------------------------------
 
     def get_state(self):
-        """Get dictionary of chain slot states indexed by chain id"""
+        """Get dictionary of chain slot states indexed by chain id
+
+        A processor that could not be built when the snapshot was loaded is written back in the slot it had."""
 
         state = {}
         for chain_id in self.chains:
             state[chain_id] = self.chains[chain_id].get_state()
+        for proc_id, kept in self.__dict__.get("unbuilt", {}).items():
+            chain_state = state.get(kept["chain"])
+            if chain_state is not None:
+                slots = chain_state.setdefault("slots", [])
+                slots.insert(min(kept["slot"], len(slots)), {int(proc_id): kept["eng_code"]})
         return state
+
+    def keep_unbuilt(self, chain_id, slot, proc_id, eng_code, eng_config, reason):
+        """Remember a processor a snapshot named and that could not be built, with why, so the next snapshot keeps it"""
+
+        self.__dict__.setdefault("unbuilt", {})[str(proc_id)] = {
+            "chain": chain_id, "slot": slot, "eng_code": eng_code, "eng_config": eng_config, "reason": reason}
+
+    def forget_unbuilt(self, chain_id=None):
+        """Give up the unbuilt processors of a chain, of every chain for None"""
+
+        unbuilt = self.__dict__.setdefault("unbuilt", {})
+        for proc_id in [i for i, k in unbuilt.items() if chain_id is None or k["chain"] == chain_id]:
+            del unbuilt[proc_id]
 
     def set_state(self, state, engine_config, merge=False):
         """Create chains from state
@@ -1604,6 +1631,7 @@ class zynthian_chain_manager:
         if not merge:
             # Remove all chains but don't the unused engines yet
             self.remove_all_chains(False)
+            self.forget_unbuilt()
 
         # Stop those unused engines that need restart
         self.stop_unused_single_proc_engines()
@@ -1614,7 +1642,7 @@ class zynthian_chain_manager:
             chain_id = self.add_chain_from_state(chain_id, chain_state)
             if "slots" in chain_state:
                 slot = 0
-                for slot_state in chain_state["slots"]:
+                for slot_index, slot_state in enumerate(chain_state["slots"]):
                     # slot_state is a dict of proc_id:proc_type for procs in this slot
                     for proc_id, eng_code in slot_state.items():
                         if proc_id == str(zynthian_state_manager.MAIN_MIXBUS_ID):
@@ -1630,15 +1658,35 @@ class zynthian_chain_manager:
                             slot = self.chains[chain_id].get_slot(processor)
                         elif self.add_refusal:
                             dropped.append(self.add_refusal)
+                            # not built, not lost: the next snapshot writes it back where it was
+                            self.keep_unbuilt(chain_id, slot_index, proc_id, eng_code, eng_config, self.add_refusal)
                     slot += 1
+            self.restore_mixer_strip(chain_id)
             if "zctrls" in chain_state:
                 self.chains[chain_id].set_zctrls_state(chain_state["zctrls"])
         self.rebuild_optimisation_cache()
         self.state_manager.end_busy("set_chain_state")
         if dropped:
-            logging.error("The snapshot was loaded without: " + "; ".join(dropped))
+            logging.error("The snapshot was loaded without: " + "; ".join(dropped) + " (kept in the snapshot until the chain is removed)")
             zynsigman.send_queued(zynsigman.S_GUI, zynsigman.SS_GUI_SHOW_MESSAGE,
                                   message="Not loaded: " + "; ".join(dropped), timeout=8)
+
+    def restore_mixer_strip(self, chain_id):
+        """Give a restored chain that makes sound its mixer strip, if the snapshot left it out
+
+        The UI adds the strip when it creates a chain with a synth, and the audio autoconnect routes a chain's outputs
+        only through it: a snapshot written without it (by hand, by a tool) would leave the chain silent.
+        chain_id : ID of the restored chain
+        Returns : the strip's processor if one was added, else None
+        """
+
+        chain = self.chains.get(chain_id)
+        if chain_id == 0 or chain is None or chain.zynmixer_proc or not chain.synth_slots:
+            return None
+        logging.warning(f"The snapshot holds chain {chain_id} without its mixer strip: adding one, so its audio is routed")
+        # a proc_id, as for every processor of a snapshot: no add signal while it loads
+        return self.add_processor(chain_id, "MI", proc_id=self.get_available_processor_id(), fast_refresh=False,
+                                  midi_autolearn=False)
 
     def restore_presets(self):
         """Restore presets in active chain"""

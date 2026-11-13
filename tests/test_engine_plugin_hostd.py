@@ -509,7 +509,8 @@ class test_protocol(plugin_hostd_case):
             f.write("#!/bin/sh\necho \"plugin-hostd is already running on port $1\" >&2\n")
         os.chmod(stub, 0o755)
         ph.daemon.start_script = stub
-        with mock.patch.object(ph.daemon, "identify", return_value=False):
+        # nothing answers when ensure first asks; the daemon that was already up answers once the script has run
+        with mock.patch.object(ph.daemon, "identify", side_effect=[False, True]):
             ph.daemon.ensure()
         self.assertIsNone(ph.daemon.pid)
 
