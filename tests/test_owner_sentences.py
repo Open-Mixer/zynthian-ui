@@ -27,6 +27,9 @@ if "zyngine" not in sys.modules:
     sys.modules["zyngine"] = _pkg
 
 from zyngine import zynthian_plugin_hostd_protocol as protocol_files  # noqa: E402
+
+sys.path.append(os.environ.get("ZYNTHIAN_OMX_CONTRACT_SHARE", "/usr/share/omx-contract"))
+import omx_contract_catalog as reader  # noqa: E402
 from zyngine import zynthian_plugin_hostd_estimate as estimate  # noqa: E402
 
 CONTRACT_DIR = (os.environ.get("OMX_CONTRACT_PATH") or "/usr/share/omx-contract/contract.d").split(":")[0]
@@ -60,8 +63,9 @@ def owner_sources():
 
 
 def catalog_sentence(owner, key, lang):
-    with open(os.path.join(CATALOG_ROOT, owner, "catalogs", "%s.json" % lang)) as f:
-        return json.load(f)["messages"].get(key)
+    """The sentence the owner's own reader (omx-contract's omx_contract_catalog) gives for a key of an installed
+    catalog: an entry is a sentence or an object carrying it (omx-contract 3.18.0), and the reader says which."""
+    return reader.sentence_of(reader.load_catalog(owner, lang, CATALOG_ROOT), key, None)
 
 
 def code_keys():
@@ -100,6 +104,46 @@ ENGLISH = {"LANG": "en_GB.UTF-8", "LC_ALL": "", "LC_MESSAGES": "", "LANGUAGE": "
 # the reasons the estimate shows for a member, and a refusal of a preset load
 CODES = ("reply.plugin-hostd.no-record", "reply.plugin-hostd.no-cell", "reply.plugin-hostd.unknown-plugin",
          "reply.plugin-hostd.preset-plugin-changed")
+
+
+class test_a_catalog_entry_reads_as_its_text(unittest.TestCase):
+    """omx-contract 3.18.0 installs an entry as an object ({"text", "by", "source"}); the footer of the chain manager
+    shows the sentence, never the object (#29)."""
+
+    KEY = "reply.plugin-hostd.no-cell"
+
+    def codes(self, messages, lang="ca"):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        p = protocol_files.reply_codes()
+        owner = p.client.owners[self.KEY]
+        os.makedirs(os.path.join(self.tmp.name, owner, "catalogs"))
+        with open(os.path.join(self.tmp.name, owner, "catalogs", "%s.json" % lang), "w") as f:
+            json.dump({"kind": "catalog", "lang": lang, "owner": owner, "messages": messages}, f)
+        p.client.datadir, p.client._catalogs = self.tmp.name, {}
+        return p, {v: k for k, v in code_keys().items()}[self.KEY]
+
+    def test_an_object_entry_in_catalan_is_its_text(self):
+        p, number = self.codes({self.KEY: {"text": "Aquest plugin no te cap mesura", "by": "human"}})
+        with mock.patch.dict(os.environ, CATALAN):
+            self.assertEqual(p.sentence(number), "Aquest plugin no te cap mesura")
+            self.assertEqual(p.meaning(number), "Aquest plugin no te cap mesura")
+
+    def test_a_string_entry_is_still_its_text(self):
+        p, number = self.codes({self.KEY: "Frase en catala"})
+        with mock.patch.dict(os.environ, CATALAN):
+            self.assertEqual(p.sentence(number), "Frase en catala")
+
+    def test_an_entry_made_from_another_source_is_skipped_for_the_source_sentence(self):
+        p, number = self.codes({self.KEY: {"text": "Vella", "by": "machine", "model": "m", "source": "0" * 64}})
+        with mock.patch.dict(os.environ, CATALAN):
+            self.assertEqual(p.sentence(number), p.client.sentence(number))
+
+    def test_in_english_it_is_the_source_sentence(self):
+        p, number = self.codes({self.KEY: {"text": "Aquest", "by": "human"}})
+        with mock.patch.dict(os.environ, ENGLISH):
+            self.assertEqual(p.sentence(number), p.client.sentence(number))
+            self.assertIsInstance(p.sentence(number), str)
 
 
 class test_an_owner_code_reads_in_the_device_language(unittest.TestCase):

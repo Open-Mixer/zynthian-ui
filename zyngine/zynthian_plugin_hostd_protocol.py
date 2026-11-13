@@ -16,10 +16,17 @@
 # ******************************************************************************
 
 import os
+import sys
 import json
 import logging
 
-from plugin_hostd_protocol import Protocol, ProtocolError
+# the directory omx-contract-data installs its Python readers in: the catalog reader is read from there
+SHARE_PATH = os.environ.get("ZYNTHIAN_OMX_CONTRACT_SHARE", "/usr/share/omx-contract")
+if SHARE_PATH not in sys.path:
+    sys.path.append(SHARE_PATH)
+
+from omx_contract_catalog import load_catalog, sentence_of  # noqa: E402
+from plugin_hostd_protocol import Protocol, ProtocolError  # noqa: E402
 from plugin_hostd_protocol import words, quote, encode_path, decode_path, uri_word, pin_key  # noqa: F401
 
 # Where the files are: libplugin-hostd-protocol0 (plugin-hostd 0.16.0 on) installs them in its own directory, the
@@ -167,7 +174,16 @@ class reply_codes:
         sentence, else its English source sentence; None for a number no owner code has."""
         if self.client is None:
             return None
-        return self.client.sentence(code, lang or device_language()) or self.client.sentence(code)
+        lang = lang or device_language()
+        source = self.client.sentence(code)
+        name = self.client.names.get(code)
+        owner = self.client.owners.get(name)
+        if source is None or lang == "en" or owner is None:
+            return source
+        # an entry of an owner's catalog is a sentence or an object carrying it (omx-contract 3.18.0): the owner's
+        # reader says which, and skips an entry made from another source sentence. The client's own sentence() hands
+        # the object back whole in a language other than English, so the catalog is read here.
+        return sentence_of(load_catalog(owner, lang, self.client.datadir), name, source)
 
     def meaning(self, code):
         """What a code says to the operator: its owner's sentence in the device's language, else its name."""
