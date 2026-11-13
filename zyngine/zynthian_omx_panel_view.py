@@ -30,10 +30,10 @@ TOOLS_DIR = "/usr/share/omx-panel/tools"
 
 PIXEL_RGBA8_STRAIGHT = 2
 
-# omx_panel_event_kind_t, omx_panel_key_t, omx_panel_word_t, omx_panel_pointer_t
+# omx_panel_event_kind_t, omx_panel_key_t, omx_panel_pointer_t; the gesture words (omx_panel_word_t) are not listed
+# here: word_name() asks the library for the name of the one an answer carries
 EVENT_DOWN, EVENT_MOVE, EVENT_UP, EVENT_WHEEL, EVENT_DETENT, EVENT_KEY = range(6)
 KEY_BACKSPACE, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT = range(5)
-WORDS = ("none", "drag", "fine", "step", "second", "reset", "more", "select", "toggle", "paint")
 POINTER_TOUCH, POINTER_MOUSE = 0, 1
 
 
@@ -83,8 +83,12 @@ def library():
         except OSError as e:
             _lib_error = f"omx-panel's renderer ({name}) is not installed: {e}"
         else:
-            _declare(lib)
-            _lib = lib
+            try:
+                _declare(lib)
+            except AttributeError as e:
+                _lib_error = f"omx-panel's renderer ({name}) is older than this module needs: {e}"
+            else:
+                _lib = lib
     if _lib is None:
         raise RendererAbsent(_lib_error)
     return _lib
@@ -111,9 +115,16 @@ def _declare(lib):
                                                        ctypes.POINTER(_Answer)]),
             ("omx_panel_view_target_rect", B, [P, U, ctypes.POINTER(ctypes.c_double * 4), DP]),
             ("omx_panel_view_tick", ctypes.c_size_t, [P, D, ctypes.POINTER(_Change), ctypes.c_size_t,
-                                                      ctypes.POINTER(_Answer)])):
+                                                      ctypes.POINTER(_Answer)]),
+            ("omx_panel_word_name", S, [ctypes.c_int])):
         f = getattr(lib, name)
         f.restype, f.argtypes = res, args
+
+
+def word_name(word):
+    """The name of a gesture word as omx-panel's gestures.json spells it; "" for no word, None for a value that is none."""
+    name = library().omx_panel_word_name(word)
+    return None if name is None else name.decode()
 
 
 class View:
@@ -191,13 +202,13 @@ class View:
         changes = (_Change * 64)()
         a = _Answer()
         k = self.lib.omx_panel_view_input(self.view, ctypes.byref(e), changes, 64, ctypes.byref(a))
-        return [(c.control, c.fraction, c.value) for c in changes[:k]], WORDS[a.word], a.selected
+        return [(c.control, c.fraction, c.value) for c in changes[:k]], word_name(a.word), a.selected
 
     def tick(self, t_ms):
         changes = (_Change * 64)()
         a = _Answer()
         k = self.lib.omx_panel_view_tick(self.view, t_ms, changes, 64, ctypes.byref(a))
-        return [(c.control, c.fraction, c.value) for c in changes[:k]], WORDS[a.word], a.selected
+        return [(c.control, c.fraction, c.value) for c in changes[:k]], word_name(a.word), a.selected
 
     def draw(self, width, height, scale=1.0):
         """The panel drawn into width x height pixels: RGBA, straight alpha, rows of width * 4 bytes."""
