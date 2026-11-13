@@ -19,6 +19,7 @@
 
 import ctypes
 import json
+import logging
 import math
 import os
 import tempfile
@@ -222,7 +223,7 @@ def screen_part(layout, keys):
     controls = layout.get("controls", [])
     displays = layout.get("displays", [])
     wanted = {c["section"] for c in controls if c["symbol"] in keys}
-    wanted |= {d["section"] for d in displays if d.get("kind") in ("eq_response", "transfer_curve")}
+    wanted |= {d["section"] for d in displays if d.get("kind") in curve_words()[0]}
     order = [i for i in range(len(sections)) if i in wanted]
     new = {old: k for k, old in enumerate(order)}
     part = dict(layout)
@@ -235,11 +236,27 @@ def screen_part(layout, keys):
 
 # ---- The curve a display draws: plugin-hostd computes it from a binding (protocol 0.5, curve_bind / curve_points) ----
 
-CURVE_KINDS = ("eq_response", "transfer_curve")
-# the role words a curve is bound by (omx-dsp's CURVE_ROLES, plugin-hostd-protocol's curve_bind): a role of the
-# description that is none of these (attack, release, mix) draws nothing and is not bound
-CURVE_ROLES = ("band_type", "band_freq", "band_gain", "band_q", "band_on", "hpf_freq", "hpf_slope", "hpf_on", "lpf_freq",
-               "lpf_slope", "lpf_on", "threshold", "ratio", "knee", "makeup", "range", "knee_start", "knee_end")
+CONTRACT_PATH = "/usr/share/omx-contract/contract.d"
+_curve_words = {}  # contract directory => (display kinds, role words)
+
+
+def curve_words(root=None):
+    """(the display kinds drawn from a curve, the role words a curve is bound by) as omx-dsp declares them:
+    CURVE_DISPLAYS and CURVE_ROLES of the curve.json its contract package installs, in the wire's spelling (snake
+    case, the description's own words). A role of the description that is none of these (attack, release, mix) draws
+    nothing and is not bound. Two empty tuples when the declaration cannot be read: no display is a curve then."""
+    root = root or (os.environ.get("OMX_CONTRACT_PATH") or CONTRACT_PATH).split(":")[0]
+    if root not in _curve_words:
+        def wire(ids):
+            return tuple("".join("_" + c.lower() if c.isupper() else c for c in i) for i in ids)
+        try:
+            with open(os.path.join(root, "3", "omx-dsp", "primitives", "curve.json")) as f:
+                doc = json.load(f)
+            _curve_words[root] = wire(doc["CURVE_DISPLAYS"]["ids"]), wire(doc["CURVE_ROLES"]["ids"])
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            logging.warning("omx-dsp's curve.json is not readable (%s): no curve is drawn", e)
+            return (), ()
+    return _curve_words[root]
 
 
 def curve_bind_line(instance, index, description):
@@ -247,11 +264,12 @@ def curve_bind_line(instance, index, description):
     term per role, <role>[.<index>]=<symbol>:<unit>[@<shape>|...], the symbols as the daemon sets them. None for a
     display that is not a curve."""
     display = (description.get("displays") or [])[index]
-    if display.get("kind") not in CURVE_KINDS:
+    kinds, roles = curve_words()
+    if display.get("kind") not in kinds:
         return None
     terms = []
     for r in description.get("roles", []):
-        if r["role"] not in CURVE_ROLES:
+        if r["role"] not in roles:
             continue
         role = r["role"] + (f".{r['index']}" if r["role"].startswith("band_") else "")
         term = f"{role}={r['symbol']}:{r.get('unit') or 'none'}"
