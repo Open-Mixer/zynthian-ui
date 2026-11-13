@@ -1,0 +1,34 @@
+# The literals of an owner's installed contract files that this fork's modules still write, which
+# tools/restated_declarations.py finds: <module> <literal> <sites>. It only gets shorter: a literal read from its
+# owner leaves its line, and the line goes in the same change (Open-Mixer/zynthian-ui#4).
+zyngine/zynthian_engine_plugin_hostd.py grouping-off 1
+zyngine/zynthian_engine_plugin_hostd.py hide_external_ui 1
+zyngine/zynthian_engine_plugin_hostd.py no-verdict 1
+zyngine/zynthian_engine_plugin_hostd.py omx-clap-host 1
+zyngine/zynthian_engine_plugin_hostd.py pin_accept 1
+zyngine/zynthian_engine_plugin_hostd.py pin_clear 1
+zyngine/zynthian_engine_plugin_hostd.py pin_reload 1
+zyngine/zynthian_engine_plugin_hostd.py plan_get 1
+zyngine/zynthian_engine_plugin_hostd.py plugin-hostd 1
+zyngine/zynthian_engine_plugin_hostd.py qualified-only 1
+zyngine/zynthian_engine_plugin_hostd.py show_external_ui 2
+zyngine/zynthian_engine_plugin_hostd.py state_save 1
+zyngine/zynthian_engine_plugin_hostd.py worker_list 3
+zyngine/zynthian_omx_panel_view.py output_set 1
+zyngine/zynthian_plugin_hostd_catalogue.py plugin-hostd 3
+zyngine/zynthian_plugin_hostd_grouping.py plan-refused 1
+zyngine/zynthian_plugin_qualification.py fixed-frame 1
+zyngine/zynthian_plugin_qualification.py fixed-time 1
+zyngine/zynthian_plugin_qualification.py hosting.stability.crash-unattributed 1
+zyngine/zynthian_plugin_qualification.py hosting.stability.crashed-attributed-plugin 1
+zyngine/zynthian_plugin_qualification.py hosting.stability.crashed-live-on-this-rig 1
+zyngine/zynthian_plugin_qualification.py hosting.stability.unsoaked 1
+zyngine/zynthian_plugin_qualification.py in-process 1
+zyngine/zynthian_plugin_qualification.py pin_set 1
+zyngine/zynthian_plugin_qualification.py probe-crashed 1
+zyngine/zynthian_plugin_qualification.py probe-timeout 2
+zyngine/zynthian_plugin_qualification.py rtSafety 5
+zyngine/zynthian_plugin_tiers.py hosting.stability.unsoaked 1
+zyngine/zynthian_plugin_tiers.py load-all 2
+zyngine/zynthian_plugin_tiers.py qualified-only 3
+zyngine/zynthian_plugin_tiers.py warn-on-crashes 4

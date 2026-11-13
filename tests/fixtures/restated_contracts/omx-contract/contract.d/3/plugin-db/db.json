@@ -1,0 +1,22 @@
+{
+  "$schema": "https://github.com/FreeMixer/omx-contract/raw/v3/schema/omx-contract.schema.json",
+  "PLUGIN_DB_TIERS": {
+    "kind": "words",
+    "doc": "A fixture: the words of a tier, trimmed from plugin-db's db.json.",
+    "words": {
+      "loadAll": {"word": "load-all", "doc": "Every plugin loads.", "meaning": "meaning-token"},
+      "qualifiedOnly": {"word": "qualified-only", "text": {"en": "Only a qualified plugin loads; see pin_set."}},
+      "off": {"word": "off", "doc": "doc-token", "text": "text-token"}
+    }
+  },
+  "PLUGIN_DB_PROBES": {
+    "kind": "set",
+    "ids": ["probe-timeout", "on", "off", "rtSafety"]
+  },
+  "PLUGIN_DB_LIMITS": {
+    "kind": "list",
+    "unit": "ms",
+    "values": ["fixed-frame", "id", "12345"]
+  },
+  "PLUGIN_DB_TIMEOUT": {"kind": "scalar", "value": "never-read-scalar", "unit": "ms"}
+}
