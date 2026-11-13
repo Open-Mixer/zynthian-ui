@@ -303,8 +303,8 @@ class test_daemon(plugin_hostd_case):
 
 
 class test_protocol(plugin_hostd_case):
-    """The reply codes are plugin-hostd's Python client's, read from the installed table; mod-host's names from
-    mod-host.json stand for the numbers the table gives no code."""
+    """The reply codes are plugin-hostd's Python client's, read from the installed table alone: from
+    plugin-hostd-protocol 0.5.8 on it names every code the engine branches on, and mod-host.json is not read."""
 
     def declared(self, reply_codes=None, host_errors=None, node_metadata=None):
         """(table, directory) of a protocol with the given codes, for a daemon that declares something else."""
@@ -329,7 +329,8 @@ class test_protocol(plugin_hostd_case):
             {"reply.test.odd": -777},
             host_errors=[{"name": "ERR_HOST_INVALID_URI", "value": -101}, {"name": "ERR_LV2_INVALID_URI", "value": -101}]))
         self.assertEqual((p.name(-777), p.code("reply.test.odd"), p.name(-101)),
-                         ("reply.test.odd", -777, "ERR_HOST_INVALID_URI"))
+                         ("reply.test.odd", -777, "ERR_101"), "a name mod-host.json alone declares is not read")
+        self.assertIsNone(p.find("ERR_HOST_INVALID_URI"))
         self.assertEqual(p.name(-501), "ERR_501", "a code the files do not declare is a bare number")
         with self.assertRaises(KeyError):
             p.code("reply.plugin-hostd.placement-invalid")
@@ -379,13 +380,12 @@ class test_protocol(plugin_hostd_case):
                 ph.daemon.ensure()
         self.assertIn(table, str(down.exception), "the refusal names the file")
 
-    def test_mod_host_json_missing_is_a_failure_too(self):
+    def test_mod_host_json_is_not_read(self):
         table, directory = self.declared()
         os.remove(os.path.join(directory, "mod-host.json"))
-        with self.assertLogs(level=logging.ERROR):
-            p = self.codes(table, directory)
-        self.assertFalse(p.loaded)
-        self.assertIn(os.path.join(directory, "mod-host.json"), p.failure)
+        p = self.codes(table, directory)
+        self.assertTrue(p.loaded, "the table alone is the protocol")
+        self.assertIsNone(p.failure)
 
     def test_a_name_the_engine_branches_on_and_the_files_do_not_declare_is_a_failure(self):
         pending = "reply.plugin-hostd.descriptor-pending"
