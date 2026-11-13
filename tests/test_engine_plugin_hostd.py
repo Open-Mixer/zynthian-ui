@@ -344,7 +344,7 @@ class test_protocol(plugin_hostd_case):
 
     def test_the_installed_files_name_what_the_engine_branches_on(self):
         self.assertEqual(ph.protocol.name(-101), "reply.host.uri-invalid", "mod-host.json's name, not a retyped one")
-        for code, name in ((-2, "ERR_INSTANCE_ALREADY_EXISTS"), (-529, "reply.plugin-hostd.descriptor-absent"),
+        for code, name in ((-2, "reply.host.instance-already-exists"), (-529, "reply.plugin-hostd.descriptor-absent"),
                            (-902, "reply.host.invalid-operation")):
             self.assertEqual(ph.protocol.name(code), name)
         self.assertEqual(ph.CHAIN_FALLBACK_CODES, (-501, -519, -520, -521))
