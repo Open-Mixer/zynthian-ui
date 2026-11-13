@@ -1,0 +1,81 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "A fixture domain, trimmed from plugin-db's",
+  "version": "0.0.0",
+  "x-owner": "plugin-db"
+ },
+ "components": {
+  "schemas": {
+   "PLUGIN_DB_TIERS": {
+    "description": "A fixture: the words of a tier.",
+    "x-kind": "words",
+    "oneOf": [
+     {
+      "const": "load-all",
+      "title": "loadAll",
+      "description": "Every plugin loads.",
+      "x-meaning": "meaning-token"
+     },
+     {
+      "const": "qualified-only",
+      "title": "qualifiedOnly",
+      "x-text": "Only a qualified plugin loads; see pin_set."
+     },
+     {
+      "const": "off",
+      "title": "off",
+      "description": "doc-token",
+      "x-text": "text-token"
+     }
+    ]
+   },
+   "PLUGIN_DB_PROBES": {
+    "x-kind": "set",
+    "oneOf": [
+     {
+      "const": "probe-timeout"
+     },
+     {
+      "const": "on"
+     },
+     {
+      "const": "off"
+     },
+     {
+      "const": "rtSafety"
+     }
+    ]
+   },
+   "PLUGIN_DB_LIMITS": {
+    "x-kind": "list",
+    "x-unit": "ms",
+    "oneOf": [
+     {
+      "const": "fixed-frame"
+     },
+     {
+      "const": "id"
+     },
+     {
+      "const": "12345"
+     }
+    ]
+   },
+   "PLUGIN_DB_TIMEOUT": {
+    "x-kind": "scalar",
+    "x-unit": "ms",
+    "const": "never-read-scalar"
+   },
+   "PLUGIN_DB_ISOLATION_HOSTS": {
+    "x-kind": "words",
+    "oneOf": [
+     {
+      "const": "demo-isolation-host",
+      "description": "a host's id"
+     }
+    ]
+   }
+  }
+ }
+}

@@ -1,0 +1,6 @@
+{
+  "protocol": "plugin-hostd-protocol",
+  "commands": [{"verb": "worker_list", "origin": "plugin-hostd"}, {"verb": "remove"}],
+  "feedback": [{"line": "output_set", "origin": "mod-host", "args": []}],
+  "protocol_errors": [{"name": "PROTOCOL_NOT_FOUND", "code": -1, "message": "not found"}]
+}
