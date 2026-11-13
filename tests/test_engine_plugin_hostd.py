@@ -64,15 +64,28 @@ from zyngine.zynthian_processor import zynthian_processor  # noqa: E402
 from fake_plugin_hostd import fake_plugin_hostd  # noqa: E402
 from fake_plugin_hostd import PLUGINS as fake_plugins  # noqa: E402
 
-with open(os.path.join(FIXTURES, "omx-clap-scan.txt")) as _f:
-    CLAP_SCAN = _f.read()
+with open(os.path.join(FIXTURES, "omx-clap-scan.json")) as _f:
+    CLAP_SCAN = json.load(_f)  # a document of omx-clap-scan --json, valid by omx-clap-core's omx-clap-scan.schema.json
 
 
-CLAP_SCAN_MVERB = """  plugin studio.kx.distrho.MVerb "MVerb" vendor falkTX version 1.0
-    features audio-effect reverb stereo
-    in  main 2 channels unknown "in" in_1
-    out main 2 channels unknown "out" out_1
-"""
+def clap_plugin(ident, name, features, vendor="Test", version="1", inputs=0, outputs=1):
+    """A plugin as the scanner's document lists it, with every field its schema requires."""
+    def ports(count, name):
+        return [{"id": 0, "name": name, "role": "main", "channels": 2, "kind": "unknown", "jack": [f"{name}_1"]}] * count
+    return {"id": ident, "name": name, "vendor": vendor, "version": version, "description": "", "url": "",
+            "features": list(features), "params": [], "remote_controls": [],
+            "audio_ports": {"inputs": ports(inputs, "in"), "outputs": ports(outputs, "out")},
+            "note_ports": {"inputs": 0, "outputs": 0}, "panel": None}
+
+
+def clap_scan(*files):
+    """The scanner's document of (path, plugin) files, in the order given."""
+    return {"scanner": "omx-clap-scan", "version": CLAP_SCAN["version"],
+            "files": [{"path": path, "plugins": [plugin]} for path, plugin in files]}
+
+
+def clap_mverb(ident="studio.kx.distrho.MVerb", name="MVerb"):
+    return clap_plugin(ident, name, ("audio-effect", "reverb", "stereo"), vendor="falkTX", version="1.0", inputs=1)
 
 
 def lv2_info(name, uri, etype="Audio Effect"):
@@ -134,7 +147,7 @@ class plugin_hostd_case(unittest.TestCase):
         # The catalogue makes the PH entries the tests add, from jalv's LV2 ones and the CLAP scan
         self.info = {"JV/Amp": lv2_info("Amp", "urn:test:amp"), "JV/NoPin": lv2_info("NoPin", "urn:test:nopin"),
                      "JV/Big": lv2_info("Big", "urn:test:big")}
-        cat.add_catalogue(self.info, clap=cat.parse_clap_scan(CLAP_SCAN), binary=FAKE)
+        cat.add_catalogue(self.info, clap=cat.scanned_plugins(CLAP_SCAN), binary=FAKE)
         # The graph as a worker leaves it after a chain: a member it runs in the head's client has no port
         sys.modules["zynautoconnect"].get_ports.return_value = []
         # a protocol before 0.5.5 declares no instance key; test_hosted_client gives one
@@ -1121,9 +1134,9 @@ class test_pages(plugin_hostd_case):
     REMOTE = "clap:/usr/lib/clap/test.clap#org.test.remote"
 
     def remote(self, pages=True):
-        scan = ('file /usr/lib/clap/test.clap\n  plugin org.test.remote "Remote" vendor Test version 1\n'
-                '    features instrument synthesizer stereo\n    out main 1 channels unknown "out" out_1\n')
-        cat.add_catalogue(self.info, clap=cat.parse_clap_scan(scan), binary=FAKE)
+        scan = clap_scan(("/usr/lib/clap/test.clap", clap_plugin("org.test.remote", "Remote",
+                                                                 ("instrument", "synthesizer", "stereo"))))
+        cat.add_catalogue(self.info, clap=cat.scanned_plugins(scan), binary=FAKE)
         descriptor = {"origin": "scanned", "plugin": {"id": "org.test.remote", "format": "clap"}, "controls": [
             {"id": i, "name": f"P{i}", "kind": "travel", "travel": {"min": 0, "max": 1, "default": 0.5}}
             for i in range(1, 13)]}
@@ -1495,8 +1508,8 @@ class test_catalogue(plugin_hostd_case):
 
     def test_clap_files_that_share_a_plugin_id_are_separate_entries(self):
         # DPF-built files report one id for several files; the pin URI names the file too
-        scan = "".join(f'file /usr/lib/clap/{f}.clap\n' + CLAP_SCAN_MVERB for f in ("3BandEQ", "3BandSplitter"))
-        added = cat.add_catalogue({}, clap=cat.parse_clap_scan(scan), binary=FAKE)
+        scan = clap_scan(*((f"/usr/lib/clap/{f}.clap", clap_mverb()) for f in ("3BandEQ", "3BandSplitter")))
+        added = cat.add_catalogue({}, clap=cat.scanned_plugins(scan), binary=FAKE)
         self.assertEqual(sorted(added), ["PH/clap:/usr/lib/clap/3BandEQ.clap#studio.kx.distrho.MVerb",
                                          "PH/clap:/usr/lib/clap/3BandSplitter.clap#studio.kx.distrho.MVerb"])
         self.assertEqual(len({info["ID"] for info in added.values()}), 2)
@@ -1505,19 +1518,19 @@ class test_catalogue(plugin_hostd_case):
             self.assertEqual(cat.clap_plugins[key]["path"], info["URL"].split("#")[0][5:])
 
     def test_one_clap_id_in_two_directories_is_listed_once(self):
-        surge = CLAP_SCAN_MVERB.replace("studio.kx.distrho.MVerb", "org.surge-synth-team.surge-xt")
-        scan = "file /root/.clap/SurgeXT.clap\n" + surge + "file /usr/local/lib/clap/Surge XT.clap\n" + surge
-        added = cat.add_catalogue({"JV/Surge": lv2_info("Surge", "urn:surge")}, clap=cat.parse_clap_scan(scan),
+        surge = clap_mverb("org.surge-synth-team.surge-xt")
+        scan = clap_scan(("/root/.clap/SurgeXT.clap", surge), ("/usr/local/lib/clap/Surge XT.clap", surge))
+        added = cat.add_catalogue({"JV/Surge": lv2_info("Surge", "urn:surge")}, clap=cat.scanned_plugins(scan),
                                   binary=FAKE)
         self.assertEqual(sorted(added), ["PH/Surge", "PH/clap:/root/.clap/SurgeXT.clap#org.surge-synth-team.surge-xt"])
 
-    SURGE_SCAN = "file /usr/lib/clap/Surge XT.clap\n" + CLAP_SCAN_MVERB.replace(
-        'studio.kx.distrho.MVerb "MVerb"', 'org.surge-synth-team.surge-xt "Surge XT"')
+    SURGE_SCAN = clap_scan(("/usr/lib/clap/Surge XT.clap", clap_mverb("org.surge-synth-team.surge-xt", "Surge XT")),
+                           ("/usr/lib/clap/mverb.clap", clap_mverb()))
     SURGE_CLAP = "PH/clap:/usr/lib/clap/Surge XT.clap#org.surge-synth-team.surge-xt"
 
     def test_titles_keep_the_engine_mark_and_leave_the_format_out(self):
         added = cat.add_catalogue({"JV/Obxd": lv2_info("Obxd", "urn:obxd"), "JV/surge": lv2_info("Surge XT", "urn:surge")},
-                                  clap=cat.parse_clap_scan(self.SURGE_SCAN + "file /usr/lib/clap/mverb.clap\n" + CLAP_SCAN_MVERB),
+                                  clap=cat.scanned_plugins(self.SURGE_SCAN),
                                   binary=FAKE)
         self.assertEqual(added["PH/Obxd"]["TITLE"], "Obxd (PH)")
         self.assertEqual(added[self.SURGE_CLAP]["TITLE"], "Surge XT (PH)")
@@ -1528,7 +1541,7 @@ class test_catalogue(plugin_hostd_case):
 
     def test_the_detail_line_names_the_format_and_the_other_installed_build(self):
         added = cat.add_catalogue({"JV/Obxd": lv2_info("Obxd", "urn:obxd"), "JV/surge": lv2_info("surge  XT", "urn:surge")},
-                                  clap=cat.parse_clap_scan(self.SURGE_SCAN + "file /usr/lib/clap/mverb.clap\n" + CLAP_SCAN_MVERB),
+                                  clap=cat.scanned_plugins(self.SURGE_SCAN),
                                   binary=FAKE)
         self.assertEqual(added[self.SURGE_CLAP]["FORMAT_LINE"],
                          "CLAP, run by plugin-hostd (an LV2 build is also installed)")
@@ -1537,8 +1550,10 @@ class test_catalogue(plugin_hostd_case):
         self.assertEqual(added["PH/clap:/usr/lib/clap/mverb.clap#studio.kx.distrho.MVerb"]["FORMAT_LINE"],
                          "CLAP, run by plugin-hostd")
 
-    def test_clap_scan_text_is_parsed(self):
-        plugins = cat.parse_clap_scan(CLAP_SCAN)
+    def test_the_scanners_document_is_read(self):
+        plugins = cat.scanned_plugins(CLAP_SCAN)
+        self.assertEqual([f["path"] for f in CLAP_SCAN["files"] if "code" in f], ["/usr/lib/clap/broken.clap"])
+        self.assertIn("error", CLAP_SCAN["files"][2]["plugins"][0], "the fixture holds a plugin that failed to create")
         self.assertEqual([p["id"] for p in plugins], ["in.lsp-plug.limiter_mono", "org.test.synth", "org.test.arp"])
         synth = plugins[1]
         self.assertEqual((synth["name"], synth["vendor"], synth["path"]),
@@ -1546,12 +1561,28 @@ class test_catalogue(plugin_hostd_case):
         self.assertEqual(synth["params"][1], {"id": "2", "name": "Wave", "min": 0.0, "max": 3.0, "default": 0.0,
                                               "stepped": True})
 
+    def test_the_scanner_is_asked_for_its_document(self):
+        # a scanner that writes its document for --json and its listing for a person without: only the document is read
+        clap = os.path.join(self.tmp, "clap")
+        os.mkdir(clap)
+        scanner = os.path.join(self.bin, "omx-clap-scan")  # the PATH of these tests
+        with open(scanner, "w") as f:
+            f.write('#!/bin/sh\nif [ "$1" = --json ] && [ "$2" = "%s" ]; then /bin/cat "%s"; else echo "file $1"; fi\n'
+                    % (clap, os.path.join(FIXTURES, "omx-clap-scan.json")))
+        os.chmod(scanner, 0o755)
+        cache = os.path.join(self.tmp, "clap-cache.json")
+        with mock.patch.object(cat, "clap_dirs", lambda: [clap]):
+            plugins = cat.scan_clap(cache)
+        self.assertEqual(plugins, cat.scanned_plugins(CLAP_SCAN))
+        with mock.patch.object(cat, "clap_dirs", lambda: [clap]), mock.patch.object(cat.shutil, "which", lambda name: None):
+            self.assertEqual(cat.scan_clap(cache), plugins, "an unchanged directory is not scanned again")
+
     def test_instruments_and_effects_enter_the_catalogue(self):
         engines = {"JV/ZamComp": lv2_info("ZamComp", "urn:zamaudio:ZamComp"),
                    "JV/Arp": lv2_info("Arp", "urn:test:arp", "MIDI Tool"),
                    "PH/clap:org.test.gone": lv2_info("Gone", "clap:/gone.clap#org.test.gone")}
         _lv2.engines_by_type["Audio Effect"]["PH/clap:org.test.gone"] = engines["PH/clap:org.test.gone"]
-        added = cat.add_catalogue(engines, clap=cat.parse_clap_scan(CLAP_SCAN), binary=FAKE)
+        added = cat.add_catalogue(engines, clap=cat.scanned_plugins(CLAP_SCAN), binary=FAKE)
         self.assertNotIn("PH/clap:org.test.gone", engines, "a plugin no longer installed leaves the catalogue")
         self.assertNotIn("PH/clap:org.test.gone", _lv2.engines_by_type["Audio Effect"])
         self.assertEqual(sorted(added), ["PH/ZamComp", "PH/clap:/usr/lib/clap/lsp-plugins.clap#in.lsp-plug.limiter_mono", "PH/clap:/usr/lib/clap/test.clap#org.test.synth"])
@@ -1565,7 +1596,7 @@ class test_catalogue(plugin_hostd_case):
 
     def test_without_the_daemon_installed_the_entries_are_listed_saying_so(self):
         added = cat.add_catalogue({"JV/ZamComp": lv2_info("ZamComp", "urn:zamaudio:ZamComp")},
-                                  clap=cat.parse_clap_scan(CLAP_SCAN), binary=os.path.join(self.tmp, "absent"))
+                                  clap=cat.scanned_plugins(CLAP_SCAN), binary=os.path.join(self.tmp, "absent"))
         self.assertTrue(added)
         self.assertEqual({info["NOT_WORKING"] for info in added.values()}, {"not installed"})
         self.assertEqual({info["NOT_WORKING_WHY"] for info in added.values()}, {cat.NOT_INSTALLED_WHY})
