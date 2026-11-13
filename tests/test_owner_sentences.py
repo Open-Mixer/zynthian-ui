@@ -1,0 +1,216 @@
+# -*- coding: utf-8 -*-
+#
+# An owner's code reads in the device's language: a refusal or a reason plugin-hostd answers with a code is shown
+# as the sentence of that code, looked up in its owner's installed catalog by plugin-hostd's Python client, the
+# English source sentence when the catalog has none; and no Python literal of ours restates an owner's
+# source sentence. Read from the installed files: plugin-hostd-protocol's table, the contract directory's domains,
+# the owners' catalogs.
+#
+# Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+import ast
+import json
+import os
+import sys
+import tempfile
+import types
+import unittest
+from unittest import mock
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path[:0] = [HERE, ROOT]
+if "zyngine" not in sys.modules:
+    _pkg = types.ModuleType("zyngine")
+    _pkg.__path__ = [os.path.join(ROOT, "zyngine")]
+    sys.modules["zyngine"] = _pkg
+
+from tests import plugin_hostd_harness as harness  # noqa: E402
+
+harness.need()
+from zyngine import zynthian_plugin_hostd_protocol as protocol_files  # noqa: E402
+
+sys.path.append(os.environ.get("ZYNTHIAN_OMX_CONTRACT_SHARE", "/usr/share/omx-contract"))
+import omx_contract_catalog as reader  # noqa: E402
+from zyngine import zynthian_plugin_hostd_estimate as estimate  # noqa: E402
+
+CONTRACT_DIR = (os.environ.get("OMX_CONTRACT_PATH") or "/usr/share/omx-contract/contract.d").split(":")[0]
+CATALOG_ROOT = "/usr/share"
+# the files the scan reads: Zynthian's own Python modules and tools
+OURS = ("zyngine", "zyngui", "zynautoconnect", "zynconf", "tools")
+
+
+def domains(root):
+    """The domain documents of the contract directory: <root>/<name>/<name>.json, and one directory deeper
+    (<root>/plugin-hostd/grouping/grouping.json); the schema major's directory holds no domain."""
+    out = []
+    for name in sorted(os.listdir(root)):
+        top = os.path.join(root, name)
+        if name == "3" or not os.path.isdir(top):
+            continue
+        if os.path.isfile(os.path.join(top, name + ".json")):
+            out.append(os.path.join(top, name + ".json"))
+        for sub in sorted(os.listdir(top)):
+            if os.path.isfile(os.path.join(top, sub, sub + ".json")):
+                out.append(os.path.join(top, sub, sub + ".json"))
+    return out
+
+
+def owner_sources():
+    """Every owner code of the contract directory's domains with its English source sentence: {code: (owner,
+    sentence)}. A code is the `const` of a word that carries `x-text`; its owner is the domain's info.x-owner, else
+    the domain's directory."""
+    out = {}
+
+    def walk(node, owner):
+        if isinstance(node, dict):
+            if isinstance(node.get("const"), str) and isinstance(node.get("x-text"), str):
+                out.setdefault(node["const"], (owner, node["x-text"]))
+            for v in node.values():
+                walk(v, owner)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v, owner)
+
+    for path in domains(CONTRACT_DIR):
+        with open(path) as f:
+            doc = json.load(f)
+        info = doc.get("info") or {} if isinstance(doc, dict) else {}
+        walk(doc, info.get("x-owner") or os.path.basename(os.path.dirname(path)))
+    return out
+
+
+def catalog_sentence(owner, key, lang):
+    """The sentence the owner's own reader (omx-contract's omx_contract_catalog) gives for a key of an installed
+    catalog: an entry is a sentence or an object carrying it (omx-contract 3.18.0), and the reader says which."""
+    return reader.sentence_of(reader.load_catalog(owner, lang, CATALOG_ROOT), key, None)
+
+
+def code_keys():
+    """{number: code} of plugin-hostd-protocol's table, beside the daemon's protocol file."""
+    directory, _ = protocol_files.daemon_file()
+    with open(os.path.join(directory, "plugin-hostd-protocol.json")) as f:
+        return {r["resp"]: r["code"] for r in json.load(f)["reply_codes"]}
+
+
+def restated(paths, sources):
+    """(file, line, code) of every string literal in `paths` that equals an owner's source sentence."""
+    by_sentence = {s: c for c, (_, s) in sources.items()}
+    hits = []
+    for path in paths:
+        try:
+            with open(path, encoding="utf-8") as f:
+                tree = ast.parse(f.read())
+        except (OSError, SyntaxError, ValueError):
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value in by_sentence:
+                hits.append((path, node.lineno, by_sentence[node.value]))
+    return hits
+
+
+def our_files():
+    for top in OURS:
+        for dirpath, _, names in os.walk(os.path.join(ROOT, top)):
+            for name in names:
+                if name.endswith(".py"):
+                    yield os.path.join(dirpath, name)
+
+
+CATALAN = {"LANG": "ca_ES.UTF-8", "LC_ALL": "", "LC_MESSAGES": "", "LANGUAGE": ""}
+ENGLISH = {"LANG": "en_GB.UTF-8", "LC_ALL": "", "LC_MESSAGES": "", "LANGUAGE": ""}
+# the reasons the estimate shows for a member, and a refusal of a preset load
+CODES = ("reply.plugin-hostd.no-record", "reply.plugin-hostd.no-cell", "reply.plugin-hostd.unknown-plugin",
+         "reply.plugin-hostd.preset-plugin-changed")
+
+
+class test_a_catalog_entry_reads_as_its_text(unittest.TestCase):
+    """omx-contract 3.18.0 installs an entry as an object ({"text", "by", "source"}); the footer of the chain manager
+    shows the sentence, never the object."""
+
+    KEY = "reply.plugin-hostd.no-cell"
+
+    def codes(self, messages, lang="ca"):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        p = protocol_files.reply_codes()
+        owner = p.client.owners[self.KEY]
+        os.makedirs(os.path.join(self.tmp.name, owner, "catalogs"))
+        with open(os.path.join(self.tmp.name, owner, "catalogs", "%s.json" % lang), "w") as f:
+            json.dump({"kind": "catalog", "lang": lang, "owner": owner, "messages": messages}, f)
+        p.client.datadir, p.client._catalogs = self.tmp.name, {}
+        return p, {v: k for k, v in code_keys().items()}[self.KEY]
+
+    def test_an_object_entry_in_catalan_is_its_text(self):
+        p, number = self.codes({self.KEY: {"text": "Aquest plugin no te cap mesura", "by": "human"}})
+        with mock.patch.dict(os.environ, CATALAN):
+            self.assertEqual(p.sentence(number), "Aquest plugin no te cap mesura")
+            self.assertEqual(p.meaning(number), "Aquest plugin no te cap mesura")
+
+    def test_a_string_entry_reads_as_the_owners_reader_reads_it(self):
+        # a plain string was an entry before omx-contract 3.18.0; whether it is still read is the reader's to say
+        p, number = self.codes({self.KEY: "Frase en catala"})
+        with mock.patch.dict(os.environ, CATALAN):
+            said = reader.sentence_of({"messages": {self.KEY: "Frase en catala"}}, self.KEY, p.client.sentence(number))
+            self.assertEqual(p.sentence(number), said)
+
+    def test_an_entry_made_from_another_source_is_skipped_for_the_source_sentence(self):
+        p, number = self.codes({self.KEY: {"text": "Vella", "by": "machine", "model": "m", "source": "0" * 64}})
+        with mock.patch.dict(os.environ, CATALAN):
+            self.assertEqual(p.sentence(number), p.client.sentence(number))
+
+    def test_in_english_it_is_the_source_sentence(self):
+        p, number = self.codes({self.KEY: {"text": "Aquest", "by": "human"}})
+        with mock.patch.dict(os.environ, ENGLISH):
+            self.assertEqual(p.sentence(number), p.client.sentence(number))
+            self.assertIsInstance(p.sentence(number), str)
+
+
+class test_an_owner_code_reads_in_the_device_language(unittest.TestCase):
+
+    def setUp(self):
+        self.sources = owner_sources()
+        self.numbers = {v: k for k, v in code_keys().items()}
+
+    def test_in_catalan_a_refusal_is_its_owner_catalog_sentence(self):
+        with mock.patch.dict(os.environ, CATALAN):
+            p = protocol_files.reply_codes()
+            for key in CODES:
+                owner, _ = self.sources[key]
+                want = catalog_sentence(owner, key, "ca")
+                self.assertTrue(want, "the %s catalog of %s has %s" % ("ca", owner, key))
+                self.assertEqual(p.meaning(self.numbers[key]), want, key)
+
+    def test_in_english_it_is_the_owner_source_sentence(self):
+        with mock.patch.dict(os.environ, ENGLISH):
+            p = protocol_files.reply_codes()
+            for key in CODES:
+                self.assertEqual(p.meaning(self.numbers[key]), self.sources[key][1], key)
+
+    def test_the_estimate_gives_a_member_reason_in_the_device_language(self):
+        key = "reply.plugin-hostd.no-cell"
+        with mock.patch.dict(os.environ, CATALAN):
+            self.assertEqual(estimate.reason(self.numbers[key]), catalog_sentence(self.sources[key][0], key, "ca"))
+
+
+class test_no_literal_restates_an_owner_sentence(unittest.TestCase):
+
+    def test_none_of_ours_does(self):
+        files = list(our_files())
+        self.assertGreater(len(files), 50, "the scan reads our files")
+        self.assertEqual(restated(files, owner_sources()), [])
+
+    def test_sabotage_a_planted_owner_sentence_is_found(self):
+        sources = owner_sources()
+        code, (_, sentence) = sorted(sources.items())[0]
+        with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as f:
+            f.write("WHY = %r\n" % sentence)
+        try:
+            self.assertEqual([c for _, _, c in restated([f.name], sources)], [code])
+        finally:
+            os.unlink(f.name)
+
+
+if __name__ == "__main__":
+    unittest.main()
