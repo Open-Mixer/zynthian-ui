@@ -34,7 +34,6 @@ from plugin_hostd_protocol import words, quote, encode_path, decode_path, uri_wo
 # The first place that holds the daemon's file is the one read.
 PLACES = (("/usr/share/plugin-hostd-protocol", "plugin-hostd.json"), ("/usr/share/plugin-hostd", "protocol.json"))
 DAEMON_FILES = tuple(name for _, name in PLACES)
-HOST_FILE = "mod-host.json"
 PROTOCOL_DIR = os.environ.get("ZYNTHIAN_PLUGIN_HOSTD_PROTOCOL_DIR")
 
 
@@ -77,9 +76,8 @@ def config_default(key, directory=None):
 
 # ---- The reply codes (#4): the number of a code by its name, its name by its number and its sentence are the client's
 # (Protocol: code, name, sentence), read from plugin-hostd-protocol's installed table, the contract directory's
-# vocabularies and the owners' catalogs. A code is named as its owner names it: reply.<group>.<reason>.
-# mod-host's own names (HOST_FILE) stand for the numbers the table gives no code yet: the engine branches on one of
-# them, ERR_INSTANCE_ALREADY_EXISTS (Open-Mixer/omx-clap-core#34), and this read goes when the table has it.
+# vocabularies and the owners' catalogs. A code is named as its owner names it: reply.<group>.<reason>. From
+# plugin-hostd-protocol 0.5.8 on the table names every code the engine branches on, so mod-host's own list is not read.
 
 
 def device_language():
@@ -114,12 +112,7 @@ class reply_codes:
                     self.node_metadata = {r["name"]: r for r in json.load(f).get("node_metadata", [])}
             except (OSError, ValueError, KeyError, TypeError) as e:
                 logging.error("plugin-hostd's protocol table %s gives no node metadata (%s)", self.client.table_path, e)
-        host, host_failure = read(HOST_FILE, directory)
-        self.needs, self.judged, self.base_failure, self.logged = [], [], failure or host_failure, False
-        self.host_codes, self.host_names = {}, {}
-        for e in host.get("host_errors", []):
-            self.host_codes.setdefault(e["name"], e["value"])
-            self.host_names.setdefault(e["value"], e["name"])
+        self.needs, self.judged, self.base_failure, self.logged = [], [], failure, False
         self.needs = list(needs)
         self.failure = self.loaded = None
         self.verify()
@@ -157,7 +150,7 @@ class reply_codes:
                 return self.client.code(name)
             except ProtocolError:
                 pass
-        return self.host_codes.get(name)
+        return None
 
     def code(self, name):
         """The number a name stands for; KeyError for a name no file declares."""
@@ -167,7 +160,7 @@ class reply_codes:
         return code
 
     def name(self, code):
-        return (self.client.name(code) if self.client is not None else None) or self.host_names.get(code, f"ERR_{-code}")
+        return (self.client.name(code) if self.client is not None else None) or f"ERR_{-code}"
 
     def sentence(self, code, lang=None):
         """What an owner's code says to the operator in `lang` (the device's language by default): its owner's catalog
