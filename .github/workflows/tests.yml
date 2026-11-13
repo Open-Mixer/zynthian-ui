@@ -37,32 +37,76 @@ jobs:
 
       - name: Install plugin-hostd from the channel
         run: |
-          apt-get install -y -qq --no-install-recommends plugin-hostd omx-contract-data plugin-hostd-protocol-contract
-          dpkg-query -W plugin-hostd omx-contract-data plugin-hostd-protocol-contract
-          # the owners' sentences are read through omx-contract's Python catalog reader, which omx-contract-data ships
-          # from 3.14.0 on (#6), and the catalogs of plugin-hostd-protocol-contract: a floor and the next major
+          apt-get install -y -qq --no-install-recommends plugin-hostd omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract
+          dpkg-query -W plugin-hostd omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract
+          # the owners' sentences are read from the vocabularies omx-contract-data's contract directory holds, in the
+          # layout it has from 3.14.0 on (#6), and the catalogs of plugin-hostd-protocol-contract: a floor and the
+          # next major
           v=$(dpkg-query -W -f '${Version}' omx-contract-data)
           dpkg --compare-versions "$v" ge 3.14.0 && dpkg --compare-versions "$v" lt 4 \
-            || { echo "::error::omx-contract-data $v is not >= 3.14.0 and < 4: no Python catalog reader"; exit 1; }
-          # the channel's omx-contract-data carries the vectors from omx-contract's release on; until then they come
+            || { echo "::error::omx-contract-data $v is not >= 3.14.0 and < 4"; exit 1; }
+          # the position law is omx-contract's Python reader, installed beside the vectors it is held to; the
+          # channel's omx-contract-data carries both from the release that ships the reader on. Until then they come
           # from a named commit of omx-contract main, and the log says so
-          if [ -f /usr/share/omx-contract/scale-vectors.json ]; then
-            echo "VECTORS FROM INSTALLED PACKAGE"
+          if [ -f /usr/share/omx-contract/omx_contract_scale.py ] && [ -f /usr/share/omx-contract/scale-vectors.json ]; then
+            echo "SCALE READER AND VECTORS FROM INSTALLED PACKAGE"
           else
-            SHA=ea1b1e05eeab2749d42065871973b7d1f38d165d
+            SHA=d70d6652591757a9c7e2a758d014a88c3a5429b6
             apt-get install -y -qq --no-install-recommends git ca-certificates
             git clone -q https://github.com/Open-Mixer/omx-contract /tmp/omx-contract
             git -C /tmp/omx-contract checkout -q "$SHA"
+            test -f /tmp/omx-contract/share/omx-contract/omx_contract_scale.py
             test -f /tmp/omx-contract/data/scale-vectors.json
+            echo "ZYNTHIAN_OMX_CONTRACT_SHARE=/tmp/omx-contract/share/omx-contract" >> "$GITHUB_ENV"
             echo "ZYNTHIAN_OMX_SCALE_VECTORS=/tmp/omx-contract/data/scale-vectors.json" >> "$GITHUB_ENV"
-            echo "VECTORS FROM BRANCH $SHA"
+            echo "SCALE READER AND VECTORS FROM COMMIT $SHA"
+          fi
+
+      - name: Fetch plugin-hostd's Python client
+        run: |
+          # plugin_hostd_protocol, the client the words of a line and the reply codes are read through (#4):
+          # python3-plugin-hostd-protocol from plugin-hostd's next release on; until then from a named commit of its
+          # main, and the log says so. The package knows where the table and the contract directory are installed;
+          # a checkout is told
+          if python3 -c 'import plugin_hostd_protocol' 2>/dev/null; then
+            echo "CLIENT FROM INSTALLED PACKAGE"
+          else
+            SHA=ad132cf7ddb560afd1f6929f7d93ef0ef8f630dc
+            apt-get install -y -qq --no-install-recommends git ca-certificates
+            git clone -q https://github.com/Open-Mixer/plugin-hostd /tmp/plugin-hostd
+            git -C /tmp/plugin-hostd checkout -q "$SHA"
+            test -f /tmp/plugin-hostd/clients/python/plugin_hostd_protocol/__init__.py
+            echo "PYTHONPATH=/tmp/plugin-hostd/clients/python" >> "$GITHUB_ENV"
+            test -f /usr/share/plugin-hostd-protocol/plugin-hostd-protocol.json
+            echo "PLUGIN_HOSTD_PROTOCOL_TABLE=/usr/share/plugin-hostd-protocol/plugin-hostd-protocol.json" >> "$GITHUB_ENV"
+            echo "OMX_CONTRACT_PATH=/usr/share/omx-contract/contract.d" >> "$GITHUB_ENV"
+            echo "CLIENT FROM BRANCH $SHA"
+          fi
+
+      - name: Fetch plugin-db's Python reader and its golden answers
+        run: |
+          # plugin_db, the reader the menus ask about a plugin (#4), and the golden answers the tests ask it with:
+          # python3-plugin-db from plugin-db 0.3.2 on; until that release from a named commit of its main, and the
+          # log says so. The golden answers always come from the checkout.
+          SHA=4a9d62dce6b64d6fe141880c63905ab8255a9219
+          apt-get install -y -qq --no-install-recommends git ca-certificates
+          git clone -q https://github.com/Open-Mixer/plugin-db /tmp/plugin-db
+          git -C /tmp/plugin-db checkout -q "$SHA"
+          test -f /tmp/plugin-db/tests/golden/qualified.json
+          echo "ZYNTHIAN_PLUGIN_DB_GOLDEN=/tmp/plugin-db/tests/golden" >> "$GITHUB_ENV"
+          if python3 -c 'import plugin_db' 2>/dev/null; then
+            echo "READER FROM INSTALLED PACKAGE"
+          else
+            test -f /tmp/plugin-db/python/plugin_db/__init__.py
+            echo "PYTHONPATH=/tmp/plugin-db/python${PYTHONPATH:+:$PYTHONPATH}" >> "$GITHUB_ENV"
+            echo "READER FROM BRANCH $SHA"
           fi
 
       - name: Fetch omx-panel's gesture declaration and build its renderer
         run: |
           apt-get install -y -qq --no-install-recommends git ca-certificates build-essential pkgconf libcjson-dev \
             libomx-contract-dev libomxdsp-dev binutils
-          SHA=28a5f4a9e9e00428b50e0480e5652f41d69c8a34
+          SHA=1b04102ce1388a658b658ca1ac3775d91aa4e0c0
           git clone -q https://github.com/Open-Mixer/omx-panel /tmp/omx-panel
           git -C /tmp/omx-panel checkout -q "$SHA"
           test -f /tmp/omx-panel/schema/gestures.json

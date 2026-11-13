@@ -20,7 +20,7 @@ import unittest
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
-from test_engine_plugin_hostd import plugin_hostd_case, ph  # noqa: E402
+from test_engine_plugin_hostd import plugin_hostd_case, ph, clap_plugin, clap_scan  # noqa: E402
 from zyngine import zynthian_omx_panel_view as pv  # noqa: E402
 from zyngine import zynthian_plugin_hostd_catalogue as cat  # noqa: E402
 
@@ -48,9 +48,8 @@ class OnThePi(plugin_hostd_case):
     def add_real(self, uri, n):
         if uri.startswith("clap:"):
             path, _, ident = uri[5:].partition("#")
-            scan = (f'file {path}\n  plugin {ident} "{ident}" vendor OpenMixer version 1\n    features audio-effect stereo\n'
-                    '    in main 2 channels stereo "in" in_1\n    out main 2 channels stereo "out" out_1\n')
-            cat.add_catalogue(self.info, clap=cat.parse_clap_scan(scan), binary="/usr/bin/plugin-hostd")
+            scan = clap_scan((path, clap_plugin(ident, ident, ("audio-effect", "stereo"), vendor="OpenMixer", inputs=1)))
+            cat.add_catalogue(self.info, clap=cat.scanned_plugins(scan), binary="/usr/bin/plugin-hostd")
             code = "PH/" + uri
         else:
             self.info[f"JV/Real{n}"] = {**self.info["JV/Amp"], "ID": f"Real{n}", "NAME": f"Real{n}", "TITLE": f"Real{n}",
@@ -74,7 +73,7 @@ class OnThePi(plugin_hostd_case):
                   f"bars in {[s['key'] for s in layout['sections'] if s.get('bars')]}, "
                   f"screen {os.path.basename(engine.custom_gui_fpath or '-')}", flush=True)
             for k, d in enumerate(description.get("displays") or []):
-                if d["kind"] in pv.CURVE_KINDS:
+                if d["kind"] in pv.curve_words()[0]:
                     points = engine.curve(k)
                     print(f"  curve {k} {d['kind']} {d['basis']}: {len(points)} points, {points[:2]} .. {points[-1:]}",
                           flush=True)

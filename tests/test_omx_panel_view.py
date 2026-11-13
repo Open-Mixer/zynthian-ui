@@ -12,9 +12,12 @@
 import importlib.util
 import json
 import os
+import shutil
 import socket
+import tempfile
 import time
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURES = os.path.join(HERE, "fixtures", "omx_panel")
@@ -94,6 +97,62 @@ class CurveBinding(unittest.TestCase):
         d = {"family": "dynamics", "displays": [{"kind": "gain_reduction_bar"}], "roles": []}
         self.assertIsNone(view.curve_bind_line(1, 0, d))
 
+    def declaration(self, displays, roles):
+        """A contract directory holding only omx-dsp's curve.json with these ids; OMX_CONTRACT_PATH names it."""
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        os.makedirs(os.path.join(root, "3", "omx-dsp", "primitives"))
+        with open(os.path.join(root, "3", "omx-dsp", "primitives", "curve.json"), "w") as f:
+            json.dump({"CURVE_DISPLAYS": {"ids": displays}, "CURVE_ROLES": {"ids": roles}}, f)
+        patch = mock.patch.dict(os.environ, {"OMX_CONTRACT_PATH": root + ":/nowhere"})
+        patch.start()
+        self.addCleanup(patch.stop)
+        return root
+
+    def test_the_kinds_and_roles_are_the_owners_in_the_wires_spelling(self):
+        kinds, roles = view.curve_words()   # the installed omx-dsp-contract
+        self.assertIn("eq_response", kinds)
+        self.assertIn("transfer_curve", kinds)
+        self.assertIn("knee_start", roles)
+        self.assertNotIn("kneeStart", roles)
+
+    def test_a_role_the_owner_adds_is_bound_and_one_it_drops_is_not(self):
+        self.declaration(["transferCurve", "phaseResponse"], ["threshold", "lookAhead"])
+        d = {"family": "dynamics", "displays": [{"kind": "transfer_curve"}, {"kind": "phase_response"}, {"kind": "eq_response"}],
+             "roles": [{"role": "threshold", "symbol": "t", "unit": "db"}, {"role": "look_ahead", "symbol": "l", "unit": "ms"},
+                       {"role": "ratio", "symbol": "r", "unit": "ratio"}]}
+        self.assertEqual(view.curve_bind_line(1, 0, d), "curve_bind 1 0 transfer_curve dynamics threshold=t:db look_ahead=l:ms")
+        self.assertTrue(view.curve_bind_line(1, 1, d).startswith("curve_bind 1 1 phase_response "))
+        self.assertIsNone(view.curve_bind_line(1, 2, d))
+
+    def test_with_no_declaration_no_display_is_a_curve(self):
+        root = self.declaration([], [])
+        shutil.rmtree(os.path.join(root, "3"))
+        with self.assertLogs(level="WARNING") as logs:
+            self.assertIsNone(view.curve_bind_line(7, 0, fixture("omx-comp")["description"]))
+        self.assertIn("curve.json", logs.output[0])
+
+    def test_the_module_keeps_no_copy_of_the_owners_words(self):
+        with open(view.__file__) as f:
+            source = f.read()
+        for word in ("band_freq", "knee_start", "transfer_curve", "eq_response"):
+            self.assertNotIn(f'"{word}"', source)
+
+    def test_the_module_keeps_no_list_of_the_gesture_words(self):
+        with open(view.__file__) as f:
+            source = f.read()
+        for word in ("drag", "second", "reset", "toggle", "paint"):
+            self.assertNotIn(f'"{word}"', source)
+        self.assertFalse(hasattr(view, "WORDS"))
+
+    def test_a_renderer_without_the_word_names_is_refused_with_its_reason(self):
+        # any library that lacks the renderer's functions stands for a renderer older than the one that names its words
+        with mock.patch.dict(os.environ, {"ZYNTHIAN_OMX_PANEL_RENDER": "libm.so.6"}), \
+                mock.patch.object(view, "_lib", None), mock.patch.object(view, "_lib_error", None):
+            with self.assertRaises(view.RendererAbsent) as refused:
+                view.library()
+            self.assertIn("older than this module needs", str(refused.exception))
+
     def test_the_points_of_a_reply(self):
         self.assertEqual(view.curve_points("3 -80.00,-80.00 -16.00,-17.56 0,-13.50"),
                          [(-80.0, -80.0), (-16.0, -17.56), (0.0, -13.5)])
@@ -152,6 +211,15 @@ class Drawn(unittest.TestCase):
         frame = self.draw(v)
         self.assertTrue(v.set_meter(0, -12.0, 0.0))
         self.assertTrue(self.differs(frame, self.draw(v)))
+
+    def test_the_word_names_are_the_librarys_in_the_declared_order(self):
+        # omx-panel's schema/gestures.json, the file the gesture tests read too
+        with open(os.environ["ZYNTHIAN_OMX_GESTURES"]) as f:
+            words = list(json.load(f)["words"])
+        # OMX_PANEL_WORD_NONE is 0, the declared words follow it in gestures.json's order
+        self.assertEqual([view.word_name(k + 1) for k in range(len(words))], words)
+        self.assertEqual(view.word_name(0), "")
+        self.assertIsNone(view.word_name(len(words) + 1))
 
     def test_a_drag_moves_a_bar_through_the_gestures(self):
         part, _ = view.screen_part(fixture("omx-geq")["layout"], {"band01"})

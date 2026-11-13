@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 #
 # The plugin bar is a setting that lasts: chosen from the admin menu, saved by zynconf.save_config into the
-# configuration file, applied at once (no restart), and read back by the next start. Below-bar rows are painted in the
-# warning colour, a plugin that does not load stays greyed; qualified-only does not accept a refused plugin's pin.
+# configuration file, applied at once (no restart), and read back by the next start. The rows of plugins that are
+# not loaded are painted in the warning colour, a plugin that does not load stays greyed; qualified-only does not
+# accept a refused plugin's pin.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
@@ -145,16 +146,16 @@ class plugin_bar_screen(unittest.TestCase):
         self.assertEqual(tiers.plugin_bar(), "qualified-only")
 
     def test_the_admin_choice_reaches_the_open_list_at_once(self):
-        self.build()
+        self.assertIn(menu.REFUSED, self.build("load-all"))
         tiers.set_plugin_bar("qualified-only", self.fpath)
         self.screen.refresh_bar()
         self.assertEqual(self.screen.bar, "qualified-only")
         self.screen.fill_list()
-        self.assertNotIn("Refused Amp (PH)  below bar · refused", [row[2] for row in self.screen.filled])
+        self.assertEqual([row[2] for row in self.screen.filled], [menu.SLOW, menu.FAST])
 
-    def test_the_rows_below_the_bar_are_painted_warning_and_a_plugin_that_does_not_load_is_greyed(self):
+    def test_the_rows_not_loaded_are_painted_warning_and_a_plugin_that_does_not_load_is_greyed(self):
         self.engines["PH/Slow"].update(NOT_WORKING="does not load")
-        self.build()
+        self.assertEqual(self.build("load-all"), [menu.FAST, menu.REFUSED, "Linear EQ (PH)  not working · does not load"])
         self.screen.listbox.itemconfig.assert_any_call(1, {'fg': "#warn"})
         self.screen.listbox.itemconfig.assert_any_call(2, {'fg': "#grey"})
         self.assertEqual(self.screen.listbox.itemconfig.call_count, 2)
@@ -173,7 +174,7 @@ class plugin_bar_reaches_the_daemon_after_a_restart(engine_tests.plugin_hostd_ca
             f.write(ENVARS)
         install_real_zynconf(self)
         os.environ.pop("ZYNTHIAN_PLUGIN_BAR", None)
-        self.qualify("pin_set urn:test:amp amp.so=00 omx-layout/1:00 verdict=refused\n")
+        self.qualify("refused")
 
     qualify = engine_tests.test_below_bar.qualify
 

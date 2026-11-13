@@ -41,7 +41,7 @@ class samples_case(plugin_hostd_case):
         super().setUp()
         self.info["JV/Sampler"] = lv2_info("Sampler", "urn:test:sampler", "MIDI Synth")
         self.info["JV/Kit"] = lv2_info("Kit", "urn:test:kit", "MIDI Synth")
-        base.cat.add_catalogue(self.info, clap=base.cat.parse_clap_scan(base.CLAP_SCAN), binary=base.FAKE)
+        base.cat.add_catalogue(self.info, clap=base.cat.scanned_plugins(base.CLAP_SCAN), binary=base.FAKE)
 
 
 class test_the_file_reaches_the_plugin(samples_case):
@@ -54,7 +54,7 @@ class test_the_file_reaches_the_plugin(samples_case):
         self.assertEqual(zctrl.path_file_types, ["wav"], "the types are the TTL's")
         zctrl.set_value("/data/sound.wav")
         self.assertEqual(fake.patches[1000], {SAMPLE: "/data/sound.wav"})
-        self.assertIn(f'patch_set 1000 {SAMPLE} "/data/sound.wav"', fake.lines)
+        self.assertIn(f'patch_set 1000 {SAMPLE} /data/sound.wav', fake.lines, "a bare word: nothing in it asks for quotes")
 
     def test_a_path_with_a_space_is_one_word(self):
         fake = self.serve()

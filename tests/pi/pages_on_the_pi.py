@@ -19,7 +19,7 @@ import unittest
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
-from test_engine_plugin_hostd import plugin_hostd_case, ph  # noqa: E402
+from test_engine_plugin_hostd import plugin_hostd_case, ph, clap_plugin, clap_scan  # noqa: E402
 from zyngine import zynthian_plugin_hostd_catalogue as cat  # noqa: E402
 
 PORT = int(os.environ.get("PHD_PORT", "17556"))
@@ -40,9 +40,8 @@ class OnThePi(plugin_hostd_case):
         self.code = "PH/Real"
         if URI.startswith("clap:"):  # clap:<file>#<id>, as the catalogue's scan names it
             path, _, ident = URI[5:].partition("#")
-            scan = (f'file {path}\n  plugin {ident} "{ident}" vendor Test version 1\n    features instrument synthesizer stereo\n'
-                    '    out main 1 channels unknown "out" out_1\n')
-            cat.add_catalogue(self.info, clap=cat.parse_clap_scan(scan), binary="/usr/bin/plugin-hostd")
+            scan = clap_scan((path, clap_plugin(ident, ident, ("instrument", "synthesizer", "stereo"), vendor="Test")))
+            cat.add_catalogue(self.info, clap=cat.scanned_plugins(scan), binary="/usr/bin/plugin-hostd")
             self.code = "PH/" + URI
         else:
             self.info["JV/Real"] = {**self.info["JV/Amp"], "ID": "Real", "NAME": "Real", "TITLE": "Real", "URL": URI}

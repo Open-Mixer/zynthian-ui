@@ -89,9 +89,9 @@ class zynthian_gui_engine(zynthian_gui_selector):
         self.xswipe_sens = 10
         self.qualification = zynthian_plugin_qualification.qualification()
         self.menu_entries = {}
-        self.list_order = "tier"  # one of zynthian_plugin_tiers.ORDERS
+        self.list_order = "state"  # one of zynthian_plugin_tiers.ORDERS
         self.hosted_only = False  # list only the plugins plugin-hostd runs
-        self.bar = zynthian_plugin_tiers.plugin_bar()  # what the menus do with a plugin below our bar: tiers.BARS
+        self.bar = zynthian_plugin_tiers.plugin_bar()  # what the menus offer: one of tiers.BARS
         # The chain's figures with the highlighted plugin in it, asked of plugin-hostd off this thread
         self.estimator = zynthian_plugin_hostd_estimate.estimator(plugin_hostd.estimate_steps)
         self.estimate_key = None
@@ -266,23 +266,30 @@ class zynthian_gui_engine(zynthian_gui_selector):
         return "\n\n".join(t for t in (eng_info.get("DESCR", ""), eng_info.get("FORMAT_LINE", ""),
                                         zynthian_gui_engine.not_working_text(eng_info), below) if t)
 
-    def plugin_facts(self, eng_info):
-        """The qualification facts of a plugin-hostd entry at the current rate, None for any other or when unread."""
+    def jackd_settings(self):
+        """(rate, quantum) of jackd, (None, None) when it can't say."""
+        try:
+            return self.zyngui.state_manager.get_jackd_samplerate(), self.zyngui.state_manager.get_jackd_blocksize()
+        except Exception:
+            return None, None
+
+    def plugin_answer(self, eng_info):
+        """plugin-db's answer for a plugin-hostd entry at the current rate and quantum, None for any other or when
+        it has none."""
         if not eng_info.get("URL") or eng_info.get("NOT_WORKING"):
             return None
         try:
-            rate = self.zyngui.state_manager.get_jackd_samplerate()
-            return self.qualification.refresh().facts(eng_info["URL"], rate)
+            return self.qualification.answer(eng_info["URL"], *self.jackd_settings())
         except Exception as e:
-            logging.debug(f"No qualification facts for {eng_info.get('URL')} => {e}")
+            logging.debug(f"No plugin-db answer for {eng_info.get('URL')} => {e}")
             return None
 
     def below_bar_text(self, eng_info, eng_code=None):
+        """What plugin-db says of the highlighted plugin-hostd plugin, in sentences; None for any other entry."""
         eng_code = eng_code or (self.list_data[self.index][0] if getattr(self, "list_data", None) else None)
         if not (eng_code or "").startswith("PH/"):
             return None
-        facts = self.plugin_facts(eng_info)
-        return zynthian_plugin_tiers.below_bar_text(facts) if facts else None
+        return zynthian_plugin_tiers.answer_text(self.plugin_answer(eng_info))
 
     def show_details(self, eng_code=None):
         eng_info = self.get_info(eng_code)
@@ -337,22 +344,17 @@ class zynthian_gui_engine(zynthian_gui_selector):
         # self.engines_by_cat = sorted(self.engines_by_cat.items(), key=lambda kv: "!" if kv[0] is None else kv[0])
 
     def qualified_entries(self, engines_by_cat):
-        """{cat: [(engine, text, greyed)]}: the plugins tagged with their tier and their figures at the current
-        rate and quantum, in the chosen order, the hidden ones dropped or greyed. Plain titles in their own
-        order if the qualification can't be read."""
-        try:
-            rate = self.zyngui.state_manager.get_jackd_samplerate()
-            quantum = self.zyngui.state_manager.get_jackd_blocksize()
-        except Exception:
-            rate = quantum = None
+        """{cat: [(engine, text, style)]}: the plugins tagged with plugin-db's words for them at the current rate
+        and quantum, in the chosen order, the ones the bar does not offer dropped. Plain titles in their own order
+        if plugin-db can't be asked."""
+        rate, quantum = self.jackd_settings()
         try:
             q = self.qualification.refresh()
-            live_ms = zynthian_plugin_tiers.live_max_ms()
-            return {cat: zynthian_plugin_tiers.menu_entries(engines, lambda url: q.facts(url, rate, quantum), live_ms,
+            return {cat: zynthian_plugin_tiers.menu_entries(engines, lambda url: q.answer(url, rate, quantum),
                                                              self.bar, self.list_order, self.hosted_only)
                     for cat, engines in engines_by_cat.items()}
         except Exception as e:
-            logging.error(f"Can't read the plugin qualification => {e}")
+            logging.error(f"Can't ask plugin-db about the plugins => {e}")
             return {cat: [(eng, info["TITLE"], False) for eng, info in engines.items()]
                     for cat, engines in engines_by_cat.items()}
 
@@ -470,25 +472,12 @@ class zynthian_gui_engine(zynthian_gui_selector):
                     self.engine_info_dirty = True
                     self.update_list()
                 else:
-                    question = self.crash_question(engine)
-                    if question:
-                        # its qualification recorded a crash: the user decides, warned
-                        self.zyngui.show_confirm(question, self.choose_engine, engine)
-                    else:
-                        self.choose_engine(engine)
+                    self.choose_engine(engine)
         elif t == 'B':
             if not self.back_action():
                 self.show_all = True
                 self.get_engines_by_cat()
                 self.update_list()
-
-    def crash_question(self, engine):
-        """The question asked before adding a plugin whose qualification recorded a crash, None for any other."""
-        if not engine.startswith("PH/"):
-            return None
-        info = self.chain_manager.engine_info[engine]
-        facts = self.plugin_facts(info)
-        return zynthian_plugin_tiers.crash_question(info.get("NAME") or engine, facts, self.bar) if facts else None
 
     def choose_engine(self, engine):
         self.zyngui.modify_chain_status["engine"] = engine
@@ -508,7 +497,7 @@ class zynthian_gui_engine(zynthian_gui_selector):
     # List options: the order and the plugin-hostd filter
     # --------------------------------------------------------------------------
 
-    order_titles = {"tier": "Tier", "name": "Name", "cost": "Cost", "latency": "Latency", "rt": "RT safety"}
+    order_titles = {"state": "State", "name": "Name", "latency": "Latency"}
     bar_titles = zynthian_plugin_tiers.BAR_TITLES
 
     def show_menu(self):
@@ -519,7 +508,7 @@ class zynthian_gui_engine(zynthian_gui_selector):
         options["Filter"] = None
         mark = "\u2612" if self.hosted_only else "\u2610"
         options[f"{mark} plugin-hostd plugins only"] = ("hosted_only", not self.hosted_only)
-        options["Plugins below our bar"] = None
+        options["Plugins offered"] = None
         for bar, title in self.bar_titles.items():
             mark = "\u2612" if bar == self.bar else "\u2610"
             options[f"{mark} {title}"] = ("bar", bar)

@@ -40,6 +40,8 @@ import zynconf
 from zyncoder.zyncore import lib_zyncore
 from zyngui import zynthian_gui_config
 from zynautoconnect.mod_ui_routes import drop_mod_ui_routes
+from zynautoconnect.hosted_nodes import hosted_instance, client_of_instance
+from zynautoconnect.unrouted_chains import say_unrouted
 
 # -------------------------------------------------------------------------------
 # Configure logging
@@ -85,6 +87,7 @@ exit_flag = False				# True to exit thread
 paused_flag = False				# True id autoconnect task is paused
 state_manager = None			# State Manager object
 chain_manager = None			# Chain Manager object
+unrouted_said = set()			# IDs of the chains named as unroutable (no mixer strip), said once each
 xruns = 0						# Quantity of xruns since startup or last reset
 # True to perform MIDI connect on next port check cycle
 deferred_midi_connect = False
@@ -190,6 +193,24 @@ def set_port_friendly_name(port, friendly_name=None):
 
 def get_ports(name, is_input=None):
     return jclient.get_ports(name, is_input=is_input)
+
+
+def hosted_key():
+    """plugin-hostd's instance key, from plugin-hostd-protocol's table (node_metadata); None from a protocol that
+    declares none."""
+    try:
+        from zyngine import zynthian_plugin_hostd_protocol
+        return zynthian_plugin_hostd_protocol.reply_codes().instance_key()
+    except Exception:
+        return None
+
+
+def hosted_client(instance):
+    """The name of the JACK client that carries plugin-hostd's instance key for `instance`, or None."""
+    key = hosted_key()
+    if key is None or jclient is None:
+        return None
+    return client_of_instance(jclient, instance, key)
 
 def get_a2m_ports():
     """ Returns list of audio to midi (port name, title)"""
@@ -961,8 +982,10 @@ def midi_autoconnect():
     # if get_port_aliases(port)[0] in zynthian_gui_config.enabled_midi_fb_ports:
     # required_routes[port.name].add("ZynMidiRouter:ctrl_out")
 
-    # Remove mod-ui routes; plugin-hostd's clients have the same names and keep theirs
-    drop_mod_ui_routes(required_routes, chain_manager.processors.values())
+    # Remove mod-ui routes; plugin-hostd's clients, told by their instance key, keep theirs
+    key = hosted_key()
+    drop_mod_ui_routes(required_routes, chain_manager.processors.values(),
+                       hosted=(lambda client: hosted_instance(jclient, client, key) is not None) if key else None)
     # Workaround for mod-host auto routing
     try:
         port = jclient.get_port_by_name("mod-host:midi_in")
@@ -1049,7 +1072,8 @@ def audio_autoconnect():
     for dst in all_audio_dst:
         required_routes[dst.name] = set()
 
-    # Chain audio routing
+    # Chain audio routing: a chain is routed through its mixer strip; one with a sound source and none is named
+    say_unrouted(chain_manager.chains, unrouted_said)
     for chain_id in chain_manager.chains:
         chain = chain_manager.get_chain(chain_id)
         if not chain.is_audio():

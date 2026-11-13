@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 #
 # An owner's code reads in the device's language (#6): a refusal or a reason plugin-hostd answers with a code is shown
-# as the sentence of that code, looked up in its owner's installed catalog through omx-contract's Python catalog
-# reader, the English source sentence when the catalog has none; and no Python literal of ours restates an owner's
+# as the sentence of that code, looked up in its owner's installed catalog by plugin-hostd's Python client, the
+# English source sentence when the catalog has none; and no Python literal of ours restates an owner's
 # source sentence. Read from the installed files: plugin-hostd-protocol's table, the contract directory's vocabularies,
 # the owners' catalogs.
 #
@@ -110,7 +110,7 @@ class test_an_owner_code_reads_in_the_device_language(unittest.TestCase):
 
     def test_in_catalan_a_refusal_is_its_owner_catalog_sentence(self):
         with mock.patch.dict(os.environ, CATALAN):
-            p = protocol_files.protocol()
+            p = protocol_files.reply_codes()
             for key in CODES:
                 owner, _ = self.sources[key]
                 want = catalog_sentence(owner, key, "ca")
@@ -119,7 +119,7 @@ class test_an_owner_code_reads_in_the_device_language(unittest.TestCase):
 
     def test_in_english_it_is_the_owner_source_sentence(self):
         with mock.patch.dict(os.environ, ENGLISH):
-            p = protocol_files.protocol()
+            p = protocol_files.reply_codes()
             for key in CODES:
                 self.assertEqual(p.meaning(self.numbers[key]), self.sources[key][1], key)
 

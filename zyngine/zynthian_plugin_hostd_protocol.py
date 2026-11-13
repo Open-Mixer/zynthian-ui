@@ -2,9 +2,9 @@
 # ******************************************************************************
 # ZYNTHIAN PROJECT: plugin-hostd protocol (zynthian_plugin_hostd_protocol)
 #
-# What plugin-hostd declares about its own protocol, read from the files its package installs:
-# its reply codes and mod-host's, the defaults of its configuration, and the grammar of a word of its lines
-# (quoted words, percent-encoded paths). Nothing here is typed twice: a code is looked up by its name.
+# What plugin-hostd declares about its own protocol. Its reply codes (number, name, sentence) and the grammar of a word
+# of its lines are its Python client's (plugin_hostd_protocol), which reads the table its package installs; the
+# defaults of its configuration are read from the daemon's installed file. Nothing here is typed twice.
 # The line the daemon prints when it is ready is read by zynthian-sys's sbin/plugin-hostd-start.sh,
 # which starts every plugin-hostd on a Zynthian.
 #
@@ -18,7 +18,9 @@
 import os
 import json
 import logging
-import importlib.util
+
+from plugin_hostd_protocol import Protocol, ProtocolError
+from plugin_hostd_protocol import words, quote, encode_path, decode_path, uri_word, pin_key  # noqa: F401
 
 # Where the files are: libplugin-hostd-protocol0 (plugin-hostd 0.16.0 on) installs them in its own directory, the
 # daemon's as plugin-hostd.json; plugin-hostd before 0.16.0 installed that one as protocol.json in its directory.
@@ -50,103 +52,10 @@ def read(name, directory=None):
         return {}, f"plugin-hostd's protocol file {path} is not readable ({e})"
 
 
-# ---- The words of a line, as plugin-hostd-protocol's grammar (core.abnf: word, quoted, escaped-quote) and its
-# "Pins and qualification" section write them: a word is bare or in quotation marks, \" is the only escape inside
-# them, and the path of a clap: uri is percent-encoded (PHD_PIN_PATH_ESCAPE) so any file name is one bare word.
-# The installed grammar file is checked against this by the tests (test_the_words_follow_the_installed_grammar).
-
-CLAP_PREFIX = "clap:"
-ESCAPE = "%"
-EXCLUDED = ",= \t\r\n"  # PHD_PIN_PATH_EXCLUDED: the separators of pin_set's words, and whitespace
-
-
-def words(line):
-    """The words of a line as the daemon reads them: split at whitespace, a word that starts with a quotation mark
-    runs to the next quotation mark that no backslash escapes, \" in it is a quote, the quotes are not part of the
-    value. A quoted word that never closes runs to the end of the line, as the daemon's tokenizer ends it."""
-    out, i, n = [], 0, len(line)
-    while i < n:
-        if line[i].isspace():
-            i += 1
-        elif line[i] == '"':
-            i += 1
-            word = []
-            while i < n and line[i] != '"':
-                if line[i] == "\\" and i + 1 < n and line[i + 1] == '"':
-                    i += 1
-                word.append(line[i])
-                i += 1
-            i += 1
-            out.append("".join(word))
-        else:
-            j = i
-            while j < n and not line[j].isspace():
-                j += 1
-            out.append(line[i:j])
-            i = j
-    return out
-
-
-def quote(value):
-    """A value as one word of a line: in quotation marks, \" for a quote, a backslash as it is (the grammar
-    does not unescape it)."""
-    return '"' + value.replace('"', '\\"') + '"'
-
-
-def escaped(c):
-    return ord(c) < 0x20 or ord(c) == 0x7F or c == ESCAPE or c == '"' or c == "\\" or c in EXCLUDED
-
-
-def encode_path(path):
-    """A path as the word of a pin: every byte PHD_PIN_PATH_EXCLUDED names, the escape, a quote, a backslash and a
-    control byte as %XX (uppercase hex), the rest as it is."""
-    return "".join("".join("%%%02X" % b for b in c.encode()) if escaped(c) else c for c in path)
-
-
-def decode_path(word):
-    """A percent-encoded path as it is; ValueError for a % not followed by two hex digits, as the daemon refuses it."""
-    out, i = bytearray(), 0
-    raw = word.encode()
-    while i < len(raw):
-        if raw[i] == ord(ESCAPE):
-            digits = raw[i + 1:i + 3]
-            if len(digits) != 2 or not all(chr(d) in "0123456789abcdefABCDEF" for d in digits):
-                raise ValueError(f"'%' not followed by two hex digits in {word}")
-            out.append(int(digits, 16))
-            i += 3
-        else:
-            out.append(raw[i])
-            i += 1
-    return out.decode(errors="surrogateescape")
-
-
-def split_uri(uri):
-    """(prefix, path, id) of a clap: uri clap:<path>#<id>; None for any other uri (an LV2 one)."""
-    if not uri.startswith(CLAP_PREFIX) or "#" not in uri:
-        return None
-    path, _, plugin_id = uri[len(CLAP_PREFIX):].rpartition("#")
-    return CLAP_PREFIX, path, plugin_id
-
-
-def uri_word(uri):
-    """A plugin uri as the daemon takes it in an add, estimate, pin_accept or descriptor_get: the path of a clap: uri
-    percent-encoded, so a path with spaces is one word; any other uri as it is."""
-    parts = split_uri(uri)
-    if parts is None:
-        return uri
-    return f"{parts[0]}{encode_path(parts[2 - 1])}#{parts[2]}"
-
-
-def pin_key(uri):
-    """What a pin is keyed by: a clap: uri's path decoded, so the spaced, the quoted and the encoded spelling of
-    one uri are one key; any other uri as it is."""
-    parts = split_uri(uri)
-    if parts is None:
-        return uri
-    try:
-        return f"{parts[0]}{decode_path(parts[1])}#{parts[2]}"
-    except ValueError:
-        return uri
+# ---- The words of a line (words, quote), the percent-encoded path of a clap: uri (encode_path, decode_path) and what
+# a plugin's uri is as a word and as the key of a pin (uri_word, pin_key) are plugin-hostd's own: its Python client,
+# plugin_hostd_protocol (python3-plugin-hostd-protocol), writes them once for every controller. They keep their names
+# here for the modules that read them from this one.
 
 
 def config_default(key, directory=None):
@@ -159,13 +68,11 @@ def config_default(key, directory=None):
     return None
 
 
-# ---- An owner's code in the device's language (#6): the sentence of the code in its owner's installed catalog, read
-# through omx-contract's Python catalog reader, its English source sentence (the contract directory's vocabulary)
-# when the catalog has none. The number of a code is plugin-hostd-protocol's table's; nothing here restates a sentence.
-
-TABLE_FILE = "plugin-hostd-protocol.json"
-CONTRACT_DIR = (os.environ.get("OMX_CONTRACT_PATH") or "/usr/share/omx-contract/contract.d").split(":")[0]
-CATALOG_READER = os.environ.get("OMX_CONTRACT_CATALOG_PY", "/usr/share/omx-contract/omx_contract_catalog.py")
+# ---- The reply codes (#4): the number of a code by its name, its name by its number and its sentence are the client's
+# (Protocol: code, name, sentence), read from plugin-hostd-protocol's installed table, the contract directory's
+# vocabularies and the owners' catalogs. A code is named as its owner names it: reply.<group>.<reason>.
+# mod-host's own names (HOST_FILE) stand for the numbers the table gives no code yet: the engine branches on one of
+# them, ERR_INSTANCE_ALREADY_EXISTS (Open-Mixer/omx-clap-core#34), and this read goes when the table has it.
 
 
 def device_language():
@@ -179,104 +86,69 @@ def device_language():
     return "en"
 
 
-_reader = []
+class reply_codes:
+    """plugin-hostd's reply codes, as its client reads them once from the installed files.
+    needs: the names the caller branches on. A file that is missing or unreadable, or a name no file declares,
+    leaves loaded False and failure saying which, logged once as an error here."""
 
-
-def catalog_reader():
-    """omx-contract's catalog reader, loaded once from where omx-contract installs it; None when it is not there."""
-    if not _reader:
-        module = None
+    def __init__(self, needs=(), table=None, directory=None):
+        self.client, failure = None, None
         try:
-            spec = importlib.util.spec_from_file_location("omx_contract_catalog", CATALOG_READER)
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-        except (OSError, ImportError, AttributeError) as e:
-            logging.error("omx-contract's catalog reader %s is not readable (%s): codes read in English", CATALOG_READER, e)
-            module = None
-        _reader.append(module)
-    return _reader[0]
-
-
-def owner_sources(contract_dir=None):
-    """Every owner code the contract directory declares with its English source sentence: {code: (owner, sentence)}."""
-    out = {}
-
-    def walk(node, owner):
-        if isinstance(node, dict):
-            text = node.get("text")
-            if isinstance(node.get("code"), str) and isinstance(text, dict) and isinstance(text.get("en"), str):
-                out.setdefault(node["code"], (owner, text["en"]))
-            for v in node.values():
-                walk(v, owner)
-        elif isinstance(node, list):
-            for v in node:
-                walk(v, owner)
-
-    root = os.path.join(contract_dir or CONTRACT_DIR, "3")
-    for owner in sorted(os.listdir(root)) if os.path.isdir(root) else []:
-        for name in sorted(os.listdir(os.path.join(root, owner))):
-            if name.endswith(".json"):
-                try:
-                    with open(os.path.join(root, owner, name)) as f:
-                        walk(json.load(f), owner)
-                except (OSError, ValueError):
-                    continue
-    return out
-
-
-class protocol:
-    """plugin-hostd's codes by name and by number, read once from both files.
-    needs: the names the caller branches on. A file that is missing or unreadable, or a name neither file
-    declares, leaves loaded False and failure saying which, logged once as an error here."""
-
-    def __init__(self, directory=None, needs=()):
-        directory, name = daemon_file(directory)
-        (daemon, daemon_failure), (host, host_failure) = (read(n, directory) for n in (name, HOST_FILE))
-        self.codes = {}  # name => code
-        self.names = {}  # code => name, the first name a code has
-        self.meanings = {}  # code => what the code means, as plugin-hostd's protocol file says it
-        # mod-host's codes, then the ones plugin-hostd adds
+            self.client = Protocol(table=table)
+        except (ProtocolError, KeyError, TypeError) as e:
+            failure = f"plugin-hostd's protocol table is not usable: {e}"
+        # the JACK metadata a worker sets on an instance's client (plugin-hostd-protocol 0.5.5, plugin-hostd#33), from
+        # the table the client read
+        self.node_metadata = {}
+        if self.client is not None:
+            try:
+                with open(self.client.table_path) as f:
+                    self.node_metadata = {r["name"]: r for r in json.load(f).get("node_metadata", [])}
+            except (OSError, ValueError, KeyError, TypeError) as e:
+                logging.error("plugin-hostd's protocol table %s gives no node metadata (%s)", self.client.table_path, e)
+        host, host_failure = read(HOST_FILE, directory)
+        self.host_codes, self.host_names = {}, {}
         for e in host.get("host_errors", []):
-            self.codes.setdefault(e["name"], e["value"])
-            self.names.setdefault(e["value"], e["name"])
-        for e in daemon.get("errors", []):
-            self.codes[e["name"]] = e["code"]
-            self.names[e["code"]] = e["name"]
-            if e.get("meaning"):
-                self.meanings[e["code"]] = e["meaning"]
-        # each number's owner code (reply.<group>.<reason>), and each code's owner and source sentence
-        table, _ = read(TABLE_FILE, directory)
-        self.keys = {r["resp"]: r["code"] for r in table.get("reply_codes", [])}
-        self.sources = owner_sources()
-        missing = [n for n in needs if n not in self.codes]
-        self.failure = daemon_failure or host_failure or (
-            f"plugin-hostd's protocol files in {directory} do not declare {', '.join(missing)}"
-            if missing else None)
+            self.host_codes.setdefault(e["name"], e["value"])
+            self.host_names.setdefault(e["value"], e["name"])
+        missing = [n for n in needs if self.find(n) is None]
+        self.failure = failure or host_failure or (
+            f"plugin-hostd's protocol files do not declare {', '.join(missing)}" if missing else None)
         self.loaded = self.failure is None
         if self.failure:
             logging.error("%s: the plugin-hostd engine will not start", self.failure)
 
+    def instance_key(self):
+        """The JACK metadata key a worker sets on each instance's client, its value the instance: what tells a
+        plugin-hostd client from any other, never its name; None from a protocol before 0.5.5, which declares none."""
+        return self.node_metadata.get("instance", {}).get("key")
+
+    def find(self, name):
+        """The number a name stands for; None for a name no file declares."""
+        if self.client is not None:
+            try:
+                return self.client.code(name)
+            except ProtocolError:
+                pass
+        return self.host_codes.get(name)
+
     def code(self, name):
-        """The number a name stands for; KeyError for a name the protocol does not declare."""
-        return self.codes[name]
+        """The number a name stands for; KeyError for a name no file declares."""
+        code = self.find(name)
+        if code is None:
+            raise KeyError(name)
+        return code
 
     def name(self, code):
-        return self.names.get(code, f"ERR_{-code}")
+        return (self.client.name(code) if self.client is not None else None) or self.host_names.get(code, f"ERR_{-code}")
 
     def sentence(self, code, lang=None):
         """What an owner's code says to the operator in `lang` (the device's language by default): its owner's catalog
         sentence, else its English source sentence; None for a number no owner code has."""
-        owner, source = self.sources.get(self.keys.get(code), (None, None))
-        if source is None:
+        if self.client is None:
             return None
-        lang = lang or device_language()
-        reader = catalog_reader() if lang != "en" else None
-        if reader is None:
-            return source
-        key = reader.code_key(self.keys[code])
-        return reader.sentence_of(reader.load_catalog(owner, lang), key, source)
+        return self.client.sentence(code, lang or device_language()) or self.client.sentence(code)
 
     def meaning(self, code):
-        """What a code says to the operator: its owner's sentence in the device's language (sentence), else what the
-        protocol file says it means, else its name."""
-        return self.sentence(code) or self.meanings.get(code) or self.name(code)
+        """What a code says to the operator: its owner's sentence in the device's language, else its name."""
+        return self.sentence(code) or self.name(code)
