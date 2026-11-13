@@ -83,8 +83,7 @@ _descriptor_none = (protocol.need("reply.plugin-hostd.descriptor-absent"),
 DESCRIPTOR_PENDING = protocol.need("reply.plugin-hostd.descriptor-pending")
 protocol.need("reply.host.invalid-operation")
 protocol.need("reply.host.memory-allocation")
-INSTANCE_EXISTS = "ERR_INSTANCE_ALREADY_EXISTS"  # mod-host's name: the table has no code for it (omx-clap-core#34)
-protocol.need(INSTANCE_EXISTS)
+INSTANCE_EXISTS = protocol.need("reply.host.instance-already-exists")  # a second add of one instance (0.5.8's table)
 protocol.verify()
 uri_word = zynthian_plugin_hostd_protocol.uri_word
 
@@ -416,7 +415,7 @@ class plugin_hostd_daemon:
                         self.replay_each(instance)
                         continue
                     # An instance that outlived the connection has nothing to put back
-                    outlived = e.code == protocol.code(INSTANCE_EXISTS)
+                    outlived = e.code == INSTANCE_EXISTS
                     if not outlived:
                         logging.error(f"plugin-hostd replay => {e}")
                     if line.startswith("add ") or outlived:
@@ -472,7 +471,7 @@ class plugin_hostd_daemon:
                     self.engines[instance] = engine
                     return instance
                 except plugin_hostd_error as e:
-                    if e.code != protocol.code(INSTANCE_EXISTS):  # taken by another controller of this daemon
+                    if e.code != INSTANCE_EXISTS:  # taken by another controller of this daemon
                         raise
         raise plugin_hostd_error(protocol.code("reply.host.memory-allocation"), f"add {uri}")
 
