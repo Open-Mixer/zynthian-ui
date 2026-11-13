@@ -1,0 +1,16 @@
+{
+  "PLUGIN_HOSTD_VERBS": {
+    "kind": "verbs",
+    "verbs": {
+      "pinSet": {"verb": "pin_set", "doc": "A fixture verb", "since": "0.1.0"},
+      "add": {"verb": "add", "doc": "A short verb: noise"}
+    }
+  },
+  "PLUGIN_HOSTD_REPLY_CODES": {
+    "kind": "codes",
+    "codes": {
+      "placementInvalid": {"code": "reply.plugin-hostd.placement-invalid", "resp": -501,
+                           "text": {"en": "The plugin cannot be placed there."}}
+    }
+  }
+}

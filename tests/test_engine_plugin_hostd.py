@@ -370,7 +370,7 @@ class test_protocol(plugin_hostd_case):
     def test_without_the_protocol_table_there_is_no_daemon_to_trust(self):
         table = os.path.join(self.tmp, "none", "table.json")
         with self.assertLogs(level=logging.ERROR) as logs:
-            empty = self.codes(table, self.declared()[1], needs=ph.NEEDS)
+            empty = self.codes(table, self.declared()[1], needs=ph.protocol.needs)
         self.assertFalse(empty.loaded)
         self.assertEqual(len(logs.records), 1, "said once, when the files are read")
         self.assertIn(table, logs.output[0])
@@ -388,17 +388,50 @@ class test_protocol(plugin_hostd_case):
         self.assertIn(os.path.join(directory, "mod-host.json"), p.failure)
 
     def test_a_name_the_engine_branches_on_and_the_files_do_not_declare_is_a_failure(self):
-        declared = {n: -700 - i for i, n in enumerate(ph.NEEDS)
-                    if n != ph.DESCRIPTOR_PENDING_NAME and n.startswith("reply.")}
-        host = [{"name": n, "value": -800 - i} for i, n in enumerate(ph.NEEDS) if n.startswith("ERR_")]
+        pending = "reply.plugin-hostd.descriptor-pending"
+        needs = ph.protocol.needs
+        self.assertEqual(ph.protocol.judged, needs, "the engine says verify() once it has asked for every name")
+        self.assertIn(pending, needs, "the engine asks the owner for the name where it uses it")
+        self.assertEqual(sorted(needs), sorted(["reply.plugin-hostd." + n for n in (
+            "placement-invalid", "chain-duplicate", "chain-instance-busy", "chain-mixed-format", "descriptor-absent",
+            "descriptor-scan-failed", "descriptor-pending")] + ["reply.host.invalid-operation",
+                                                                 "reply.host.memory-allocation",
+                                                                 "ERR_INSTANCE_ALREADY_EXISTS"]))
+        declared = {n: -700 - i for i, n in enumerate(needs) if n != pending and n.startswith("reply.")}
+        host = [{"name": n, "value": -800 - i} for i, n in enumerate(needs) if n.startswith("ERR_")]
         with self.assertLogs(level=logging.ERROR):
-            p = self.codes(*self.declared(declared, host_errors=host), needs=ph.NEEDS)
+            p = self.codes(*self.declared(declared, host_errors=host), needs=needs)
         self.assertFalse(p.loaded)
-        self.assertIn("do not declare " + ph.DESCRIPTOR_PENDING_NAME, p.failure)
+        self.assertIn("do not declare " + pending, p.failure)
         with mock.patch.object(ph, "protocol", p):
             with self.assertRaises(ph.plugin_hostd_down) as down:
                 ph.daemon.ensure()
-        self.assertIn(ph.DESCRIPTOR_PENDING_NAME, str(down.exception))
+        self.assertIn(pending, str(down.exception))
+
+    def test_a_name_asked_one_at_a_time_fails_verify_naming_each_the_files_lack(self):
+        """the engine's own shape: need(name) where the name is used, verify() once; the same refusal as needs=."""
+        table, directory = self.declared({"reply.plugin-hostd.a": -701})
+        p = self.codes(table, directory)
+        self.assertEqual((p.need("reply.plugin-hostd.a"), p.need("reply.plugin-hostd.b"), p.need("reply.plugin-hostd.c")),
+                         (-701, None, None))
+        self.assertTrue(p.loaded, "nothing is judged until verify")
+        with self.assertLogs(level=logging.ERROR) as logs:
+            self.assertFalse(p.verify())
+            p.verify()
+        self.assertEqual(len(logs.records), 1, "said once")
+        self.assertFalse(p.loaded)
+        self.assertIn("do not declare reply.plugin-hostd.b, reply.plugin-hostd.c", p.failure)
+        self.assertEqual(p.needs, ["reply.plugin-hostd.a", "reply.plugin-hostd.b", "reply.plugin-hostd.c"])
+
+    def test_the_engine_writes_each_code_it_needs_only_as_the_name_asked_of_the_owner(self):
+        with open(ph.__file__) as f:
+            source = f.read()
+        named = re.findall(r"""(protocol\.\w+\()?["']reply\.[a-z-]+\.[a-z-]+["']""", source)
+        self.assertGreaterEqual(len(named), 16)
+        self.assertTrue(all(n in ("protocol.need(", "protocol.code(", "protocol.find(") for n in named),
+                        "a reply code named anywhere but the argument of need, code or find is a retyped one")
+        for verb in ("pin_accept", "pin_clear", "pin_reload"):
+            self.assertIn('command("%s"' % verb, source)
 
     def test_the_daemon_file_is_read_where_libplugin_hostd_protocol0_installs_it(self):
         """plugin-hostd 0.16.0 moved it: /usr/share/plugin-hostd-protocol/plugin-hostd.json, no protocol.json. The

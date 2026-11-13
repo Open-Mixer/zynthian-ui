@@ -24,7 +24,8 @@ TOOL = os.path.join(ROOT, "tools", "restated_declarations.py")
 
 
 def run(*args):
-    return subprocess.run([sys.executable, TOOL, *args], capture_output=True, text=True)
+    """The hand-listed half alone: the literals have their own test (test_restated_literals.py)."""
+    return subprocess.run([sys.executable, TOOL, "--no-contracts", *args], capture_output=True, text=True)
 
 
 class test_restated_declarations(unittest.TestCase):
