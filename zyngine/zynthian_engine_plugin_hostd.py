@@ -51,10 +51,6 @@ LAST_INSTANCE = 9989
 TIMEOUT = 5.0
 COMPARE_PAUSE = 1.0  # seconds: controller moves closer than this are one undo step
 RUN_NUMBERS = 1000  # a chain's serial runs numbered to the daemon, see run_number
-# The verb that tells plugin-hostd the user chose a plugin below our bar (its pin refused, or it crashed in qualification)
-ACCEPT_VERB = "pin_accept"
-REVOKE_VERB = "pin_clear"
-RELOAD_VERB = "pin_reload"
 # Below-bar reasons that run a plugin in a worker of its own
 qualification = zynthian_plugin_qualification.qualification()
 RETRY_S = 60.0  # a run the daemon refused, or planned alone for a reason that can change, is asked again after this
@@ -74,20 +70,22 @@ ONE_CLIENT_ROWS = ("clap", "lv2-clap")
 STATE_FILE_RE = re.compile(r"^effect_(\d+)(?=\D|$)")
 
 # The reply codes are plugin-hostd's own declaration, never retyped here: each is asked by its owner's name
-# (reply.<group>.<reason>) from plugin-hostd's Python client, once, here; without the files, or without a name below,
-# the engine refuses to start and says which. Ready, the line the daemon declares, is waited for by zynthian-sys's
-# plugin-hostd-start.sh, the one place a plugin-hostd is started on a Zynthian.
-CHAIN_FALLBACK_NAMES = tuple("reply.plugin-hostd." + n for n in (
-    "placement-invalid", "chain-duplicate", "chain-instance-busy", "chain-mixed-format"))
-DESCRIPTOR_NONE_NAMES = ("reply.plugin-hostd.descriptor-absent", "reply.plugin-hostd.descriptor-scan-failed")
-DESCRIPTOR_PENDING_NAME = "reply.plugin-hostd.descriptor-pending"
-INVALID_OPERATION = "reply.host.invalid-operation"
-MEMORY_ALLOCATION = "reply.host.memory-allocation"
+# (reply.<group>.<reason>) from plugin-hostd's Python client, once, here, and the name is only ever the argument of that
+# question (protocol.need, protocol.code, protocol.find: ruling D22); without the files, or without a name below, the
+# engine refuses to start and says which (protocol.verify). Ready, the line the daemon declares, is waited for by
+# zynthian-sys's plugin-hostd-start.sh, the one place a plugin-hostd is started on a Zynthian.
+protocol = zynthian_plugin_hostd_protocol.reply_codes()
+_chain_fallback = (protocol.need("reply.plugin-hostd.placement-invalid"), protocol.need("reply.plugin-hostd.chain-duplicate"),
+                   protocol.need("reply.plugin-hostd.chain-instance-busy"),
+                   protocol.need("reply.plugin-hostd.chain-mixed-format"))
+_descriptor_none = (protocol.need("reply.plugin-hostd.descriptor-absent"),
+                    protocol.need("reply.plugin-hostd.descriptor-scan-failed"))
+DESCRIPTOR_PENDING = protocol.need("reply.plugin-hostd.descriptor-pending")
+protocol.need("reply.host.invalid-operation")
+protocol.need("reply.host.memory-allocation")
 INSTANCE_EXISTS = "ERR_INSTANCE_ALREADY_EXISTS"  # mod-host's name: the table has no code for it (omx-clap-core#34)
-CURVE_TERM_MISSING = "reply.plugin-hostd.curve-term-missing"
-NEEDS = CHAIN_FALLBACK_NAMES + DESCRIPTOR_NONE_NAMES + (
-    DESCRIPTOR_PENDING_NAME, INSTANCE_EXISTS, INVALID_OPERATION, MEMORY_ALLOCATION)
-protocol = zynthian_plugin_hostd_protocol.reply_codes(needs=NEEDS)
+protocol.need(INSTANCE_EXISTS)
+protocol.verify()
 uri_word = zynthian_plugin_hostd_protocol.uri_word
 
 
@@ -97,9 +95,8 @@ def command(verb, *args):
     return protocol.client.encode(verb, args)
 
 
-CHAIN_FALLBACK_CODES = tuple(protocol.code(n) for n in CHAIN_FALLBACK_NAMES) if protocol.loaded else ()
-DESCRIPTOR_PENDING = protocol.find(DESCRIPTOR_PENDING_NAME)
-DESCRIPTOR_NONE = tuple(protocol.code(n) for n in DESCRIPTOR_NONE_NAMES) if protocol.loaded else ()
+CHAIN_FALLBACK_CODES = _chain_fallback if protocol.loaded else ()
+DESCRIPTOR_NONE = _descriptor_none if protocol.loaded else ()
 
 _logged = set()
 
@@ -298,7 +295,7 @@ class plugin_hostd_client:
             raise
         words = reply.split(" ", 2)
         if len(words) < 2 or words[0] != "resp":
-            raise plugin_hostd_error(protocol.code(INVALID_OPERATION), f"{line} (reply '{reply[:64]}')")
+            raise plugin_hostd_error(protocol.code("reply.host.invalid-operation"), f"{line} (reply '{reply[:64]}')")
         code = int(words[1])
         rest = words[2] if len(words) > 2 else ""
         if code < 0:
@@ -443,16 +440,16 @@ class plugin_hostd_daemon:
     def bulk_refused(self, error):
         """A bulk line was refused. A refusal of the whole verb (an invalid operation, no pair named) means the daemon
         does not serve it, for the session; a refusal at a symbol or a pair is that line's own."""
-        if error.code == protocol.code(INVALID_OPERATION) and error.position is None:
+        if error.code == protocol.code("reply.host.invalid-operation") and error.position is None:
             self.bulk_verbs = False
 
     def accept_below_bar(self, uri):
         """The user chose a plugin below our bar: tell the daemon it is the user's choice, so its add is taken. The one
         place that names the verb. A refusal is logged and the add goes on: if it is refused too, it says why."""
         try:
-            self.call(f"{ACCEPT_VERB} {uri_word(uri)}")
+            self.call(command("pin_accept", uri_word(uri)))
         except plugin_hostd_error as e:
-            logging.warning(f"plugin-hostd {ACCEPT_VERB} {uri} => {e}")
+            logging.warning(f"plugin-hostd pin_accept {uri} => {e}")
 
     def revoke_below_bar(self, uri):
         """The bar is qualified only: take back the user's choice the daemon may keep of this plugin, from an earlier time
@@ -460,10 +457,10 @@ class plugin_hostd_daemon:
         place that names the verbs: pin_clear forgets the pin with the choice, so the pin file is read again (pin_reload) to
         put its refusal back. A refusal is logged and the add goes on."""
         try:
-            self.call(f"{REVOKE_VERB} {uri_word(uri)}")
-            self.call(RELOAD_VERB)
+            self.call(command("pin_clear", uri_word(uri)))
+            self.call(command("pin_reload"))
         except plugin_hostd_error as e:
-            logging.warning(f"plugin-hostd {REVOKE_VERB} {uri} => {e}")
+            logging.warning(f"plugin-hostd pin_clear {uri} => {e}")
 
     def add(self, engine, uri, placement=None):
         """Add the plugin under the first free instance number and register the engine. placement: own for a plugin
@@ -477,7 +474,7 @@ class plugin_hostd_daemon:
                 except plugin_hostd_error as e:
                     if e.code != protocol.code(INSTANCE_EXISTS):  # taken by another controller of this daemon
                         raise
-        raise plugin_hostd_error(protocol.code(MEMORY_ALLOCATION), f"add {uri}")
+        raise plugin_hostd_error(protocol.code("reply.host.memory-allocation"), f"add {uri}")
 
     def remove(self, instance):
         with self.lock:
@@ -706,7 +703,7 @@ def estimate(rate, quantum, refs):
     try:
         reply = daemon.call(command("estimate", rate, quantum, *(uri_word(r) for r in refs)))[1]
     except plugin_hostd_error as e:
-        if e.code == protocol.code(INVALID_OPERATION):
+        if e.code == protocol.code("reply.host.invalid-operation"):
             daemon.estimate_verb = False
             logging.warning("plugin-hostd does not answer estimate: no chain figures this session")
             raise zynthian_plugin_hostd_estimate.estimate_unavailable()
@@ -999,7 +996,7 @@ def plan_answered():
     try:
         daemon.call(command("plan_get", 0))
     except plugin_hostd_error as e:
-        return e.code != protocol.code(INVALID_OPERATION)
+        return e.code != protocol.code("reply.host.invalid-operation")
     except (OSError, plugin_hostd_down, plugin_hostd_timeout):
         return True
     return True
@@ -1060,7 +1057,7 @@ def plan_chain(chain_id, members):
         reply = daemon.call(command("plan", chain_id, *members), SLOW_TIMEOUT)[1]
         segments = protocol.client.read_plan(reply.split())["segments"]
     except plugin_hostd_error as e:
-        if e.code == protocol.code(INVALID_OPERATION) and not plan_answered():
+        if e.code == protocol.code("reply.host.invalid-operation") and not plan_answered():
             daemon.plan_verbs = False
             logging.warning("plugin-hostd does not answer plan: chain %s runs as one chain, as plugin-hostd 0.12 does",
                             chain_id)
@@ -1404,7 +1401,7 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
             except plugin_hostd_error as e:
                 # a respawned instance lost its binding: bind again, once
                 self.curves_bound.pop(display, None)
-                if attempt or e.code != protocol.find(CURVE_TERM_MISSING):
+                if attempt or e.code != protocol.find("reply.plugin-hostd.curve-term-missing"):
                     log_once(("curve", self.plugin_uri, display), "plugin-hostd draws no curve %s for %s: %s", display,
                              self.plugin_uri, e)
                     return []
@@ -2009,7 +2006,7 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
             try:
                 daemon.call(command("state_save", tmp), SLOW_TIMEOUT)
             except FAILURES as e:
-                log_once("state_save", "plugin-hostd state_save failed (%s): snapshots keep parameters and presets only", e)
+                log_once("state-save-failed", "plugin-hostd state_save failed (%s): snapshots keep parameters and presets only", e)
                 return None
             buf = io.BytesIO()
             with tarfile.open(fileobj=buf, mode="w:gz") as tar:

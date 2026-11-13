@@ -1,1 +1,1 @@
-{"OMX_VERBS": {"kind": "words", "words": {"a": {"word": "omx-clap-host", "doc": "a host"}}}}
+{"OMX_VERBS": {"kind": "words", "words": {"a": {"word": "omx-clap-host", "doc": "a host"}}}, "VERB_HOSTS": {"kind": "words", "words": {"d": {"word": "demo-hostd", "doc": "a host's id"}, "w": {"word": "demo-worker", "doc": "a worker's id"}}}}

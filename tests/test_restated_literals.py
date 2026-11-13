@@ -213,6 +213,94 @@ class test_restated_literals(unittest.TestCase):
         out = self.gate("--none")
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
 
+    # what is not a protocol word (D22)
+
+    def test_the_ids_of_the_hosts_table_are_a_package_an_engine_a_worker_never_a_word(self):
+        decl = check.declared(CONTRACTS)
+        self.assertIn("word", decl["omx-clap-host"], "a word of another table is still one")
+        for host in ("demo-hostd", "demo-worker", "demo-isolation-host"):
+            self.assertNotIn(host, decl, host)
+        self.module('A = "demo-hostd"\nB = ("demo-worker", "demo-isolation-host")\n')
+        out = self.gate()
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+
+    # the per-site allowance: issue=<owner>/<repo>#<n>
+
+    def test_an_entry_with_an_issue_is_green_and_says_so(self):
+        self.module('A = "load-all"\nB = "pin_set x"\n')
+        self.allow("%s load-all 1 issue=Open-Mixer/plugin-hostd#67\n%s pin_set 1 issue=Open-Mixer/plugin-hostd-protocol#24\n"
+                   % (MODULE, MODULE))
+        out = self.gate()
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn("2 literals restated at 2 sites", out.stdout)
+
+    def test_an_entry_with_an_issue_stays_when_its_group_is_replaced_one_without_goes(self):
+        tiers = check.TIERS
+        os.makedirs(os.path.join(self.tmp, os.path.dirname(tiers)), exist_ok=True)
+        with open(os.path.join(self.tmp, tiers), "w") as f:
+            f.write('A = "load-all"\nB = "pin_set x"\n')
+        with open(self.left, "w") as f:
+            f.write("tiers 0\n")
+        self.allow("%s load-all 1 issue=Open-Mixer/plugin-hostd#67\n%s pin_set 1\n" % (tiers, tiers))
+        out = self.gate()
+        self.assertEqual(out.returncode, 1, out.stdout + out.stderr)
+        self.assertIn("%s 'pin_set' is allowed but its group tiers is replaced" % tiers, out.stderr)
+        self.assertNotIn("'load-all' is allowed", out.stderr)
+        self.assertNotIn("'load-all' is declared", out.stderr)
+
+    def test_an_entry_with_an_issue_and_fewer_sites_than_it_allows_must_be_lowered(self):
+        self.module('A = "load-all"\n')
+        self.allow("%s load-all 2 issue=Open-Mixer/plugin-hostd#67\n" % MODULE)
+        out = self.gate()
+        self.assertEqual(out.returncode, 1, out.stdout + out.stderr)
+        self.assertIn("1 sites, the allowance says 2: lower the number", out.stderr)
+
+    def test_an_entry_with_an_issue_and_more_sites_than_it_allows_is_refused(self):
+        self.module('A = "load-all"\nB = "load-all"\n')
+        self.allow("%s load-all 1 issue=Open-Mixer/plugin-hostd#67\n" % MODULE)
+        out = self.gate()
+        self.assertEqual(out.returncode, 1, out.stdout + out.stderr)
+        self.assertIn("%s:2: 'load-all'" % MODULE, out.stderr)
+
+    def test_an_issue_that_is_not_an_owner_reference_is_refused(self):
+        self.module('A = "load-all"\n')
+        for bad in ("67", "#67", "plugin-hostd#67", "Open-Mixer/plugin-hostd", "Open-Mixer/plugin-hostd#", "Open-Mixer/x#0",
+                    "https://x/y/issues/1"):
+            self.allow("%s load-all 1 issue=%s\n" % (MODULE, bad))
+            out = self.gate()
+            self.assertEqual(out.returncode, 1, bad + out.stdout + out.stderr)
+            self.assertIn("is not an owner reference", out.stderr, bad)
+
+    def test_an_allowance_line_that_is_not_the_form_is_an_error(self):
+        self.module('A = "load-all"\n')
+        for bad in ("%s load-all 1 because\n" % MODULE, "%s load-all\n" % MODULE, "%s load-all 1 issue=a/b#1 x\n" % MODULE):
+            self.allow(bad)
+            out = self.gate()
+            self.assertEqual(out.returncode, 2, bad + out.stdout + out.stderr)
+
+    def test_none_lists_the_sites_an_issue_entry_allows(self):
+        self.module('A = "load-all"\n')
+        self.allow("%s load-all 1 issue=Open-Mixer/plugin-hostd#67\n" % MODULE)
+        self.assertEqual(self.gate().returncode, 0)
+        out = self.gate("--none")
+        self.assertEqual(out.returncode, 1, out.stdout + out.stderr)
+        self.assertIn("%s:1: 'load-all'" % MODULE, out.stderr)
+
+    # the name argument of a call into the owner's library (D22)
+
+    def test_the_name_argument_of_a_call_into_the_owner_is_no_restatement_anything_else_is(self):
+        self.module('P = None\nP.code("load-all")\nP.find("load-all")\nP.name("load-all")\nP.need("load-all")\nP.encode("pin_set", 1)\n'
+                    'command("pin_set", 2)\nok = 1\n')
+        out = self.gate()
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.module('P = None\nP.code("load-all", "qualified-only")\nP.other("load-all")\nT = ("load-all",)\n'
+                    'x = "pin_set" == y\nP.call("pin_set 1")\n')
+        out = self.gate()
+        self.assertEqual(out.returncode, 1, out.stdout + out.stderr)
+        for line, literal in ((2, "qualified-only"), (3, "load-all"), (4, "load-all"), (5, "pin_set"), (6, "pin_set")):
+            self.assertIn("%s:%d: '%s'" % (MODULE, line, literal), out.stderr)
+        self.assertNotIn("%s:2: 'load-all'" % MODULE, out.stderr, "the first argument is the question to the owner")
+
     # the contract root
 
     def test_a_root_with_no_contract_files_is_an_error_naming_what_is_missing(self):

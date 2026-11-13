@@ -25,8 +25,8 @@
 #   A string literal of a module restates it when it is equal to a declared literal, or when it is a command line
 #   (it has a space) whose first word is a declared `verb` or `line`. One place is not a restatement (ruling D22,
 #   2026-11-13): the NAME argument of a call into the owner's library, the first argument of `command`, `encode`,
-#   `code`, `name` or `find` (the protocol client, reply_codes, and the engine's `command`, which is the client's
-#   encode): naming the verb or the code is how the owner is asked. Anywhere else a declared literal is red: a line
+#   `code`, `name`, `find` or `need` (the protocol client, reply_codes, and the engine's `command`, which is the
+#   client's encode): naming the verb or the code is how the owner is asked. Anywhere else a declared literal is red: a line
 #   built as text, a table of codes, a comparison.
 #
 #   Noise rule: a literal counts only when it is DISTINCTIVE: at least MIN_LENGTH characters, one token (letters
@@ -39,10 +39,20 @@
 #   midi_learn, a snapshot's audio_in). test_restated_literals keeps SCAN honest: a module that imports a module of
 #   the fork's declarations must be in it.
 #
-# tools/restated_literals.left is the allowance: `<module> <literal> <sites>`, a literal that is still restated
-# today. Red when a literal is restated that the file does not allow (a declaration restated again), when the file
-# allows more than is there (lower it in the same change), when a module of a group TABLE says is replaced still
-# has an entry, and with --none while anything is found. Red names file:line, the literal and the contract file.
+#   Two more things are not protocol words (ruling D22, 2026-11-13): the ids of the hosts table (HOST_TABLES, the
+#   `VERB_HOSTS` table of omx-contract's verbs.json: plugin-hostd, omx-clap-host, mod-host, and plugin-db's
+#   `PLUGIN_DB_ISOLATION_HOSTS`, the same ids), which name a package, an engine and a worker, never a word on the
+#   wire; they are left out of the declared literals.
+#
+# tools/restated_literals.left is the allowance: `<module> <literal> <sites> [issue=<owner>/<repo>#<n>]`, a literal
+# that is still restated today. Red when a literal is restated that the file does not allow (a declaration restated
+# again), when the file allows more than is there (lower it in the same change, an issue= entry too), when a module
+# of a group TABLE says is replaced still has an entry WITHOUT an issue=, when an issue= is not a well-formed
+# owner reference, and with --none while anything is found. Red names file:line, the literal and the contract file.
+# An entry with issue= is a PER-SITE allowance: the site stays because its owner has an open issue to declare what
+# it needs (a verb or a code a module compares, a table the owner has to publish), so it does not depend on the
+# module's group being replaced, and it is counted per module and literal, not by line, so unrelated edits leave
+# it alone. The issue names the owner's change that removes it.
 #
 # The contract root is --contracts DIR, else $RESTATED_CONTRACT_ROOT, else /usr/share. A root that lacks one of
 # the owners' directories (or holds no .json there) is an error, exit 2, with the directory named: there is no silent
@@ -72,6 +82,8 @@ CONTRACT_ROOT = os.environ.get("RESTATED_CONTRACT_ROOT") or "/usr/share"
 CONTRACT_DIRS = tuple("omx-contract/contract.d/*/" + owner for owner in (
     "omx-contract", "omx-clap-core", "omx-dsp", "omx-plugins", "plugin-db", "plugin-hostd", "plugin-hostd-protocol")
 ) + ("plugin-hostd-protocol", "omx-panel/schema")
+HOST_TABLES = ("VERB_HOSTS", "PLUGIN_DB_ISOLATION_HOSTS")  # tables whose ids name a package, an engine or a worker: not words of a protocol
+ISSUE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*#[1-9][0-9]*$")
 ROLE_KEYS = ("verb", "line", "code", "word")
 COMMAND_ROLES = ("verb", "line")
 TABLE_MEMBERS = {"set": "ids", "list": "values"}
@@ -84,7 +96,7 @@ SCAN = ("zyngine/zynthian_plugin_*.py", "zyngine/zynthian_engine_plugin_hostd*.p
         "zyngine/zynthian_touch_layer.py", "zyngine/ctrldev/zynthian_ctrldev_base_surface.py",
         "zynautoconnect/mod_ui_routes.py", "zyngui/zynthian_widget_omx_*.py",
         # upstream's own modules that call into the fork's declarations
-        "zyngine/zynthian_chain_manager.py", "zyngui/zynthian_gui_admin.py", "zyngui/zynthian_gui_engine.py")
+        "zyngine/zynthian_chain_manager.py", "zynautoconnect/zynthian_autoconnect.py", "zyngui/zynthian_gui_admin.py", "zyngui/zynthian_gui_engine.py")
 
 PROTOCOL = "zyngine/zynthian_plugin_hostd_protocol.py"
 ENGINE = "zyngine/zynthian_engine_plugin_hostd.py"
@@ -212,6 +224,8 @@ def collect(node, found, rel):
             if isinstance(value, str):
                 found.setdefault(value, {}).setdefault("kind " + kind, set()).add(rel)
         for key, value in node.items():
+            if key in HOST_TABLES:
+                continue  # D22: a host's id is its package, engine or worker, not a word on the wire
             if key in ROLE_KEYS and isinstance(value, str):
                 found.setdefault(value, {}).setdefault(key, set()).add(rel)
             collect(value, found, rel)
@@ -259,7 +273,7 @@ def scanned(root=ROOT, table=TABLE):
     return sorted(p for p in paths if os.path.isfile(os.path.join(root, p)))
 
 
-NAME_CALLS = ("command", "encode", "code", "name", "find")  # D22: the name argument of these asks the owner
+NAME_CALLS = ("command", "encode", "code", "name", "find", "need")  # D22: the name argument of these asks the owner
 
 
 def asked(tree):
@@ -303,13 +317,17 @@ def restated(root, decl, paths=None):
 
 
 def read_literals(path=LITERALS_LEFT):
-    """{(module, literal): sites} as the file says it: `<module> <literal> <sites>` lines, # comments."""
+    """{(module, literal): (sites, issue)} as the file says it: `<module> <literal> <sites> [issue=<ref>]` lines,
+    # comments; issue is None without one. The reference is checked by check_literals, not here."""
     allowed = {}
     with open(path, encoding="utf-8") as f:
         for line in f:
-            line = line.split("#")[0].split()
-            if line:
-                allowed[(line[0], line[1])] = int(line[2])
+            line = re.split(r"(?:^|\s)#", line)[0].split()  # a comment starts at a # that opens a word: issue=o/r#4 is not one
+            if not line:
+                continue
+            if len(line) not in (3, 4) or (len(line) == 4 and not line[3].startswith("issue=")):
+                raise ValueError("%s: not `<module> <literal> <sites> [issue=<ref>]`: %s" % (path, " ".join(line)))
+            allowed[(line[0], line[1])] = (int(line[2]), line[3][len("issue="):] if len(line) == 4 else None)
     return allowed
 
 
@@ -323,8 +341,10 @@ def check_literals(sites, allowed, counts, table=TABLE, root=ROOT):
     for row in table:
         groups.setdefault(row[1], set()).add(row[0])
     for key in sorted(set(found) | set(allowed)):
-        have, said = found.get(key, 0), allowed.get(key, 0)
+        have, (said, issue) = found.get(key, 0), allowed.get(key, (0, None))
         module, literal = key
+        if issue is not None and not ISSUE.match(issue):
+            wrong.append("%s %r: issue=%s is not an owner reference (<owner>/<repo>#<number>)" % (module, literal, issue))
         if have > said:
             for line, source in where[key][said:] if said else where[key]:
                 wrong.append("%s:%d: %r is declared in %s and written again here: read it from its owner" % (
@@ -332,9 +352,9 @@ def check_literals(sites, allowed, counts, table=TABLE, root=ROOT):
         elif have < said:
             wrong.append("%s %r: %d sites, the allowance says %d: lower the number in this change" % (
                 module, literal, have, said))
-        if said and module in groups and not any(counts.get(g) for g in groups[module]):
-            wrong.append("%s %r is allowed but its group %s is replaced: remove the entry in this change" % (
-                module, literal, "/".join(sorted(groups[module]))))
+        if said and issue is None and module in groups and not any(counts.get(g) for g in groups[module]):
+            wrong.append("%s %r is allowed but its group %s is replaced: remove the entry in this change, or name the "
+                         "owner's issue (issue=<owner>/<repo>#<n>)" % (module, literal, "/".join(sorted(groups[module]))))
     return wrong
 
 

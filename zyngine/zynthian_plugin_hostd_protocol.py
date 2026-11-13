@@ -89,7 +89,8 @@ def device_language():
 class reply_codes:
     """plugin-hostd's reply codes, as its client reads them once from the installed files.
     needs: the names the caller branches on. A file that is missing or unreadable, or a name no file declares,
-    leaves loaded False and failure saying which, logged once as an error here."""
+    leaves loaded False and failure saying which, logged once as an error here. A caller that asks for each name where
+    it uses it (need, one name per call) says verify() once when it has asked for all: the names asked are `needs`, the ones judged `judged`."""
 
     def __init__(self, needs=(), table=None, directory=None):
         self.client, failure = None, None
@@ -107,16 +108,35 @@ class reply_codes:
             except (OSError, ValueError, KeyError, TypeError) as e:
                 logging.error("plugin-hostd's protocol table %s gives no node metadata (%s)", self.client.table_path, e)
         host, host_failure = read(HOST_FILE, directory)
+        self.needs, self.judged, self.base_failure, self.logged = [], [], failure or host_failure, False
         self.host_codes, self.host_names = {}, {}
         for e in host.get("host_errors", []):
             self.host_codes.setdefault(e["name"], e["value"])
             self.host_names.setdefault(e["value"], e["name"])
-        missing = [n for n in needs if self.find(n) is None]
-        self.failure = failure or host_failure or (
+        self.needs = list(needs)
+        self.failure = self.loaded = None
+        self.verify()
+
+    def need(self, name):
+        """The number a name stands for, and the name is one the caller branches on: a name no file declares gives None
+        here and fails verify(), which says which. The name is the argument, the shape the thin-integration check
+        (tools/restated_declarations.py) reads as asking the owner."""
+        if name not in self.needs:
+            self.needs.append(name)
+        return self.find(name)
+
+    def verify(self):
+        """Judge the names asked so far: failure says the table is not usable, or which names no file declares, and
+        loaded is False; logged once as an error. Returns loaded."""
+        self.judged = list(self.needs)
+        missing = [n for n in self.needs if self.find(n) is None]
+        self.failure = self.base_failure or (
             f"plugin-hostd's protocol files do not declare {', '.join(missing)}" if missing else None)
         self.loaded = self.failure is None
-        if self.failure:
+        if self.failure and not self.logged:
+            self.logged = True
             logging.error("%s: the plugin-hostd engine will not start", self.failure)
+        return self.loaded
 
     def instance_key(self):
         """The JACK metadata key a worker sets on each instance's client, its value the instance: what tells a
