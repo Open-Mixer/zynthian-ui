@@ -396,7 +396,7 @@ class test_protocol(plugin_hostd_case):
             "placement-invalid", "chain-duplicate", "chain-instance-busy", "chain-mixed-format", "descriptor-absent",
             "descriptor-scan-failed", "descriptor-pending")] + ["reply.host.invalid-operation",
                                                                  "reply.host.memory-allocation",
-                                                                 "ERR_INSTANCE_ALREADY_EXISTS"]))
+                                                                 "reply.host.instance-already-exists"]))
         declared = {n: -700 - i for i, n in enumerate(needs) if n != pending and n.startswith("reply.")}
         host = [{"name": n, "value": -800 - i} for i, n in enumerate(needs) if n.startswith("ERR_")]
         with self.assertLogs(level=logging.ERROR):
