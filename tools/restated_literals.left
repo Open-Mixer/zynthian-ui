@@ -1,0 +1,16 @@
+# The literals of an owner's installed contract files that the plugin-hostd modules still write, which
+# tools/restated_declarations.py finds: <module> <literal> <sites> reason=<what the owner is to provide>. It only gets
+# shorter: a literal read from its owner leaves its line, and the line goes in the same change. Each line says what
+# the owner is to declare so that the site can ask for it (a per-site allowance, see the tool's header); sites are
+# counted per module and literal.
+# Not here: the name argument of a call into the owner's library, and a host's id (the VERB_HOSTS table).
+
+# the CLAP plugin features the catalogue maps to Zynthian's engine types and categories: the words of the CLAP header
+# clap/plugin-features.h, which omx-clap's domain clap mirrors (CLAP_PLUGIN_FEATURES_TERMS); whether a mirror of an
+# external standard is a word an owner declares (as the hosts table is not, ruling D22), or which owner declares a
+# category per feature, is open
+zyngine/zynthian_plugin_hostd_catalogue.py audio-effect 1 reason=omx-clap is to say whether its mirror of the CLAP feature words is a word it declares, or an owner is to declare a category per feature
+zyngine/zynthian_plugin_hostd_catalogue.py drum-machine 1 reason=omx-clap is to say whether its mirror of the CLAP feature words is a word it declares, or an owner is to declare a category per feature
+zyngine/zynthian_plugin_hostd_catalogue.py pitch-correction 1 reason=omx-clap is to say whether its mirror of the CLAP feature words is a word it declares, or an owner is to declare a category per feature
+zyngine/zynthian_plugin_hostd_catalogue.py pitch-shifter 1 reason=omx-clap is to say whether its mirror of the CLAP feature words is a word it declares, or an owner is to declare a category per feature
+zyngine/zynthian_plugin_hostd_catalogue.py transient-shaper 1 reason=omx-clap is to say whether its mirror of the CLAP feature words is a word it declares, or an owner is to declare a category per feature

@@ -1,0 +1,22 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "A fixture domain, trimmed from plugin-hostd's",
+  "version": "0.0.0",
+  "x-owner": "plugin-hostd"
+ },
+ "components": {
+  "schemas": {
+   "PLUGIN_HOSTD_GROUPING_REASONS": {
+    "x-kind": "words",
+    "oneOf": [
+     {
+      "const": "plan-refused",
+      "title": "planRefused",
+      "description": "A segment could not be formed."
+     }
+    ]
+   }
+  }
+ }
+}
