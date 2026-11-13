@@ -32,12 +32,28 @@ jobs:
           apt-get update -qq
           apt-get install -y -qq --no-install-recommends python3 python3-pytest python3-yaml git
 
+      # the checkout first: the install below reads tools/served_pair.py
+      - uses: actions/checkout@v4
+
       - name: Add the OpenMixer channel
         uses: Open-Mixer/.github/.github/actions/add-openmixer@openmixer-v1
 
       - name: Install plugin-hostd from the channel
         run: |
-          apt-get install -y -qq --no-install-recommends plugin-hostd omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract
+          # plugin-hostd depends on its contract at its own version: both at the newest version this cell serves
+          # TOGETHER (tools/served_pair.py reads the channel's deb/cells.tsv), so a release that has reached another
+          # architecture first is not this cell's version, and the gap never reads as this repository's red
+          v=$(python3 tools/served_pair.py plugin-hostd plugin-hostd-contract)
+          pins=
+          for p in plugin-hostd plugin-hostd-contract; do
+            full=$(apt-cache madison "$p" | awk -F'|' -v v="$v" '{gsub(/ /, "", $2)} $2 ~ "^"v"([-~+]|$)" {print $2; exit}')
+            [ -n "$full" ] || { echo "::error::$p $v is served in this cell but apt does not know it"; exit 1; }
+            pins="$pins $p=$full"
+          done
+          echo "plugin-hostd and its contract at $v, the newest pair this cell serves together:$pins"
+          echo "HOSTD_PINS=$pins" >> "$GITHUB_ENV"
+          # shellcheck disable=SC2086 # one word per pin
+          apt-get install -y -qq --no-install-recommends $pins omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract
           dpkg-query -W plugin-hostd omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract
           # the owners' sentences are read from the vocabularies omx-contract-data's contract directory holds, in the
           # layout it has from 3.14.0 on (#6), and the catalogs of plugin-hostd-protocol-contract: a floor and the
@@ -121,7 +137,7 @@ jobs:
           # the owners' contract packages, beside omx-contract-data and plugin-hostd-protocol-contract installed above;
           # omx-panel's schema is the commit fetched above. tools/restated_declarations.py names what a root lacks.
           apt-get install -y -qq --no-install-recommends omx-clap-core-contract omx-dsp-contract omx-plugins-contract \
-            plugin-db-contract plugin-hostd-contract
+            plugin-db-contract $HOSTD_PINS
           dpkg-query -W omx-clap-core-contract omx-dsp-contract omx-plugins-contract plugin-db-contract plugin-hostd-contract
           mkdir -p /tmp/contract-root/omx-panel
           ln -s /usr/share/omx-contract /tmp/contract-root/omx-contract
@@ -129,7 +145,6 @@ jobs:
           ln -s /tmp/omx-panel/schema /tmp/contract-root/omx-panel/schema
           echo "RESTATED_CONTRACT_ROOT=/tmp/contract-root" >> "$GITHUB_ENV"
 
-      - uses: actions/checkout@v4
 
       - name: python3 -m pytest -q tests/
         run: python3 -m pytest -q -rs tests/
