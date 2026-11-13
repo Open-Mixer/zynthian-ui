@@ -72,6 +72,19 @@ jobs:
           echo "ZYNTHIAN_OMX_PANEL_RENDER=/tmp/omx-panel/renderer/build/libomx-panel-render.so.0" >> "$GITHUB_ENV"
           echo "ZYNTHIAN_OMX_PANEL_TOOLS=/tmp/omx-panel/tools" >> "$GITHUB_ENV"
 
+      - name: Assemble the contract root the literal gate reads (#4)
+        run: |
+          # the owners' contract packages, beside omx-contract-data and plugin-hostd-protocol-contract installed above;
+          # omx-panel's schema is the commit fetched above. tools/restated_declarations.py names what a root lacks.
+          apt-get install -y -qq --no-install-recommends omx-clap-core-contract omx-dsp-contract omx-plugins-contract \
+            plugin-db-contract plugin-hostd-contract
+          dpkg-query -W omx-clap-core-contract omx-dsp-contract omx-plugins-contract plugin-db-contract plugin-hostd-contract
+          mkdir -p /tmp/contract-root/omx-panel
+          ln -s /usr/share/omx-contract /tmp/contract-root/omx-contract
+          ln -s /usr/share/plugin-hostd-protocol /tmp/contract-root/plugin-hostd-protocol
+          ln -s /tmp/omx-panel/schema /tmp/contract-root/omx-panel/schema
+          echo "RESTATED_CONTRACT_ROOT=/tmp/contract-root" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v4
 
       - name: python3 -m pytest -q tests/

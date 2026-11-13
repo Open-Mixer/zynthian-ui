@@ -50,6 +50,7 @@
 
 import ast
 import fnmatch
+import glob
 import json
 import os
 import re
@@ -61,10 +62,12 @@ LEFT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "restated_declar
 LITERALS_LEFT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "restated_literals.left")
 CONTRACT_ROOT = os.environ.get("RESTATED_CONTRACT_ROOT") or "/usr/share"
 
-# where the owners install their declarations, under the contract root: omx-contract (and through it
-# omx-clap-core, omx-dsp, omx-plugins, plugin-db, plugin-hostd, plugin-hostd-protocol), plugin-hostd-protocol,
-# omx-panel's schema, plugin-db and omx-dsp's exports
-CONTRACT_DIRS = ("omx-contract/contract.d", "plugin-hostd-protocol", "omx-panel/schema", "plugin-db", "omxdsp")
+# where the owners install their declarations, under the contract root: omx-contract's contract directory holds one
+# directory per owner (omx-contract, omx-clap-core, omx-dsp, omx-plugins, plugin-db, plugin-hostd,
+# plugin-hostd-protocol; the * is the contract's major), plugin-hostd-protocol installs its own command table, omx-panel its schema
+CONTRACT_DIRS = tuple("omx-contract/contract.d/*/" + owner for owner in (
+    "omx-contract", "omx-clap-core", "omx-dsp", "omx-plugins", "plugin-db", "plugin-hostd", "plugin-hostd-protocol")
+) + ("plugin-hostd-protocol", "omx-panel/schema")
 ROLE_KEYS = ("verb", "line", "code", "word")
 COMMAND_ROLES = ("verb", "line")
 TABLE_MEMBERS = {"set": "ids", "list": "values"}
@@ -219,17 +222,18 @@ def declared(contracts):
     found, empty = {}, []
     for directory in CONTRACT_DIRS:
         count = 0
-        for here, dirs, files in os.walk(os.path.join(contracts, directory)):
-            dirs[:] = sorted(d for d in dirs if d not in ("catalogs", "node_modules", "ts", "fixtures"))
-            for name in sorted(files):
-                if name.endswith(".json"):
-                    path = os.path.join(here, name)
-                    try:
-                        with open(path, encoding="utf-8") as f:
-                            collect(json.load(f), found, os.path.relpath(path, contracts))
-                        count += 1
-                    except (OSError, ValueError) as e:
-                        raise NoContracts("%s cannot be read: %s" % (path, e))
+        for top in sorted(glob.glob(os.path.join(glob.escape(contracts), directory))):
+            for here, dirs, files in os.walk(top):
+                dirs[:] = sorted(d for d in dirs if d not in ("catalogs", "node_modules", "ts", "fixtures"))
+                for name in sorted(files):
+                    if name.endswith(".json"):
+                        path = os.path.join(here, name)
+                        try:
+                            with open(path, encoding="utf-8") as f:
+                                collect(json.load(f), found, os.path.relpath(path, contracts))
+                            count += 1
+                        except (OSError, ValueError) as e:
+                            raise NoContracts("%s cannot be read: %s" % (path, e))
         if not count:
             empty.append(directory)
     if empty:

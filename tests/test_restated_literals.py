@@ -89,7 +89,8 @@ class test_restated_literals(unittest.TestCase):
         for literal, role in (("pin_set", "verb"), ("worker_list", "verb"), ("output_set", "line"),
                               ("reply.plugin-hostd.placement-invalid", "code"), ("panel.skin.api-mismatch", "code"),
                               ("load-all", "word"), ("qualified-only", "word"), ("probe-timeout", "kind set"),
-                              ("rtSafety", "kind set"), ("fixed-frame", "kind list"), ("omx_dsp_process", "word")):
+                              ("rtSafety", "kind set"), ("fixed-frame", "kind list"), ("omx-clap-host", "word"),
+                              ("omx-comp-kernel", "kind set"), ("plan-refused", "word")):
             self.assertIn(role, decl.get(literal, {}), literal)
         self.assertEqual(sorted(decl[literal := "qualified-only"]["word"]), [DB])
 
@@ -221,14 +222,14 @@ class test_restated_literals(unittest.TestCase):
         for directory in check.CONTRACT_DIRS:
             self.assertIn(directory, out.stderr)
 
-    def test_a_root_that_lacks_one_owner_is_an_error_naming_it(self):
+    def test_a_root_that_lacks_one_owner_is_an_error_naming_it_alone(self):
         partial = os.path.join(self.tmp, "partial")
         shutil.copytree(CONTRACTS, partial)
-        shutil.rmtree(os.path.join(partial, "omx-panel"))
+        shutil.rmtree(os.path.join(partial, "omx-contract", "contract.d", "3", "plugin-hostd"))
         out = run("--root", self.tmp, "--left", self.left, "--contracts", partial, "--literals-left", self.allowance)
         self.assertEqual(out.returncode, 2, out.stdout + out.stderr)
-        self.assertIn("omx-panel/schema", out.stderr)
-        self.assertNotIn("plugin-db,", out.stderr)
+        self.assertIn("in: omx-contract/contract.d/*/plugin-hostd (install", out.stderr)
+        self.assertNotIn("plugin-db", out.stderr)
 
     def test_the_root_comes_from_the_environment_when_no_flag_names_it(self):
         self.module('A = "load-all"\n')
@@ -256,11 +257,11 @@ class test_restated_literals(unittest.TestCase):
     def test_a_contract_file_that_is_not_json_is_an_error(self):
         broken = os.path.join(self.tmp, "broken")
         shutil.copytree(CONTRACTS, broken)
-        with open(os.path.join(broken, "plugin-db", "store.schema.json"), "w") as f:
+        with open(os.path.join(broken, "omx-panel", "schema", "codes.json"), "w") as f:
             f.write("{not json")
         out = run("--root", self.tmp, "--left", self.left, "--contracts", broken, "--literals-left", self.allowance)
         self.assertEqual(out.returncode, 2, out.stdout + out.stderr)
-        self.assertIn("store.schema.json cannot be read", out.stderr)
+        self.assertIn("codes.json cannot be read", out.stderr)
 
 
 if __name__ == "__main__":
