@@ -23,7 +23,11 @@
 #   contract table of kind `set` (its `ids`) or `list` (its `values`), in every .json of the owners' directories
 #   (CONTRACT_DIRS under the contract root). Keys alone, prose (`doc`, `text`, `meaning`) and numbers are not.
 #   A string literal of a module restates it when it is equal to a declared literal, or when it is a command line
-#   (it has a space) whose first word is a declared `verb` or `line`.
+#   (it has a space) whose first word is a declared `verb` or `line`. One place is not a restatement (ruling D22,
+#   2026-11-13): the NAME argument of a call into the owner's library, the first argument of `command`, `encode`,
+#   `code`, `name` or `find` (the protocol client, reply_codes, and the engine's `command`, which is the client's
+#   encode): naming the verb or the code is how the owner is asked. Anywhere else a declared literal is red: a line
+#   built as text, a table of codes, a comparison.
 #
 #   Noise rule: a literal counts only when it is DISTINCTIVE: at least MIN_LENGTH characters, one token (letters
 #   and digits) joined by `.`, `-`, `_` or `:`, or written in camelCase (pin_set, worker_list, hosting.stability.
@@ -255,12 +259,29 @@ def scanned(root=ROOT, table=TABLE):
     return sorted(p for p in paths if os.path.isfile(os.path.join(root, p)))
 
 
+NAME_CALLS = ("command", "encode", "code", "name", "find")  # D22: the name argument of these asks the owner
+
+
+def asked(tree):
+    """The ids of the string constants that are the first argument of a call into the owner's library (NAME_CALLS)."""
+    out = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and n.args and isinstance(n.args[0], ast.Constant) and isinstance(n.args[0].value, str):
+            f = n.func
+            if (f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else None) in NAME_CALLS:
+                out.add(id(n.args[0]))
+    return out
+
+
 def strings(text):
-    """[(line, value)] of the string literals of a module, the pieces of an f-string among them."""
+    """[(line, value)] of the string literals of a module, the pieces of an f-string among them; the name argument of a
+    call into the owner's library (asked) is left out."""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         tree = ast.parse(text)
-    return sorted((n.lineno, n.value) for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str))
+    skip = asked(tree)
+    return sorted((n.lineno, n.value) for n in ast.walk(tree)
+                  if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in skip)
 
 
 def restated(root, decl, paths=None):
