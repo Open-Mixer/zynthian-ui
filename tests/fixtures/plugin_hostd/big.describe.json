@@ -287,6 +287,36 @@
         "visibleWhen": null
       }
     ],
+    "meters": [
+      {
+        "symbol": "gr",
+        "section": "main",
+        "kind": "level",
+        "measurement": null,
+        "unit": "dB",
+        "min": 0,
+        "max": 20,
+        "channels": 1,
+        "held": false,
+        "clip": false,
+        "labelKey": "",
+        "label": "Gain Reduction"
+      },
+      {
+        "symbol": "out",
+        "section": "main",
+        "kind": "level",
+        "measurement": null,
+        "unit": "dB",
+        "min": -45,
+        "max": 20,
+        "channels": 1,
+        "held": false,
+        "clip": false,
+        "labelKey": "",
+        "label": "Output Level"
+      }
+    ],
     "roles": [],
     "displays": [],
     "pages": [

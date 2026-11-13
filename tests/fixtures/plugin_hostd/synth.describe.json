@@ -3,13 +3,13 @@
     "family": "none",
     "fingerprint": "24f7ae994f6c0154993c177fea08572c512e548179a3788e4e531dce4f458532",
     "easy": [
-      "p1",
-      "p2"
+      "1",
+      "2"
     ],
     "params": [
       {
         "kind": "number",
-        "symbol": "p1",
+        "symbol": "1",
         "name": "Level",
         "unit": "none",
         "scale": "linear",
@@ -20,7 +20,7 @@
       },
       {
         "kind": "number",
-        "symbol": "p2",
+        "symbol": "2",
         "name": "Wave",
         "unit": "none",
         "scale": "stepped",
@@ -39,7 +39,7 @@
     ],
     "controls": [
       {
-        "symbol": "p1",
+        "symbol": "1",
         "section": "controls",
         "widget": "knob",
         "labelKey": "",
@@ -47,7 +47,7 @@
         "visibleWhen": null
       },
       {
-        "symbol": "p2",
+        "symbol": "2",
         "section": "controls",
         "widget": "knob",
         "labelKey": "",
@@ -55,6 +55,7 @@
         "visibleWhen": null
       }
     ],
+    "meters": [],
     "roles": [],
     "displays": [],
     "pages": [
