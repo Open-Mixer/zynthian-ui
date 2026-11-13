@@ -30,7 +30,7 @@ jobs:
       - name: Install Python, pytest and the modules the tests import
         run: |
           apt-get update -qq
-          apt-get install -y -qq --no-install-recommends python3 python3-pytest python3-yaml git
+          apt-get install -y -qq --no-install-recommends python3 python3-pytest python3-yaml git ca-certificates
 
       # the checkout first: the install below reads tools/served_pair.py
       - uses: actions/checkout@v4
