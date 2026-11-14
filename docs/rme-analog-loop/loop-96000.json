@@ -1,0 +1,86 @@
+{
+ "rate": 96000,
+ "paths": {
+  "out": [
+   "zynmixer_chan:input_00a",
+   "zynmixer_chan:input_00b"
+  ],
+  "main": [
+   "zynmixer_bus:output_00a",
+   "zynmixer_bus:output_00b"
+  ],
+  "back": [
+   "system:capture_1",
+   "system:capture_2"
+  ],
+  "xlr_out": [
+   1,
+   2
+  ],
+  "xlr_in": [
+   1,
+   2
+  ]
+ },
+ "main": [
+  {
+   "level_dbfs": -23.876,
+   "gain_db": -3.876,
+   "latency_samples": 256,
+   "latency_ms": 2.667,
+   "thd_n_db": -155.02,
+   "thd_n_pct": 0.0,
+   "noise_dbfs": -240.0,
+   "peak_dbfs": -23.88,
+   "polarity": 1
+  },
+  {
+   "level_dbfs": -23.876,
+   "gain_db": -3.876,
+   "latency_samples": 256,
+   "latency_ms": 2.667,
+   "thd_n_db": -155.02,
+   "thd_n_pct": 0.0,
+   "noise_dbfs": -240.0,
+   "peak_dbfs": -23.88,
+   "polarity": 1
+  }
+ ],
+ "channels": [
+  {
+   "level_dbfs": -14.364,
+   "gain_db": 5.636,
+   "latency_samples": 804,
+   "latency_ms": 8.375,
+   "thd_n_db": -88.33,
+   "thd_n_pct": 0.0038,
+   "noise_dbfs": -106.41,
+   "peak_dbfs": -13.55,
+   "polarity": 1
+  },
+  {
+   "level_dbfs": -14.324,
+   "gain_db": 5.676,
+   "latency_samples": 804,
+   "latency_ms": 8.375,
+   "thd_n_db": -88.57,
+   "thd_n_pct": 0.0037,
+   "noise_dbfs": -106.45,
+   "peak_dbfs": -13.51,
+   "polarity": 1
+  }
+ ],
+ "balance_db": -0.04,
+ "loop_gain_db": [
+  9.51,
+  9.55
+ ],
+ "refusal": null,
+ "env": {
+  "jack": "jackd -P 70 -s -S -d alsa -d hw:Pro73107815 -r 96000 -p 256 -n 3 -X raw (the Pi's options at 96000 Hz, started by this script)",
+  "card": "RME Babyface Pro",
+  "rme controls": "Mic-AN1 48V off, Mic-AN1 Gain 0, Mic-AN1 PAD off, Mic-AN2 48V off, Mic-AN2 Gain 0, Mic-AN2 PAD off",
+  "xruns during the run": "0"
+ },
+ "measured": "MEASURED DIGITALLY THROUGH THE ANALOG LOOP (never heard)"
+}

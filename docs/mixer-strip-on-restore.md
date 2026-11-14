@@ -29,5 +29,7 @@ gets one added. Upstream rebuilds the chain's slots exactly as the snapshot list
   `midi_in` still on `ZynMidiRouter:ch3_out`, the warning in the journal, chain 4 saved again with its `MI`,
   and the strip's fader on the screen.
 - Not proven here: the audio itself. The connections were read from JACK; nothing was measured or listened to.
+  Since then the strip's path to XLR OUT 1/2 has been measured, digitally, through the RME's analog loop:
+  `docs/rme-analog-loop-on-the-pi.md`.
 - End: the divergence ends when upstream gives a restored chain its strip, or refuses a snapshot without one.
   `restore_mixer_strip`, `unrouted_chains.py` and the test then go.
