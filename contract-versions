@@ -3,3 +3,5 @@
 # <name> >= <floor> < <ceiling> [: <binary packages that carry it>]
 plugin-hostd-protocol >= 0.5.8 < 0.6 : libplugin-hostd-protocol0 plugin-hostd-protocol-contract plugin-hostd-protocol-l10n-ca
 plugin-hostd-contract >= 0.20.4 < 0.21
+# omx-contract's Python readers (omx_contract.scale, omx_contract.catalog): python3-omx-contract ships from 3.18.1 on
+omx-contract >= 3.18.1 < 4 : python3-omx-contract

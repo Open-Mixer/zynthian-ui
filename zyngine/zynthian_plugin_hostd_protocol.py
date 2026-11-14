@@ -16,17 +16,11 @@
 # ******************************************************************************
 
 import os
-import sys
 import json
 import logging
 
-# the directory omx-contract-data installs its Python readers in: the catalog reader is read from there
-SHARE_PATH = os.environ.get("ZYNTHIAN_OMX_CONTRACT_SHARE", "/usr/share/omx-contract")
-if SHARE_PATH not in sys.path:
-    sys.path.append(SHARE_PATH)
-
-from omx_contract_catalog import load_catalog, sentence_of  # noqa: E402
-from plugin_hostd_protocol import Protocol, ProtocolError  # noqa: E402
+from omx_contract.catalog import load_catalog, sentence_of
+from plugin_hostd_protocol import Protocol, ProtocolError
 from plugin_hostd_protocol import words, quote, encode_path, decode_path, uri_word, pin_key  # noqa: F401
 
 # Where the files are: libplugin-hostd-protocol0 (plugin-hostd 0.16.0 on) installs them in its own directory, the

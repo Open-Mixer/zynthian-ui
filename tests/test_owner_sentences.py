@@ -28,8 +28,7 @@ if "zyngine" not in sys.modules:
 
 from zyngine import zynthian_plugin_hostd_protocol as protocol_files  # noqa: E402
 
-sys.path.append(os.environ.get("ZYNTHIAN_OMX_CONTRACT_SHARE", "/usr/share/omx-contract"))
-import omx_contract_catalog as reader  # noqa: E402
+import omx_contract.catalog as reader  # noqa: E402
 from zyngine import zynthian_plugin_hostd_estimate as estimate  # noqa: E402
 
 CONTRACT_DIR = (os.environ.get("OMX_CONTRACT_PATH") or "/usr/share/omx-contract/contract.d").split(":")[0]

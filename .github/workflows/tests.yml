@@ -52,34 +52,21 @@ jobs:
           done
           echo "plugin-hostd and its contract at $v, the newest pair this cell serves together:$pins"
           echo "HOSTD_PINS=$pins" >> "$GITHUB_ENV"
+          # python3-omx-contract: omx_contract.scale and omx_contract.catalog, the position law and the catalog reader (#28)
           # shellcheck disable=SC2086 # one word per pin
           apt-get install -y -qq --no-install-recommends $pins omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract \
-            plugin-hostd-protocol-l10n-ca
+            plugin-hostd-protocol-l10n-ca python3-omx-contract
           # the contract the series is built and tested against: every declared package inside its range
           python3 -m tools.contract_versions
-          dpkg-query -W plugin-hostd omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract
+          dpkg-query -W plugin-hostd omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract python3-omx-contract
           # the owners' sentences are read from the vocabularies omx-contract-data's contract directory holds, in the
           # layout it has from 3.14.0 on (#6), and the catalogs of plugin-hostd-protocol-contract: a floor and the
           # next major
           v=$(dpkg-query -W -f '${Version}' omx-contract-data)
           dpkg --compare-versions "$v" ge 3.14.0 && dpkg --compare-versions "$v" lt 4 \
             || { echo "::error::omx-contract-data $v is not >= 3.14.0 and < 4"; exit 1; }
-          # the position law is omx-contract's Python reader, installed beside the vectors it is held to; the
-          # channel's omx-contract-data carries both from the release that ships the reader on. Until then they come
-          # from a named commit of omx-contract main, and the log says so
-          if [ -f /usr/share/omx-contract/omx_contract_scale.py ] && [ -f /usr/share/omx-contract/scale-vectors.json ]; then
-            echo "SCALE READER AND VECTORS FROM INSTALLED PACKAGE"
-          else
-            SHA=d70d6652591757a9c7e2a758d014a88c3a5429b6
-            apt-get install -y -qq --no-install-recommends git ca-certificates
-            git clone -q https://github.com/Open-Mixer/omx-contract /tmp/omx-contract
-            git -C /tmp/omx-contract checkout -q "$SHA"
-            test -f /tmp/omx-contract/share/omx-contract/omx_contract_scale.py
-            test -f /tmp/omx-contract/data/scale-vectors.json
-            echo "ZYNTHIAN_OMX_CONTRACT_SHARE=/tmp/omx-contract/share/omx-contract" >> "$GITHUB_ENV"
-            echo "ZYNTHIAN_OMX_SCALE_VECTORS=/tmp/omx-contract/data/scale-vectors.json" >> "$GITHUB_ENV"
-            echo "SCALE READER AND VECTORS FROM COMMIT $SHA"
-          fi
+          # the vectors the position law is held to
+          test -f /usr/share/omx-contract/scale-vectors.json
 
       - name: Fetch plugin-hostd's Python client
         run: |
