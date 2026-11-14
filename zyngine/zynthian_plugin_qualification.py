@@ -98,8 +98,9 @@ class qualification:
         key = (target, rate, quantum)
         if key not in self.answers:
             try:
+                # the system store, which the plugin-qualify-sync service fills (--system), unless a store is named
                 self.answers[key] = plugin_db.query(target, {**self.here, "rate": rate, "quantum": quantum},
-                                                    store=self.store, command=self.command)
+                                                    store=self.store, system=self.store is None, command=self.command)
             except (plugin_db.QueryError, OSError, ValueError) as e:
                 logging.debug(f"plugin-db has no answer for {target} => {e}")
                 self.answers[key] = None

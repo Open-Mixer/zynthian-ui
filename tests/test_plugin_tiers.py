@@ -63,7 +63,7 @@ class the_answer(stub_case):
         q = self.qualification({"lv2:urn:q:fast": "qualified"})
         self.assertEqual(q.answer("urn:q:fast", 48000, 128), expect("qualified"))
         self.assertEqual(self.commands.calls(), [[
-            "query", "--json", "lv2:urn:q:fast", "--machine-class", "rpi5", "--host", "plugin-hostd",
+            "--system", "query", "--json", "lv2:urn:q:fast", "--machine-class", "rpi5", "--host", "plugin-hostd",
             "--host-version", "1.4.0", "--hosting-epoch", "2", "--rules", "rules-7", "--record-schema", "record-3",
             "--rate", "48000", "--quantum", "128"]])
 
@@ -71,7 +71,15 @@ class the_answer(stub_case):
         q = self.qualification({"clap:org.surge-synth-team.surge-xt": "isolated-only"})
         url = "clap:/usr/local/lib/clap/Surge XT.clap#org.surge-synth-team.surge-xt"
         self.assertEqual(q.answer(url, 48000, 128)["state"], "isolated-only")
-        self.assertEqual(self.commands.calls()[0][:3], ["query", "--json", "clap:org.surge-synth-team.surge-xt"])
+        self.assertEqual(self.commands.calls()[0][:4], ["--system", "query", "--json", "clap:org.surge-synth-team.surge-xt"])
+
+    def test_the_store_asked_is_the_system_store_the_sync_service_fills(self):
+        # plugin-qualify-sync runs as a system service with --system: its store is plugin-db's system store, so the
+        # reader asks that one, never the user default (~/.local/state/plugin-db, empty on a device: every answer None)
+        q = self.qualification({"lv2:urn:q:fast": "qualified"})
+        q.answer("urn:q:fast", 48000, 128)
+        self.assertEqual(self.commands.calls()[0][0], "--system")
+        self.assertNotIn("--store", self.commands.calls()[0])
 
     def test_a_named_store_is_the_one_asked(self):
         q = self.qualification({"lv2:urn:q:fast": "qualified"}, store="/var/lib/elsewhere")
