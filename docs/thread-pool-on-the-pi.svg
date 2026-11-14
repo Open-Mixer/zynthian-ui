@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 330" font-family="sans-serif" font-size="13">
+  <title>How instruments use the Pi 5's cores: one worker per instance, and the thread pool inside a worker</title>
+  <rect width="760" height="330" fill="#ffffff"/>
+  <!-- the cores -->
+  <text x="20" y="28" font-size="15" font-weight="bold" fill="#222">Raspberry Pi 5: four cores</text>
+  <g>
+    <rect x="20" y="45" width="170" height="250" rx="6" fill="#f2f2f2" stroke="#999"/>
+    <text x="105" y="66" text-anchor="middle" fill="#333">core 0</text>
+    <rect x="35" y="80" width="140" height="44" rx="4" fill="#d9d9d9" stroke="#777"/>
+    <text x="105" y="100" text-anchor="middle" fill="#222">plugin-hostd</text>
+    <text x="105" y="116" text-anchor="middle" font-size="11" fill="#444">the daemon, no audio</text>
+
+    <rect x="200" y="45" width="170" height="250" rx="6" fill="#eef4fb" stroke="#7a9cc6"/>
+    <text x="285" y="66" text-anchor="middle" fill="#333">core 1 (audio)</text>
+    <rect x="215" y="80" width="140" height="56" rx="4" fill="#cfe0f5" stroke="#4a78b0"/>
+    <text x="285" y="101" text-anchor="middle" fill="#123">worker: instrument A</text>
+    <text x="285" y="118" text-anchor="middle" font-size="11" fill="#234">all of A's voices,</text>
+    <text x="285" y="131" text-anchor="middle" font-size="11" fill="#234">one audio thread</text>
+
+    <rect x="380" y="45" width="170" height="250" rx="6" fill="#eef4fb" stroke="#7a9cc6"/>
+    <text x="465" y="66" text-anchor="middle" fill="#333">core 2 (audio)</text>
+    <rect x="395" y="80" width="140" height="56" rx="4" fill="#cfe0f5" stroke="#4a78b0"/>
+    <text x="465" y="101" text-anchor="middle" fill="#123">worker: instrument B</text>
+    <text x="465" y="118" text-anchor="middle" font-size="11" fill="#234">all of B's voices,</text>
+    <text x="465" y="131" text-anchor="middle" font-size="11" fill="#234">one audio thread</text>
+
+    <rect x="560" y="45" width="180" height="250" rx="6" fill="#eef4fb" stroke="#7a9cc6"/>
+    <text x="650" y="66" text-anchor="middle" fill="#333">core 3 (audio)</text>
+    <rect x="575" y="80" width="150" height="56" rx="4" fill="#cfe0f5" stroke="#4a78b0"/>
+    <text x="650" y="101" text-anchor="middle" fill="#123">worker: instrument C</text>
+    <text x="650" y="118" text-anchor="middle" font-size="11" fill="#234">all of C's voices,</text>
+    <text x="650" y="131" text-anchor="middle" font-size="11" fill="#234">one audio thread</text>
+  </g>
+  <!-- what the pool would add -->
+  <rect x="215" y="170" width="510" height="110" rx="6" fill="#fff6e5" stroke="#d9a441" stroke-dasharray="6 4"/>
+  <text x="470" y="192" text-anchor="middle" font-weight="bold" fill="#7a5410">pool=cores (a plugin that offers clap.thread-pool and passed the pool step)</text>
+  <rect x="235" y="205" width="140" height="34" rx="4" fill="#ffe2a8" stroke="#b07d1a"/>
+  <text x="305" y="227" text-anchor="middle" fill="#5a3d08">its audio thread</text>
+  <rect x="415" y="205" width="120" height="34" rx="4" fill="#ffe2a8" stroke="#b07d1a"/>
+  <text x="475" y="227" text-anchor="middle" fill="#5a3d08">helper</text>
+  <rect x="595" y="205" width="120" height="34" rx="4" fill="#ffe2a8" stroke="#b07d1a"/>
+  <text x="655" y="227" text-anchor="middle" fill="#5a3d08">helper</text>
+  <text x="470" y="265" text-anchor="middle" font-size="12" fill="#5a3d08">one instrument's voices split over its worker's cores (N cores, N - 1 helpers). On the Pi today no installed plugin asks.</text>
+  <text x="20" y="318" font-size="12" fill="#333">Every instrument instance gets a worker of its own (placement spread): several instruments use several cores. Surge XT has no pool, so its voices stay on one.</text>
+</svg>
