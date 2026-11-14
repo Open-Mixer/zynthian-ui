@@ -12,6 +12,9 @@ thread pool would add inside one instrument, and what Surge XT does today.
   workers on the audio cores 1-3, the daemon on 0`).
 - A worker runs its instance's audio on one real-time thread. Every voice of that instrument is rendered
   on that thread, one after the other, inside each JACK cycle.
+- Each worker is pinned to all three audio cores, not to one of them; the kernel places its threads there.
+  On the Pi on 2026-11-14 every worker read affinity `1-3`, with one `SCHED_FIFO` thread at priority 65
+  (JACK's, under `jackd -P 70`) and three `SCHED_OTHER` threads.
 - So several instruments use several cores, and one instrument uses one core, however many voices it plays.
 
 ## The thread pool, inside one instrument
@@ -22,18 +25,55 @@ thread pool would add inside one instrument, and what Surge XT does today.
   `pool=cores` (helpers on the worker's other cores) or `pool=off` (the plugin's own serial path). The
   record gets that pin from the qualification's pool step, which runs the plugin with and without the pool
   and keeps the pool only for a plugin that asks for it and stays real-time safe with it.
-- The pool step is blocked today by a defect in plugin-hostd's pin handling (plugin-hostd#82); until it is
-  fixed no record can carry `pool=cores`.
-- **On the Pi today no installed plugin asks for the pool.** Every pool step of the Pi's qualification
-  run (263) reads `not-asked`.
+- The pool step cannot grant the pool today: a fresh daemon refuses the first add of a plugin outside its
+  default CLAP path (plugin-hostd#82). The fix, plugin-hostd#83, is open and waits for
+  plugin-hostd-protocol 0.5.9. Until it lands no record can carry `pool=cores`.
+- **On the Pi no installed plugin asks for the pool** (2026-11-14). `omx-clap-scan` 0.32.3 read 264 CLAP
+  plugins in 71 files and none offers `clap.thread-pool`; every pool step of the Pi's qualification run
+  (263) reads `not-asked`, and neither the pins nor the records hold a `pool=` word.
+
+### Where the pool is released
+
+| Piece | Since | On the Pi, 2026-11-14 |
+|---|---|---|
+| omx-clap-host `--thread-pool=qualified\|off\|on`, the grant from the plugin's qualification | 0.24.0 | 0.32.3 |
+| The pool's helpers follow the audio thread's scheduling | 0.30.0 | 0.32.3 |
+| plugin-qualify's pool step (`pool=cores` or `pool=off` into the record) | 0.19.0 | 0.20.4 |
+| plugin-hostd placement `spread`, workers on the audio cores | 0.14.0 | 0.20.6 |
 
 ## Surge XT
 
-- Surge XT's CLAP does not offer `clap.thread-pool` (its descriptor reports `threadPool: false`). It
+- Surge XT's CLAP (1.4.0) does not offer `clap.thread-pool`: of the 18 extensions it answers, none is the
+  pool. It
   renders its voices serially on its worker's thread, with or without a pin; there is nothing for the
   pool to change. More Surge XT instances, each with its own worker, are what use more cores.
 - Its default patch is limited to 16 voices (its Polyphony Limit), so the load stops growing at 16 held
   notes. The limit goes up to 64.
+
+### Surge XT as Zynthian runs it (2026-11-14)
+
+Zynthian on the Pi (`ZYNTHIAN_PLUGIN_ENGINE=plugin-hostd`, plugin-hostd 0.20.6, omx-clap-host 0.32.3), its
+own chain (MDA Piano, omx-eq8, omx-comp) kept, and a second chain with Surge XT's CLAP added
+(`PH/clap:/usr/local/lib/clap/Surge XT.clap#org.surge-synth-team.surge-xt`). The engine gave it a fourth
+worker, affinity `1-3`, its audio thread `SCHED_FIFO` 65. JACK on the Pi's audio interface (ALSA backend), the default patch, N
+notes held for 8 s each, sent to the worker's MIDI input; the worker's own output and audio thread measured.
+
+| Rate / period | Notes held | xruns | DSP load (mean / highest) | Worker audio thread | Output peak / RMS |
+|---|---|---|---|---|---|
+| 48 kHz / 256 (Zynthian's) | 0 | 0 | 3.8 % / 3.9 % | 1.2 % | silence |
+| | 1 | 0 | 4.5 % / 4.6 % | 1.7 % | -11.2 / -22.4 dBFS |
+| | 4 | 0 | 5.5 % / 5.5 % | 2.7 % | -2.3 / -16.3 dBFS |
+| | 16 | 0 | 9.9 % / 10.1 % | 7.0 % | +3.4 / -10.3 dBFS |
+| | 32 | 0 | 10.0 % / 10.2 % | 7.1 % | +3.6 / -9.7 dBFS |
+| 48 kHz / 128 | 0 | 0 | 6.0 % / 6.1 % | 1.5 % | silence |
+| | 1 | 0 | 6.8 % / 6.8 % | 2.2 % | -11.2 / -22.4 dBFS |
+| | 4 | 0 | 7.8 % / 7.9 % | 3.2 % | -2.2 / -16.3 dBFS |
+| | 16 | 0 | 12.8 % / 12.9 % | 7.7 % | +3.8 / -10.1 dBFS |
+| | 32 | 0 | 12.7 % / 12.9 % | 7.9 % | +3.4 / -9.7 dBFS |
+
+- The load stops at 16 notes: the default patch sounds 16 voices. Peaks above 0 dBFS are the float output
+  before Zynthian's mixer.
+- The DSP load is the whole graph's, Zynthian's own chain included.
 
 ### Baseline: voices before the first xrun (preliminary hardware tier)
 
