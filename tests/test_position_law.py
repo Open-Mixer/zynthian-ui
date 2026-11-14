@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 #
-# The position law of a plugin-hostd controller: omx-contract's Python reader (omx_contract_scale.py, found in
-# /usr/share/omx-contract or ZYNTHIAN_OMX_CONTRACT_SHARE), which the fork calls and does not restate. The reader the
-# fork finds is held here to the golden vectors the same package installs (scale-vectors.json beside it, or
-# ZYNTHIAN_OMX_SCALE_VECTORS). Without either file the tests FAIL: there is no copy of them in this tree.
+# The position law of a plugin-hostd controller: omx-contract's Python reader (omx_contract.scale, from
+# python3-omx-contract), which the fork calls and does not restate. The reader the fork finds is held here to the
+# golden vectors omx-contract-data installs (/usr/share/omx-contract/scale-vectors.json, or
+# ZYNTHIAN_OMX_SCALE_VECTORS). Without either the tests FAIL: there is no copy of them in this tree.
 # Every other engine's controller keeps upstream's is_logarithmic law, and the tests say so by value.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
@@ -66,7 +66,7 @@ def close(a, b):
     return a == b or abs(a - b) <= ULP * max(abs(a), abs(b), 1e-300)
 
 
-VECTORS_PATH = os.environ.get("ZYNTHIAN_OMX_SCALE_VECTORS", os.path.join(law.SHARE_PATH, "scale-vectors.json"))
+VECTORS_PATH = os.environ.get("ZYNTHIAN_OMX_SCALE_VECTORS", "/usr/share/omx-contract/scale-vectors.json")
 
 
 def vectors():
