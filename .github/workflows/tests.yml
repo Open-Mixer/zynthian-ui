@@ -52,12 +52,14 @@ jobs:
           done
           echo "plugin-hostd and its contract at $v, the newest pair this cell serves together:$pins"
           echo "HOSTD_PINS=$pins" >> "$GITHUB_ENV"
+          # python3-plugin-hostd-protocol: plugin_hostd_protocol, the client the words of a line and the reply codes are
+          # read through (#4)
           # shellcheck disable=SC2086 # one word per pin
           apt-get install -y -qq --no-install-recommends $pins omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract \
-            plugin-hostd-protocol-l10n-ca
+            plugin-hostd-protocol-l10n-ca python3-plugin-hostd-protocol
           # the contract the series is built and tested against: every declared package inside its range
           python3 -m tools.contract_versions
-          dpkg-query -W plugin-hostd omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract
+          dpkg-query -W plugin-hostd omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract python3-plugin-hostd-protocol
           # the owners' sentences are read from the vocabularies omx-contract-data's contract directory holds, in the
           # layout it has from 3.14.0 on (#6), and the catalogs of plugin-hostd-protocol-contract: a floor and the
           # next major
@@ -79,27 +81,6 @@ jobs:
             echo "ZYNTHIAN_OMX_CONTRACT_SHARE=/tmp/omx-contract/share/omx-contract" >> "$GITHUB_ENV"
             echo "ZYNTHIAN_OMX_SCALE_VECTORS=/tmp/omx-contract/data/scale-vectors.json" >> "$GITHUB_ENV"
             echo "SCALE READER AND VECTORS FROM COMMIT $SHA"
-          fi
-
-      - name: Fetch plugin-hostd's Python client
-        run: |
-          # plugin_hostd_protocol, the client the words of a line and the reply codes are read through (#4):
-          # python3-plugin-hostd-protocol from plugin-hostd's next release on; until then from a named commit of its
-          # main, and the log says so. The package knows where the table and the contract directory are installed;
-          # a checkout is told
-          if python3 -c 'import plugin_hostd_protocol' 2>/dev/null; then
-            echo "CLIENT FROM INSTALLED PACKAGE"
-          else
-            SHA=ad132cf7ddb560afd1f6929f7d93ef0ef8f630dc
-            apt-get install -y -qq --no-install-recommends git ca-certificates
-            git clone -q https://github.com/Open-Mixer/plugin-hostd /tmp/plugin-hostd
-            git -C /tmp/plugin-hostd checkout -q "$SHA"
-            test -f /tmp/plugin-hostd/clients/python/plugin_hostd_protocol/__init__.py
-            echo "PYTHONPATH=/tmp/plugin-hostd/clients/python" >> "$GITHUB_ENV"
-            test -f /usr/share/plugin-hostd-protocol/plugin-hostd-protocol.json
-            echo "PLUGIN_HOSTD_PROTOCOL_TABLE=/usr/share/plugin-hostd-protocol/plugin-hostd-protocol.json" >> "$GITHUB_ENV"
-            echo "OMX_CONTRACT_PATH=/usr/share/omx-contract/contract.d" >> "$GITHUB_ENV"
-            echo "CLIENT FROM BRANCH $SHA"
           fi
 
       - name: Fetch plugin-db's Python reader and its golden answers
