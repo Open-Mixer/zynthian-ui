@@ -3,3 +3,5 @@
 # <name> >= <floor> < <ceiling> [: <binary packages that carry it>]
 plugin-hostd-protocol >= 0.5.8 < 0.6 : libplugin-hostd-protocol0 plugin-hostd-protocol-contract plugin-hostd-protocol-l10n-ca
 plugin-hostd-contract >= 0.20.4 < 0.21
+# plugin-hostd's Python client, imported at module load: every name zyngine imports from it is in it from 0.20.4 on
+python3-plugin-hostd-protocol >= 0.20.4 < 0.21
