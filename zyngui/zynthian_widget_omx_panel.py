@@ -11,7 +11,7 @@
 # pointer, the wheel and the keys with the same gesture vocabulary; plugin-hostd computes each curve's points and its
 # feedback port gives the meters. Without the renderer the strips below are drawn, and the reason is logged once.
 #
-# Under a curve the renderer can draw the measured spectrum (openmixer's spec 2026-11-15, zynthian RTA §6): while the
+# Under a curve the renderer can draw the measured spectrum (the Zynthian RTA's wiring): while the
 # panel is shown and a display takes one, omx-rta-read runs as the panel's child, reading the taps the mode shows
 # (the console's pre | post | both, and the delta), and the newest frame is handed to the view on each refresh. The
 # child is ended and reaped when the panel is hidden, rebuilt or destroyed; a tap the mode shows that the engine

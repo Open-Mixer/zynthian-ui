@@ -340,7 +340,7 @@ def output_set(line):
         return None
 
 
-# ---- The spectrum under a curve: omx-rta-read as the panel's child (openmixer's spec 2026-11-15, zynthian RTA §3, §6) ----
+# ---- The spectrum under a curve: omx-rta-read as the panel's child (the Zynthian RTA's reader and wiring) ----
 
 READER = "omx-rta-read"
 MODES = ("pre", "post", "both")

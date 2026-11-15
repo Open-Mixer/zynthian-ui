@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 #
-# A stand-in for omx-dsp's omx-rta-read (the RTA reader of openmixer's spec 2026-11-15-zynthian-rta-from-a-jack-reader.md
-# §3): it takes the reader's arguments and writes its JSON lines on stdout, one frame every 20 ms, with no JACK. The
+# A stand-in for omx-dsp's omx-rta-read (the RTA reader on an instance's JACK ports): it
+# takes the reader's arguments and writes its JSON lines on stdout, one frame every 20 ms, with no JACK. The
 # frame is fixed: --bands bands log-spaced from 20 Hz to 20 kHz, a level per tap named (--post, --pre) and, with both,
 # their difference. The tests steer it by environment:
 #   STUB_RTA_PIDFILE   write the stub's pid there before the first line

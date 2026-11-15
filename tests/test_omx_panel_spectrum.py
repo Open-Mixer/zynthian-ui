@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #
-# The spectrum under a curve in the panel widget (zyngui/zynthian_widget_omx_panel.py; openmixer's spec 2026-11-15,
-# zynthian RTA §6): while a panel whose display takes a spectrum is shown, omx-rta-read runs as its child with the taps
+# The spectrum under a curve in the panel widget (zyngui/zynthian_widget_omx_panel.py; the Zynthian
+# RTA's wiring): while a panel whose display takes a spectrum is shown, omx-rta-read runs as its child with the taps
 # the mode shows; hidden, rebuilt or destroyed, the child is ended and reaped. The reader is tests/stub_omx_rta_read.py
 # (no JACK), the view a stand-in that takes a spectrum on the displays it is told, the graph a stand-in with one client,
 # fx. The widget is imported under stand-ins for Tk, the GUI config and zynautoconnect, taken out again afterwards.
