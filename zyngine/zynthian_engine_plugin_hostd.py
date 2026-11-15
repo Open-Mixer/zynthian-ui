@@ -1147,6 +1147,45 @@ def own_panel(path):
     return own_panels[key]
 
 
+def panel_meters(layout, panel):
+    """`layout` with the meters the plugin's own panel declares, when plugin-hostd's panel reply carries them
+    (clap.meters/1): the layout's meters are the panel's, in its order, each with describe's facts of the meter of
+    that symbol, and each display's meter ids are the panel's display's, indices into those meters (the gain-reduction
+    bar reads its meter 0). An id beyond them is said once and drawn as none. A panel that carries no meters leaves
+    describe's meters and their ids as they are."""
+    try:
+        with open(panel) as f:
+            declared = json.load(f)
+    except (TypeError, OSError, ValueError):
+        return layout
+    meters = declared.get("meters") if isinstance(declared, dict) else None
+    if not isinstance(meters, list) or not meters:
+        return layout
+    facts = {m.get("symbol"): m for m in layout.get("meters") or []}
+    drawn = []
+    for m in meters:
+        symbol = str(m.get("symbol") or m.get("id"))
+        drawn.append({**m, **facts.get(symbol, {}), "symbol": symbol})
+    own = {}
+    for d in declared.get("displays") or []:
+        own.setdefault(d.get("kind"), []).append(d)
+    displays = []
+    for d in layout.get("displays") or []:
+        mine = own.get(d.get("kind")) or []
+        ids = mine.pop(0).get("meterIds") if mine else None
+        if isinstance(ids, list):
+            kept = []
+            for k in ids:
+                if k is not None and not (isinstance(k, int) and 0 <= k < len(drawn)):
+                    log_once(("meter id", panel, d.get("kind"), k), "the %s display of %s names meter %s, beyond the %d "
+                             "meters its panel declares: drawn without it", d.get("kind"), panel, k, len(drawn))
+                    k = None
+                kept.append(k)
+            d = dict(d, meters=kept)
+        displays.append(d)
+    return dict(layout, meters=drawn, displays=displays)
+
+
 def panel_args(panel):
     """describe's arguments for the plugin's own panel file (own_panel), none without one."""
     return ["--panel", panel] if panel else []
@@ -1227,6 +1266,8 @@ def panel_drawn(path, panel=None):
 
         layout = run("--layout")
         description = description_cache.get(key) or run()["description"]
+        if isinstance(layout, dict):
+            layout = panel_meters(layout, panel)
         if not isinstance(description, dict) or not isinstance(layout, dict) or "description" in layout \
                 or not isinstance(layout.get("sections"), list):
             raise ValueError("this omx-panel prints no layout for describe --layout")
