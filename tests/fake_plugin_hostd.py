@@ -57,10 +57,11 @@ class fake_plugin_hostd:
 
     def __init__(self, port, journal=None, descriptors=None, mod_host=False, planner=False, grouping=False,
                  group_max=8, verdicts=None, estimator=False, hello=False, bulk=False, stale_tags=False,
-                 hello_reply="resp -902"):
+                 hello_reply="resp -902", panels=None):
         self.port = port
         self.journal = journal
         self.descriptors = descriptors or {}
+        self.panels = panels or {}  # uri => the panel file plugin-hostd filed beside its descriptor (panel_get)
         self.mod_host = mod_host  # answer like mod-host: no plugin-hostd verbs
         self.instances = {}  # instance => uri
         self.curves = {}  # (instance, display) => the terms of its curve_bind, see verb_curve_bind
@@ -206,7 +207,8 @@ class fake_plugin_hostd:
         try:
             method = getattr(self, "verb_" + verb, None)
             if method is None or (self.mod_host and verb in ("worker_list", "chain", "chain_get", "chain_clear",
-                                                              "descriptor_get", "preset_list", "preset_get")) \
+                                                              "descriptor_get", "panel_get", "preset_list",
+                                                              "preset_get")) \
                     or (not self.planner and verb.startswith("plan")) \
                     or (not self.estimator and verb == "estimate"):
                 return "resp -902"
@@ -547,6 +549,17 @@ class fake_plugin_hostd:
         if self.descriptors[uri] is None:  # a scan that wrote nothing
             return "resp -531"
         return f'resp 0 "{self.descriptors[uri]}"'
+
+    def verb_panel_get(self, uri):
+        # plugin-hostd's: the panel filed beside the descriptor, else what the descriptor answers (no panel without one)
+        uri = grammar.pin_key(uri)
+        if uri not in self.descriptors:
+            return "resp -529"
+        if self.descriptors[uri] is None:
+            return "resp -531"
+        if uri not in self.panels:
+            return "resp -529"
+        return f'resp 0 "{self.panels[uri]}"'
 
     def verb_state_save(self, directory):
         for n, params in self.params.items():
