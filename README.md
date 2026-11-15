@@ -17,6 +17,8 @@
 > [zynthian-sys#228](https://github.com/zynthian/zynthian-sys/pull/228); the companion fork is
 > [FreeMixer/zynthian-sys](https://github.com/FreeMixer/zynthian-sys). Install the daemon and the packages from the
 > [FreeMixer channel](https://www.openmixer.org).
+>
+> PRs merge into `openmixer`, not the default branch: close the issue by hand at merge.
 
 The text below is Zynthian's own.
 
