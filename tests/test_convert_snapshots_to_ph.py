@@ -87,7 +87,7 @@ class converter_case(unittest.TestCase):
 
     def test_a_plugin_the_store_does_not_hold_is_converted_and_nothing_is_said_of_it(self):
         code, report = self.run_tool(os.path.join(self.dir, "one-jv-one-zy.zss"))
-        self.assertEqual(self.commands.calls()[0][:3], ["query", "--json", ZAMCOMP_ADDRESS], "it was asked")
+        self.assertEqual(self.commands.calls()[0][:4], ["--system", "query", "--json", ZAMCOMP_ADDRESS], "it was asked")
         self.assertNotIn("not loaded processor", report)
         self.assertIn("0 converted processors not loaded", report)
 

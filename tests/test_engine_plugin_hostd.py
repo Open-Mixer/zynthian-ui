@@ -1509,7 +1509,7 @@ class test_below_bar(plugin_hostd_case):
         self.assertEqual(lines, ["pin_accept urn:test:amp", "add urn:test:amp 1000 own"])
         self.assertEqual(proc.engine.replay_lines()[0], "add urn:test:amp 1000 own")
         self.assertIsNone(ph.member_of(proc, "urn:test:amp"), "it joins no run")
-        self.assertEqual(self.commands.calls()[0][:3], ["query", "--json", "lv2:urn:test:amp"])
+        self.assertEqual(self.commands.calls()[0][:4], ["--system", "query", "--json", "lv2:urn:test:amp"])
 
     def test_a_refused_plugin_is_not_accepted_under_qualified_only_and_its_add_says_why(self):
         self.qualify("refused")
@@ -1560,7 +1560,7 @@ class test_below_bar(plugin_hostd_case):
         fake = self.serve()
         self.add(self.chain(), "PH/Amp")
         self.assertEqual([l for l in fake.lines if l.split()[0] in ("pin_accept", "add")], ["add urn:test:amp 1000"])
-        self.assertEqual(self.commands.calls()[0][:3], ["query", "--json", "lv2:urn:test:amp"], "it was asked")
+        self.assertEqual(self.commands.calls()[0][:4], ["--system", "query", "--json", "lv2:urn:test:amp"], "it was asked")
 
 
 class test_catalogue(plugin_hostd_case):
