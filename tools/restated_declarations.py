@@ -96,7 +96,8 @@ SCAN = ("zyngine/zynthian_plugin_*.py", "zyngine/zynthian_engine_plugin_hostd*.p
         "zyngine/zynthian_touch_layer.py", "zyngine/ctrldev/zynthian_ctrldev_base_surface.py",
         "zynautoconnect/mod_ui_routes.py", "zyngui/zynthian_widget_omx_*.py",
         # upstream's own modules that call into the fork's declarations
-        "zyngine/zynthian_chain_manager.py", "zynautoconnect/zynthian_autoconnect.py", "zyngui/zynthian_gui_admin.py", "zyngui/zynthian_gui_engine.py")
+        "zyngine/zynthian_chain_manager.py", "zynautoconnect/zynthian_autoconnect.py", "zyngui/zynthian_gui_admin.py", "zyngui/zynthian_gui_engine.py",
+        "zyngui/zynthian_widget_drawbar.py", "zyngui/zynthian_gui_control_xy.py")
 
 PROTOCOL = "zyngine/zynthian_plugin_hostd_protocol.py"
 ENGINE = "zyngine/zynthian_engine_plugin_hostd.py"
