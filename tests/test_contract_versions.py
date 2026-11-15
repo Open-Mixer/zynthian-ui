@@ -56,3 +56,25 @@ def test_the_client_the_runtime_imports_is_declared_and_carries_every_name():
                 for a in n.names}
     assert imported
     assert sorted(imported - set(plugin_hostd_protocol.__all__)) == []
+
+
+def test_omx_contract_readers_are_imported_from_python3_omx_contract():
+    """The position law and the catalog reader are omx-contract's package omx_contract (python3-omx-contract,
+    omx-contract#28): imported as omx_contract.scale and omx_contract.catalog, never as a file found under
+    /usr/share/omx-contract, and the package that carries them is declared in contract-versions."""
+    import os
+    import re
+
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    with open(os.path.join(root, "contract-versions")) as f:
+        assert "python3-omx-contract" in [p for ps in packages_of(f.read()).values() for p in ps]
+    by_path = re.compile(r"^\s*(?:import|from)\s+(omx_contract_(?:scale|catalog))\b", re.M)
+    found = []
+    for d in ("zyngine", "zyngui", "tests"):
+        for dirpath, _, files in os.walk(os.path.join(root, d)):
+            for name in files:
+                if name.endswith(".py"):
+                    path = os.path.join(dirpath, name)
+                    with open(path, encoding="utf-8", errors="replace") as f:
+                        found += [f"{os.path.relpath(path, root)}: {m}" for m in by_path.findall(f.read())]
+    assert found == []
