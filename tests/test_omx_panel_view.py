@@ -259,6 +259,102 @@ def alive(pid):
         return False
 
 
+class SpectrumCall(unittest.TestCase):
+    """View.set_spectrum against omx-panel 0.14.0's entry: omx_panel_view_set_spectrum(view, display, hz, pre_db, post_db,
+    peak_db, n, mode, delta, db_min, db_max, grid_db), mode omx_panel_tap_mode_t (PRE 0, POST 1, BOTH 2), the delta only
+    with both; the library is libomx-panel-render.so.1, the soname that signature moved to."""
+
+    WINDOW = (-72.0, 0.0, 12.0)
+    FRAME = {"hz": [100.0, 1000.0, 10000.0], "pre": ([-30.0, -24.0, float("-inf")], [-27.0, -21.0, float("-inf")]),
+             "post": ([-30.0, -12.0, float("-inf")], [-27.0, 0.0, float("-inf")]), "diff": [0.0, 12.0, None]}
+
+    class Lib:
+        def __init__(self):
+            self.calls = []
+
+        def omx_panel_view_set_spectrum(self, *args):
+            # what ctypes would pass: arrays read back as lists, NULL as None
+            self.calls.append(tuple(list(a) if hasattr(a, "_length_") else a for a in args))
+            return True
+
+    def view(self):
+        v = view.View.__new__(view.View)
+        v.lib, v.view = self.Lib(), "the view"
+        return v
+
+    def test_the_library_is_the_soname_the_new_entry_has(self):
+        self.assertEqual(view.LIBRARY, "libomx-panel-render.so.1")
+
+    def test_the_entry_is_declared_with_both_taps_the_mode_and_the_delta(self):
+        lib = types.SimpleNamespace(omx_panel_view_set_spectrum=types.SimpleNamespace())
+        view._declare_spectrum(lib)
+        f = lib.omx_panel_view_set_spectrum
+        self.assertEqual(f.restype, view.ctypes.c_bool)
+        DP = view.ctypes.POINTER(view.ctypes.c_double)
+        self.assertEqual(f.argtypes, [view.ctypes.c_void_p, view.ctypes.c_uint32, DP, DP, DP, DP, view.ctypes.c_uint32,
+                                      view.ctypes.c_int, view.ctypes.c_bool, view.ctypes.c_double, view.ctypes.c_double,
+                                      view.ctypes.c_double])
+
+    def test_each_mode_hands_the_renderer_the_taps_it_shows(self):
+        hz, pre, post = self.FRAME["hz"], self.FRAME["pre"], self.FRAME["post"]
+        for mode, delta, want in (
+                ("pre", False, (pre[0], None, pre[1], 0, False)),
+                ("post", False, (None, post[0], post[1], 1, False)),
+                ("both", False, (pre[0], post[0], post[1], 2, False)),
+                ("both", True, (pre[0], post[0], post[1], 2, True)),
+                ("post", True, (None, post[0], post[1], 1, False))):
+            v = self.view()
+            self.assertTrue(v.set_spectrum(3, self.FRAME, mode, delta, self.WINDOW))
+            self.assertEqual(v.lib.calls, [("the view", 3, hz, *want[:3], 3, *want[3:], *self.WINDOW)], (mode, delta))
+
+    def test_both_with_one_tap_answered_draws_that_tap_alone(self):
+        v = self.view()
+        v.set_spectrum(0, dict(self.FRAME, pre=None), "both", True, self.WINDOW)
+        self.assertEqual(v.lib.calls[-1][3:9], (None, self.FRAME["post"][0], self.FRAME["post"][1], 3, 1, False))
+
+    def test_no_frame_clears_it(self):
+        v = self.view()
+        self.assertTrue(v.set_spectrum(0, None, "both", True, self.WINDOW))
+        self.assertEqual(v.lib.calls, [("the view", 0, None, None, None, None, 0, 1, False, *self.WINDOW)])
+
+    def test_a_mode_that_is_none_of_the_three_is_refused_without_a_call(self):
+        v = self.view()
+        self.assertFalse(v.set_spectrum(0, self.FRAME, "sideways", False, self.WINDOW))
+        self.assertEqual(v.lib.calls, [])
+
+
+@unittest.skipUnless(renderer(), "omx-panel's renderer is not installed")
+class SpectrumDrawn(unittest.TestCase):
+    """The renderer itself: the modes and the delta change the pixels, and the delta is refused without both."""
+
+    W, H = 480, 300
+    WINDOW = (-72.0, 0.0, 12.0)
+
+    def frame(self):
+        hz = [20.0 * 1000.0 ** (k / 15) for k in range(16)]
+        post = [-30.0 - (6.0 if 6 <= k <= 9 else 0.0) for k in range(16)]
+        pre = [-30.0] * 16
+        return {"hz": hz, "pre": (pre, [p + 3 for p in pre]), "post": (post, [p + 3 for p in post]), "diff": None}
+
+    def view(self):
+        layout = fixture("omx-eq8")["layout"]
+        part, displays = view.screen_part(layout, {layout["controls"][0]["symbol"]})
+        return view.View(part), displays
+
+    def test_both_and_the_delta_each_draw_something_else(self):
+        v, displays = self.view()
+        d = next(iter(displays))
+        f = self.frame()
+        pics = {}
+        for mode, delta in (("post", False), ("both", False), ("both", True)):
+            self.assertTrue(v.set_spectrum(d, f, mode, delta, self.WINDOW), (mode, delta))
+            pics[(mode, delta)] = v.draw(self.W, self.H)
+        self.assertNotEqual(pics[("post", False)], pics[("both", False)], "PRE's dim line is drawn in both")
+        self.assertNotEqual(pics[("both", False)], pics[("both", True)], "the delta's wedges are drawn")
+        self.assertTrue(v.set_spectrum(d, f, "post", False, self.WINDOW))
+        self.assertEqual(v.draw(self.W, self.H), pics[("post", False)], "and post alone comes back")
+
+
 class FakeView:
     """What SpectrumFeed hands frames to: each set_spectrum call, recorded, accepted for the displays it has."""
 
