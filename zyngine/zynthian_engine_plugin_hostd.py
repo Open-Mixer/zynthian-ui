@@ -1196,7 +1196,37 @@ def symbol_of(param):
     return param if isinstance(param, str) else f"p{param}"
 
 
+def declared_family(panel):
+    """The family the plugin's own panel (own_panel's file) declares, None when it declares none."""
+    try:
+        with open(panel) as f:
+            return json.load(f).get("family")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def panel_refused(path, panel, why):
+    log_once(("own panel refused", path, panel), "omx-panel does not take the plugin's own panel %s for %s (%s): it "
+             "is described from its descriptor alone", panel, path, why)
+
+
 def panel_layout(path, width=None, remote=None, panel=None):
+    """panel_layout_with, given the plugin's own panel; when describe does not take that panel (it keeps none of the
+    family the panel declares, or refuses to lay it out), the plugin keeps what its descriptor alone gives, said once."""
+    if panel:
+        cut = panel_layout_with(path, width, remote, panel)
+        if cut is None:
+            panel_refused(path, panel, "describe refused it")
+        else:
+            described = description_cache.get((path, os.stat(path).st_mtime, panel)) or {}
+            family = declared_family(panel)
+            if not family or described.get("family") == family:
+                return cut
+            panel_refused(path, panel, f"family {described.get('family')}, not its {family}")
+    return panel_layout_with(path, width, remote, None)
+
+
+def panel_layout_with(path, width=None, remote=None, panel=None):
     """omx-panel's cut of the plugin's descriptor into pages of `width` slots (the Zynthian screen's, unless a surface
     names its own): `describe --pages --per-page <width>`, the skin applied, the Easy controls first, the groups kept
     whole, a hidden control's slot left blank (None). The host's remote-controls pages, when it has them, are handed
@@ -1231,7 +1261,9 @@ def panel_layout(path, width=None, remote=None, panel=None):
         controls = description.get("controls", [])
         description_cache[(path, key[1], panel)] = description
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as e:
-        log_once(("omx-panel", path), "omx-panel describe of %s failed (%s): plugin-hostd has no controller pages", path, e)
+        if not panel:  # with the plugin's own panel, panel_layout says it and describes again without
+            log_once(("omx-panel", path), "omx-panel describe of %s failed (%s): plugin-hostd has no controller pages",
+                     path, e)
         return None
     finally:
         if remote_file:
@@ -1244,6 +1276,21 @@ drawn_cache = {}  # (descriptor path, mtime, panel) => (the layout the renderer 
 
 
 def panel_drawn(path, panel=None):
+    """panel_drawn_with, given the plugin's own panel; when describe does not take that panel (it keeps none of the
+    family the panel declares, or refuses to lay it out), the drawn view is the descriptor's alone, said once."""
+    if panel:
+        drawn = panel_drawn_with(path, panel)
+        if drawn is None:
+            panel_refused(path, panel, "describe refused it")
+        else:
+            family = declared_family(panel)
+            if not family or drawn[1].get("family") == family:
+                return drawn
+            panel_refused(path, panel, f"family {drawn[1].get('family')}, not its {family}")
+    return panel_drawn_with(path, None)
+
+
+def panel_drawn_with(path, panel=None):
     """What the panel's own screen draws with omx-panel's renderer: (layout, description), the layout from
     `describe --layout` (the derivation's, its displays included) and the description its curve terms are bound by.
     None, said once, when omx-panel cannot give them (not installed, or one with no --layout). The plugin's own panel
@@ -1272,6 +1319,8 @@ def panel_drawn(path, panel=None):
                 or not isinstance(layout.get("sections"), list):
             raise ValueError("this omx-panel prints no layout for describe --layout")
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as e:
+        if panel:  # panel_drawn says it and describes again without the plugin's own panel
+            return None
         log_once(("omx-panel layout", path), "omx-panel describe --layout of %s failed (%s): the panel has no drawn view",
                  path, e)
         return None
