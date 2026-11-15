@@ -13,6 +13,7 @@
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+import json
 import os
 import sys
 import time
@@ -58,6 +59,32 @@ class OnThePi(plugin_hostd_case):
             code = f"PH/Real{n}"
         return self.add(self.chain(n), code)
 
+    def declared_is_drawn(self, uri, engine, layout):
+        """What the plugin's own panel declares (panel_get) is what its screen draws: each declared display is in the
+        drawn layout, and a display read from meters names meters that are declared and read. A panel that names a
+        meter it never declares, or a meter that never reads, fails here instead of drawing nothing."""
+        panel = engine.own_panel()
+        if not panel:
+            print("  own panel: none filed", flush=True)
+            return
+        with open(panel) as f:
+            declared = json.load(f)
+        drawn = [d.get("kind") for d in layout.get("displays") or []]
+        meters = {k: m["symbol"] for k, m in enumerate(layout.get("meters") or [])}
+        print(f"  own panel: family {declared.get('family')}, displays "
+              f"{[d.get('kind') for d in declared.get('displays') or []]}, meters {len(declared.get('meters') or [])}; "
+              f"drawn: family {layout.get('family')}, displays {drawn}", flush=True)
+        for d in declared.get("displays") or []:
+            self.assertIn(d.get("kind"), drawn, f"{uri}: its panel declares a {d.get('kind')} display the screen lacks")
+            if d.get("source") != "meters":
+                continue
+            for k in d.get("meterIds") or []:
+                if k is None:
+                    continue
+                self.assertIn(k, meters, f"{uri}: its {d.get('kind')} display names meter {k}, which it never declares")
+                self.assertIsNotNone(engine.meter(meters[k]), f"{uri}: meter {meters[k]} of its {d.get('kind')} "
+                                     "display never reads")
+
     def test_each_plugin_is_drawn_with_its_curve_and_meters(self):
         for n, uri in enumerate(URIS, 1):
             proc = self.add_real(uri, n)
@@ -83,6 +110,7 @@ class OnThePi(plugin_hostd_case):
             time.sleep(1.0)
             for m in layout.get("meters") or []:
                 print(f"  meter {m['symbol']}: {engine.meter(m['symbol'])}", flush=True)
+            self.declared_is_drawn(uri, engine, layout)
             keys = {pv_key(sym): z for sym, z in engine.zctrls.items()}
             for page, (name, rows) in enumerate(engine._ctrl_screens):
                 on = {pv_key(k) for k in rows if k}

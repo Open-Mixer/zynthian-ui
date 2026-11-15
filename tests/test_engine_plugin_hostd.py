@@ -137,6 +137,7 @@ class plugin_hostd_case(unittest.TestCase):
         ph._logged.clear()
         ph.layout_cache.clear()
         ph.drawn_cache.clear()
+        ph.own_panels.clear()
         ph.description_cache.clear()
         os.environ.pop("OMX_PANEL_STUB_OLD", None)
         ph.probe_cache.clear()
