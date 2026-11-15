@@ -547,6 +547,15 @@ def head_client(members):
     return {i: daemon.engines[members[0]].jackname for i in members}
 
 
+def rta_sharing(processor):
+    """The instances run as `processor`'s jack client, in chain order (the order its worker runs them: the members
+    lists clients are made from are the chain's); [its instance] for a client of its own. The RTA's taps read it
+    (zynthian_omx_panel_view.rta_taps): only the first member answers PRE and only the last POST."""
+    client = processor.get_jackname()
+    shared = [i for i, c in daemon.clients.get(processor.chain_id, {}).items() if c == client]
+    return shared or [processor.engine.instance]
+
+
 def chain_clients(chain_id):
     """The jack client of each member the daemon's worker for this chain runs as one client, as the daemon
     says it: chain_get names the worker and the members it runs, worker_list the row of that worker.
@@ -1537,6 +1546,10 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
                          self.plugin_uri, e)
                 return []
         return []
+
+    def rta_sharing(self, processor):
+        """The instances processor's jack client runs, in chain order (rta_sharing)."""
+        return rta_sharing(processor)
 
     def meter(self, symbol):
         """The last reading of output `symbol` (a meter) from the feedback port, None until one came. The monitor is

@@ -7,3 +7,6 @@ plugin-hostd-contract >= 0.20.4 < 0.21
 python3-plugin-hostd-protocol >= 0.20.4 < 0.21
 # omx-contract's Python readers (omx_contract.scale, omx_contract.catalog): python3-omx-contract ships from 3.18.1 on
 omx-contract >= 3.18.1 < 4 : python3-omx-contract
+# omx-dsp's declarations, read at run time: the RTA level window (RTA_LEVEL_DB_MIN, RTA_LEVEL_DB_MAX, RTA_LEVEL_GRID_DB of
+# kernels/rta.json) the spectrum under a curve is drawn on, declared from 0.32.2 on
+omx-dsp >= 0.32.2 < 0.33 : omx-dsp-contract
