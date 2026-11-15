@@ -9,9 +9,10 @@
 # threshold and no table of its own: without the installed omx-panel (or the file ZYNTHIAN_OMX_GESTURES names) it
 # refuses, it does not fall back to a copy.
 #
-# Zynthian takes every word but `second` (a handle's Q, refused as GESTURE_NOT_TAKEN) and `paint` (a bar group's
-# sweep, which is not an input read here). A bar or a handle is a one-value control read from the same table by its
-# key; the fork's pages draw none, and no control of it is two-dimensional, so an xy has no surface. `second`, a
+# Zynthian takes every word. A bar is a column of a BarGroup: the drawbar widget (zynthian_widget_drawbar, setBfree's
+# and any LV2 organ's drawbars) drags in the pressed column and paints across the others (`paint`, a sweep). An xy is
+# the XY screen (zynthian_gui_control_xy): two controllers on one surface, by XY. A handle is a one-value control read
+# from the table by its key. `second`, a
 # handle's Q, is taken where a row is given the controller that is its Q (Panel's `seconds`): by encoder 3, by
 # Shift with the arrows, by the wheel and by a pinch of two touches (zynthian_touch_layer gives the second finger).
 #
@@ -350,6 +351,282 @@ class Gestures:
     def shown(self, t):
         """Whether the control shows its value text: from press to release and through the claim after a step."""
         return self.owner is not None or bool(self.claim and t < self.claim["until"])
+
+
+# ---- A bar group: one bar per column, a drag in the column, a sweep across them -----------------------------------
+
+
+class BarGroup:
+    """Bars side by side (an organ's drawbars): each column is a `bar` of the table, with its Travel, get, put and target
+    (x, y, w, h). A drag in the pressed column moves it over the column's height; a drag that leaves the column paints:
+    the pressed bar keeps the height it had in its column and every column entered takes the height under the pointer,
+    absolute, a column jumped over in one event taking the line between (omx-panel's tools/gestures.mjs). A tap is
+    `select` of its column, `more` a long press, a double-tap or Backspace the column's reset, a wheel or an arrow a step
+    of the selected column. `downward`: the bars come out downward (their value grows down the column), as the drawbar
+    widget draws them. `on_word(word, column)`."""
+
+    def __init__(self, bars, on_word=None, downward=False, table=None):
+        self.table = table or load_table()
+        self.on_word = on_word or (lambda word, column=None: None)
+        self.downward = downward
+        self.bars = []
+        for i, (travel, get, put, target) in enumerate(bars):
+            g = Gestures("bar", travel, get, put, target, travel_px=target[3], table=self.table,
+                         on_word=lambda word, i=i: self.on_word(word, i))
+            if downward:
+                g.horizontal = False
+                g.motion = self._downward(g)
+            self.bars.append(g)
+        self.log = []  # the gestures of every column, in order
+        self.pressed = None  # {col, pid, in_y, painting, prev}
+        self.selected = 0
+
+    @staticmethod
+    def _downward(g):
+        """A bar whose value grows down its column: the column's drag with y turned over."""
+        plain = Gestures.motion.__get__(g)
+        tx, ty, tw, th = g.target
+
+        def motion(x, y, t, pid="p", fine=False):
+            o = g.owner
+            if o and "flip0" not in o:
+                o["flip0"] = True
+                o["y0"] = 2 * ty + th - o["y0"]
+            return plain(x, 2 * ty + th - y, t, pid, fine)
+        return motion
+
+    def column(self, x, y=None):
+        for i, g in enumerate(self.bars):
+            tx, ty, tw, th = g.target
+            if tx <= x < tx + tw and (y is None or ty <= y < ty + th):
+                return i
+        return None
+
+    def height_at(self, i, y):
+        g = self.bars[i]
+        tx, ty, tw, th = g.target
+        n = (y - ty) / th if self.downward else (ty + th - y) / th
+        return g.travel.value(min(1.0, max(0.0, n)))
+
+    def _logged(self, g, before):
+        for entry in g.log[before:]:
+            self.log.append(entry)
+
+    def press(self, x, y, t, pid="p", ptype="mouse"):
+        i = self.column(x, y)
+        if i is None:
+            return
+        g = self.bars[i]
+        n = len(g.log)
+        g.press(x, y, t, pid, ptype)
+        self._logged(g, n)
+        if g.owner and g.owner["id"] == pid:
+            self.pressed = {"col": i, "pid": pid, "in_x": x, "in_y": y, "painting": False, "prev": (x, y)}
+
+    def motion(self, x, y, t, pid="p", fine=False):
+        p = self.pressed
+        if not p or p["pid"] != pid:
+            return
+        g = self.bars[p["col"]]
+        col = self.column(x)
+        if not p["painting"] and col == p["col"]:
+            p["in_x"], p["in_y"] = x, y
+        if not p["painting"]:
+            n = len(g.log)
+            if col == p["col"] or col is None or not (g.owner and g.owner["dragging"]):
+                g.motion(x, y, t, pid, fine)
+                self._logged(g, n)
+                if col == p["col"] or col is None or not (g.owner and g.owner["dragging"]):
+                    return
+            # the drag left the pressed column: it paints from here, one gesture
+            p["painting"] = True
+            gesture = g.owner["g"]
+            gesture.update(word="paint", input="sweep")
+            v = self.height_at(p["col"], p["in_y"])
+            gesture["changes"].append(v)
+            g.put(v)
+            p["prev"] = (p["in_x"], p["in_y"])
+            p["g"] = gesture
+        if col is None:
+            return
+        px, py = p["prev"]
+        frm = self.column(px)
+        step = (col > frm) - (col < frm)
+        entered = [col] if step == 0 else [frm + step * (k + 1) for k in range(abs(col - frm))]
+        for c in entered:
+            b = self.bars[c]
+            cx = b.target[0] + b.target[2] / 2
+            yy = y if c == col else py + (y - py) * ((cx - px) / ((x - px) or 1))
+            v = self.height_at(c, yy)
+            p["g"]["changes"].append(v)
+            b.put(v)
+        p["prev"] = (x, y)
+        p["g"]["end"] = t
+
+    def release(self, x, y, t, pid="p"):
+        p = self.pressed
+        if not p or p["pid"] != pid:
+            return
+        self.pressed = None
+        g = self.bars[p["col"]]
+        if p["painting"]:
+            p["g"]["end"] = t
+            g.owner, g.pointers = None, {}
+            return
+        n = len(g.log)
+        g.release(x, y, t, pid)
+        self._logged(g, n)
+        if g.log[n:] and g.log[-1]["word"] == "select":
+            self.selected = p["col"]
+
+    def tick(self, t):
+        for g in self.bars:
+            n = len(g.log)
+            g.tick(t)
+            self._logged(g, n)
+
+    def step(self, n, t, coarse=False, source="wheel"):
+        g = self.bars[self.selected]
+        k = len(g.log)
+        g.step(-n if self.downward else n, t, coarse, source)
+        self._logged(g, k)
+
+    def key(self, name, t, shift=False):
+        if name.replace("Arrow", "") in ("Left", "Right"):
+            self.selected = min(len(self.bars) - 1, max(0, self.selected + (1 if "Right" in name else -1)))
+            return
+        g = self.bars[self.selected]
+        k = len(g.log)
+        if self.downward and name.replace("Arrow", "") in ("Up", "Down"):
+            name = "Down" if "Up" in name else "Up"
+        g.key(name, t, shift)
+        self._logged(g, k)
+
+
+# ---- An xy: two travels on one surface ---------------------------------------------------------------------------
+
+
+class XY:
+    """A two-dimensional control (`xy` of the table): `tx`, `ty` the Travels of its two axes, `get()` -> (x, y), `put(x, y)`,
+    `target` (x, y, w, h). A drag moves both axes from where the threshold was crossed, over the target's width and
+    height (y grows downward, as the screen draws it), `fine` by the declared ratio; a tap is `select`, a long press
+    `more`, a double-tap or Backspace resets both axes to their declared defaults; Left and Right step x, Down and Up
+    step y, Down growing it as the screen draws it (Shift: coarse)."""
+
+    def __init__(self, tx, ty, get, put, target, on_word=None, table=None):
+        self.table = table or load_table()
+        self.tx, self.ty, self.get, self.put, self.target = tx, ty, get, put, target
+        self.on_word = on_word or (lambda word: None)
+        self.log, self.refused = [], []
+        self.owner, self.last_tap, self.claim, self.step_gesture = None, None, None, None
+
+    def word(self, inp):
+        return self.table["table"]["xy"].get(inp)
+
+    def open(self, word, inp, t):
+        g = {"word": word, "input": inp, "begin": t, "end": t, "changes": []}
+        self.log.append(g)
+        return g
+
+    def _put(self, g, xv, yv):
+        g["changes"].append((xv, yv))
+        self.put(xv, yv)
+
+    def inside(self, x, y):
+        tx, ty, tw, th = self.target
+        return tx <= x < tx + tw and ty <= y < ty + th
+
+    def tick(self, t):
+        o = self.owner
+        T = self.table["timings"]
+        if o and not o["dragging"] and not o["fired"] and t - o["t0"] >= T["longPressMs"]["default"]:
+            o["fired"] = True
+            if self.word("longPress") == "more":
+                self.open("more", "longPress", o["t0"] + T["longPressMs"]["default"])
+                self.on_word("more")
+
+    def press(self, x, y, t, pid="p", ptype="mouse"):
+        self.tick(t)
+        if not self.inside(x, y):
+            return
+        if self.owner:
+            self.refused.append({"code": "GESTURE_CONTROL_OWNED", "t": t, "why": "the control belongs to another input"})
+            return
+        T = self.table["timings"]
+        second = self.last_tap is not None and self.last_tap["ptype"] == ptype and t - self.last_tap["t"] <= T["doubleTapMs"]["default"]
+        self.owner = {"id": pid, "ptype": ptype, "t0": t, "x0": x, "y0": y, "dragging": False, "fired": False, "second": second}
+
+    def motion(self, x, y, t, pid="p", fine=False):
+        self.tick(t)
+        o = self.owner
+        if not o or o["id"] != pid:
+            return
+        G = self.table["thresholds"]
+        if not o["dragging"]:
+            if math.hypot(x - o["x0"], y - o["y0"]) <= G["dragStartPx"]:
+                return
+            xv, yv = self.get()
+            o.update(dragging=True, fired=True, ax=self.tx.position(xv), ay=self.ty.position(yv), px=x, py=y,
+                     g=self.open("fine" if fine else "drag", "dragFine" if fine else "drag", o["t0"]))
+        if fine:
+            o["g"].update(word="fine", input="dragFine")
+        ratio = G["fineRatio"] if fine else 1
+        _, _, tw, th = self.target
+        o["ax"] += (x - o["px"]) / tw * ratio
+        o["ay"] += (y - o["py"]) / th * ratio
+        o["px"], o["py"] = x, y
+        self._put(o["g"], self.tx.value(o["ax"]), self.ty.value(o["ay"]))
+        o["g"]["end"] = t
+
+    def release(self, x, y, t, pid="p"):
+        self.tick(t)
+        o = self.owner
+        if not o or o["id"] != pid:
+            return
+        self.owner = None
+        if o["dragging"]:
+            o["g"]["end"] = t
+            return
+        if o["fired"] or not self.inside(x, y):
+            return
+        if o["second"] and self.word("doubleTap") == "reset":
+            self.last_tap = None
+            return self.reset(self.open("reset", "doubleTap", o["t0"]), t)
+        g = self.open(self.word("tap"), "tap", o["t0"])
+        g["end"] = t
+        self.on_word("select")  # a tap selects and never changes a value
+        self.last_tap = {"t": t, "ptype": o["ptype"]}
+
+    def reset(self, g, t):
+        if self.tx.default is None or self.ty.default is None:
+            self.log.pop()
+            self.refused.append({"code": "GESTURE_NO_DEFAULT", "t": t, "why": "an axis declares no default"})
+            return
+        self._put(g, self.tx.default, self.ty.default)
+        g["end"] = t
+
+    def key(self, name, t, shift=False):
+        self.tick(t)
+        if name in ("BackSpace", "Backspace"):
+            return self.reset(self.open("reset", "backspace", t), t)
+        name = name.replace("Arrow", "")
+        if name not in ("Up", "Down", "Left", "Right") or self.owner:
+            return
+        inp = "arrowCoarse" if shift else "arrow"
+        if self.word(inp) != "step":
+            return
+        G, T = self.table["thresholds"], self.table["timings"]
+        count = G["coarseSteps"] if shift else 1
+        xv, yv = self.get()
+        if not (self.step_gesture and self.claim and t < self.claim["until"]):
+            self.step_gesture = self.open("step", inp, t)
+        if name in ("Left", "Right"):
+            xv = self.tx.value(self.tx.position(xv) + (1 if name == "Right" else -1) * count * self.tx.step_norm())
+        else:
+            yv = self.ty.value(self.ty.position(yv) + (1 if name == "Down" else -1) * count * self.ty.step_norm())  # y grows downward
+        self._put(self.step_gesture, xv, yv)
+        self.claim = {"until": t + T["claimMs"]["default"]}
+        self.step_gesture["end"] = t
 
 
 # ---- Tk's events onto the inputs ---------------------------------------------------------------------------------
