@@ -373,7 +373,7 @@ def rta_taps(client, sharing, instance, get_ports):
     return post, pre, None if (first or last) else "no spectrum inside a grouped chain"
 
 
-RTA_PATH = os.path.join("3", "omx-dsp", "primitives", "rta.json")
+RTA_PATH = os.path.join("3", "omx-dsp", "kernels", "rta.json")  # omx-dsp's package of the contract directory
 _rta_window_said = set()  # the contract roots whose rta.json was said unreadable
 
 
@@ -384,7 +384,7 @@ def rta_window(root=None):
     root = root or (os.environ.get("OMX_CONTRACT_PATH") or CONTRACT_PATH).split(":")[0]
     try:
         with open(os.path.join(root, RTA_PATH)) as f:
-            doc = json.load(f)
+            doc = json.load(f)["constants"]
 
         def number(key):
             v = doc[key]
