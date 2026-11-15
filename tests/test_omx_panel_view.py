@@ -316,9 +316,12 @@ class SpectrumLines(unittest.TestCase):
     def test_the_level_window_is_omx_dsps_declaration(self):
         root = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, root)
-        os.makedirs(os.path.join(root, "3", "omx-dsp", "primitives"))
-        with open(os.path.join(root, "3", "omx-dsp", "primitives", "rta.json"), "w") as f:
-            json.dump({"RTA_LEVEL_DB_MIN": {"value": -90}, "RTA_LEVEL_DB_MAX": {"value": 6}, "RTA_LEVEL_GRID_DB": {"value": 6}}, f)
+        # the shape omx-dsp installs: its kernel declarations' rta.json, the constants under "constants"
+        os.makedirs(os.path.join(root, "3", "omx-dsp", "kernels"))
+        with open(os.path.join(root, "3", "omx-dsp", "kernels", "rta.json"), "w") as f:
+            json.dump({"constants": {"RTA_LEVEL_DB_MIN": {"kind": "scalar", "unit": "dB", "value": -90},
+                                     "RTA_LEVEL_DB_MAX": {"kind": "scalar", "unit": "dB", "value": 6},
+                                     "RTA_LEVEL_GRID_DB": {"kind": "scalar", "unit": "dB", "value": 6}}}, f)
         self.assertEqual(view.rta_window(root), (-90.0, 6.0, 6.0))
         with self.assertLogs(level="WARNING"):
             self.assertIsNone(view.rta_window(os.path.join(root, "nowhere")))

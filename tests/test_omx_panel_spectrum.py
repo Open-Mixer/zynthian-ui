@@ -100,9 +100,10 @@ class PanelSpectrum(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp, True)
         os.chmod(STUB_READER, os.stat(STUB_READER).st_mode | stat.S_IXUSR)
-        os.makedirs(os.path.join(self.tmp, "c", "3", "omx-dsp", "primitives"))
-        with open(os.path.join(self.tmp, "c", "3", "omx-dsp", "primitives", "rta.json"), "w") as f:
-            json.dump({"RTA_LEVEL_DB_MIN": {"value": -72}, "RTA_LEVEL_DB_MAX": {"value": 0}, "RTA_LEVEL_GRID_DB": {"value": 12}}, f)
+        os.makedirs(os.path.join(self.tmp, "c", "3", "omx-dsp", "kernels"))
+        with open(os.path.join(self.tmp, "c", "3", "omx-dsp", "kernels", "rta.json"), "w") as f:
+            json.dump({"constants": {"RTA_LEVEL_DB_MIN": {"value": -72}, "RTA_LEVEL_DB_MAX": {"value": 0},
+                                     "RTA_LEVEL_GRID_DB": {"value": 12}}}, f)
         self.pidfile, self.argvfile = os.path.join(self.tmp, "pid"), os.path.join(self.tmp, "argv")
         patch = mock.patch.dict(os.environ, {"ZYNTHIAN_OMX_RTA_READ": STUB_READER, "OMX_CONTRACT_PATH": os.path.join(self.tmp, "c"),
                                              "STUB_RTA_PIDFILE": self.pidfile, "STUB_RTA_ARGV": self.argvfile})
