@@ -94,14 +94,14 @@ jobs:
         run: |
           apt-get install -y -qq --no-install-recommends git ca-certificates build-essential pkgconf libcjson-dev \
             libomx-contract-dev libomxdsp-dev binutils
-          SHA=1b04102ce1388a658b658ca1ac3775d91aa4e0c0
+          SHA=d5add8afd7873be969299d1b7f369f979f91ffc2
           git clone -q https://github.com/Open-Mixer/omx-panel /tmp/omx-panel
           git -C /tmp/omx-panel checkout -q "$SHA"
           test -f /tmp/omx-panel/schema/gestures.json
           echo "ZYNTHIAN_OMX_GESTURES=/tmp/omx-panel/schema/gestures.json" >> "$GITHUB_ENV"
           echo "GESTURES FROM BRANCH $SHA"
-          make -C /tmp/omx-panel/renderer build/libomx-panel-render.so.0
-          echo "ZYNTHIAN_OMX_PANEL_RENDER=/tmp/omx-panel/renderer/build/libomx-panel-render.so.0" >> "$GITHUB_ENV"
+          make -C /tmp/omx-panel/renderer build/libomx-panel-render.so.1
+          echo "ZYNTHIAN_OMX_PANEL_RENDER=/tmp/omx-panel/renderer/build/libomx-panel-render.so.1" >> "$GITHUB_ENV"
           echo "ZYNTHIAN_OMX_PANEL_TOOLS=/tmp/omx-panel/tools" >> "$GITHUB_ENV"
 
       - name: Assemble the contract root the literal gate reads (#4)
