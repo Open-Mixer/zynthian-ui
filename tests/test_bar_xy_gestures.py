@@ -12,8 +12,10 @@
 import json
 import os
 import sys
+import importlib
 import types
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_engine_plugin_hostd import ROOT  # noqa: E402  (sets up the stand-ins)
@@ -163,11 +165,44 @@ class TheForkSaysWhatItHas(unittest.TestCase):
         self.assertIn("zynthian_gui_control_xy", head)
 
 
+def _import_screens():
+    """The drawbar widget and the XY screen subclass Tk classes: stand-ins for the import only (CI's debian:trixie has
+    no tkinter), taken out again so the other test files see what they saw before; their handlers are the real ones."""
+    names = ("tkinter", "tkinter.font", "zyngui", "zyngui.zynthian_gui_config", "zyngui.zynthian_widget_base",
+             "zyngui.zynthian_gui_fullscreen_modal", "zyngui.zynthian_widget_drawbar", "zyngui.zynthian_gui_control_xy")
+    saved = {n: sys.modules.get(n) for n in names}
+    tk = types.ModuleType("tkinter")
+    tk.Canvas = tk.Frame = type("Tk", (), {})
+    tk.font = types.ModuleType("tkinter.font")
+    gui = types.ModuleType("zyngui")
+    gui.__path__ = [os.path.join(ROOT, "zyngui")]
+    base = types.ModuleType("zyngui.zynthian_widget_base")
+    base.zynthian_widget_base = type("zynthian_widget_base", (), {})
+    modal = types.ModuleType("zyngui.zynthian_gui_fullscreen_modal")
+    modal.zynthian_gui_fullscreen_modal = type("zynthian_gui_fullscreen_modal", (), {})
+    sys.modules.update({"tkinter": tk, "tkinter.font": tk.font, "zyngui": gui, "zyngui.zynthian_gui_config": mock.MagicMock(),
+                        "zyngui.zynthian_widget_base": base, "zyngui.zynthian_gui_fullscreen_modal": modal})
+    gui.zynthian_gui_config, gui.zynthian_widget_base, gui.zynthian_gui_fullscreen_modal = (
+        sys.modules["zyngui.zynthian_gui_config"], base, modal)
+    try:
+        return (importlib.import_module("zyngui.zynthian_widget_drawbar").zynthian_widget_drawbar,
+                importlib.import_module("zyngui.zynthian_gui_control_xy").zynthian_gui_control_xy)
+    finally:
+        for n, m in saved.items():
+            if m is None:
+                sys.modules.pop(n, None)
+            else:
+                sys.modules[n] = m
+
+
+DRAWBAR, XY_SCREEN = _import_screens()
+
+
 class TheWidgetAndTheScreenGoThroughIt(unittest.TestCase):
     """The upstream drawbar widget's own Tk handlers drive the group (its drawing untouched)."""
 
     def test_the_drawbar_widget_paints_through_the_group(self):
-        from zyngui.zynthian_widget_drawbar import zynthian_widget_drawbar as W
+        W = DRAWBAR
         ctrls = {f"db{i}": types.SimpleNamespace(value=8 if i < 2 else 0, value_default=8, value_min=0, value_max=8,
                                                  ticks=None, drawbar=True) for i in range(9)}
         for c in ctrls.values():
@@ -187,7 +222,7 @@ class TheWidgetAndTheScreenGoThroughIt(unittest.TestCase):
         self.assertEqual(w.gestures.log[-1]["word"], "paint")
 
     def test_the_xy_screen_drags_and_resets_through_the_xy(self):
-        from zyngui.zynthian_gui_control_xy import zynthian_gui_control_xy as S
+        S = XY_SCREEN
         zx, zy = Axis(0.0, 100.0, 50.0), Axis(0.0, 100.0, 50.0)
         zx.name, zy.name = "x", "y"
         s = S.__new__(S)
