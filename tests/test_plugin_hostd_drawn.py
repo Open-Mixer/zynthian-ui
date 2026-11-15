@@ -72,6 +72,40 @@ class drawn_view(plugin_hostd_case):
             with open(words[words.index("--panel") + 1]) as f:
                 self.assertEqual(json.load(f), declared, "the panel itself, as omx-panel's --panel reads it")
 
+    def gr_bar(self, layout):
+        """The meters the gain-reduction bar of a drawn layout reads, by symbol: its ids index the layout's meters."""
+        bar = [d for d in layout["displays"] if d["kind"] == "gain_reduction_bar"][0]
+        return [layout["meters"][k]["symbol"] if k is not None else None for k in bar["meters"]]
+
+    def test_the_gr_bar_reads_meter_0_of_describes_meters_while_the_panel_carries_none(self):
+        declared = {"family": "dynamics", "sections": [{"key": "comp", "label": "Comp"}], "controls": [], "roles": [],
+                    "displays": [{"kind": "gain_reduction_bar", "section": 0, "source": "meters", "meterIds": [0, None]}]}
+        _, proc = self.drawn_plugin(panel={"plugin": {"format": "lv2", "id": "urn:test:big"}, "panel": declared})
+        layout = proc.engine.drawn[0]
+        self.assertEqual([m["symbol"] for m in layout["meters"]], ["compGr", "compIn", "compOut", "compKey"])
+        self.assertEqual(self.gr_bar(layout), ["compGr", None])
+
+    def test_the_meters_the_panel_reply_carries_are_the_ones_drawn(self):
+        # plugin-hostd's panel reply carries the plugin's meters (clap.meters/1) with its displays' meter ids: those
+        # are the meters drawn, the GR bar's meter 0 the panel's own first, each with describe's facts of it
+        declared = {"family": "dynamics", "sections": [{"key": "comp", "label": "Comp"}], "controls": [], "roles": [],
+                    "displays": [{"kind": "gain_reduction_bar", "section": 0, "source": "meters", "meterIds": [0, None]}],
+                    "meters": [{"symbol": "compGr", "kind": "gain-reduction"}, {"symbol": "compOut", "kind": "level"}]}
+        _, proc = self.drawn_plugin(panel={"plugin": {"format": "lv2", "id": "urn:test:big"}, "panel": declared})
+        layout = proc.engine.drawn[0]
+        self.assertEqual([m["symbol"] for m in layout["meters"]], ["compGr", "compOut"])
+        self.assertEqual(layout["meters"][0]["unit"], "dB", "describe's facts of the meter kept")
+        self.assertEqual(self.gr_bar(layout), ["compGr", None])
+
+    def test_a_panel_meter_id_beyond_its_meters_draws_no_bar_meter(self):
+        declared = {"family": "dynamics", "sections": [{"key": "comp", "label": "Comp"}], "controls": [], "roles": [],
+                    "displays": [{"kind": "gain_reduction_bar", "section": 0, "source": "meters", "meterIds": [3, None]}],
+                    "meters": [{"symbol": "compGr", "kind": "gain-reduction"}]}
+        with self.assertLogs(level="WARNING") as logs:
+            _, proc = self.drawn_plugin(panel={"plugin": {"format": "lv2", "id": "urn:test:big"}, "panel": declared})
+        self.assertEqual(self.gr_bar(proc.engine.drawn[0]), [None, None])
+        self.assertTrue([m for m in logs.output if "meter 3" in m])
+
     def test_a_plugin_with_no_panel_of_its_own_is_described_from_its_descriptor(self):
         self.drawn_plugin()
         self.assertTrue(self.describe_lines())
