@@ -41,6 +41,11 @@ from zyngui.zynthian_gui_fullscreen_modal import zynthian_gui_fullscreen_modal
 # TODO: Derive control_xy from gui base class?
 
 
+# How the screen is left, shown at its foot: a long press (the vocabulary's `more`, see on_word). A double-tap resets the
+# point, the old job of a tap, so the hint names no tap.
+EXIT_HINT = "Long press to exit"
+
+
 class zynthian_gui_control_xy(zynthian_gui_fullscreen_modal):
 
     def __init__(self):
@@ -91,7 +96,7 @@ class zynthian_gui_control_xy(zynthian_gui_fullscreen_modal):
             justify=tkinter.CENTER,
             font=zynthian_gui_config.font_topbar,
             fill=zynthian_gui_config.color_ctrl_bg_off,
-            text="Tap 3 times to exit"
+            text=EXIT_HINT
         )
 
         self.text_x = self.canvas.create_text(
