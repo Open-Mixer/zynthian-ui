@@ -1112,8 +1112,44 @@ def plan_refused(chain_id, members, e):
 
 SURFACE_WIDTH = 4  # the controls a Zynthian screen shows, one per encoder: the one declaration of the page width here
 
-layout_cache = {}  # (descriptor path, mtime, width, remote) => (pages, the description's controls by symbol)
-description_cache = {}  # (descriptor path, mtime) => the description panel_layout read
+layout_cache = {}  # (descriptor path, mtime, width, remote, panel) => (pages, the description's controls by symbol)
+description_cache = {}  # (descriptor path, mtime, panel) => the description panel_layout read
+own_panels = {}  # (panel document path, mtime) => the file holding its panel alone, None when it holds none
+own_panel_dir = None
+
+
+def own_panel(path):
+    """The plugin's own panel for omx-panel's --panel, from the document plugin-hostd filed (panel_get): that document
+    is {"plugin", "panel"}, and --panel reads the panel itself, so it is written alone to a file of ours. None when
+    there is no document or it holds no panel (a plugin that declares none answers "panel": null)."""
+    global own_panel_dir
+    if not path:
+        return None
+    try:
+        key = (path, os.stat(path).st_mtime)
+    except OSError:
+        return None
+    if key not in own_panels:
+        own_panels[key] = None
+        try:
+            with open(path) as f:
+                declared = json.load(f).get("panel")
+            if isinstance(declared, dict):
+                if own_panel_dir is None:
+                    own_panel_dir = tempfile.mkdtemp(prefix="zynthian-omx-panels-")
+                name = os.path.join(own_panel_dir, f"{len(own_panels)}-{os.path.basename(path)}")
+                with open(name, "w") as f:
+                    json.dump(declared, f)
+                own_panels[key] = name
+        except (OSError, ValueError, AttributeError) as e:
+            log_once(("own panel", path), "the panel plugin-hostd filed in %s cannot be read (%s): the descriptor "
+                     "alone is described", path, e)
+    return own_panels[key]
+
+
+def panel_args(panel):
+    """describe's arguments for the plugin's own panel file (own_panel), none without one."""
+    return ["--panel", panel] if panel else []
 
 
 def symbol_of(param):
@@ -1121,20 +1157,21 @@ def symbol_of(param):
     return param if isinstance(param, str) else f"p{param}"
 
 
-def panel_layout(path, width=None, remote=None):
+def panel_layout(path, width=None, remote=None, panel=None):
     """omx-panel's cut of the plugin's descriptor into pages of `width` slots (the Zynthian screen's, unless a surface
     names its own): `describe --pages --per-page <width>`, the skin applied, the Easy controls first, the groups kept
     whole, a hidden control's slot left blank (None). The host's remote-controls pages, when it has them, are handed
-    over as `--remote`. Returns (pages, {symbol: the description's control}), or None with the reason logged."""
+    over as `--remote`, the plugin's own panel (own_panel) as `--panel`. Returns (pages, {symbol: the description's
+    control}), or None with the reason logged."""
     width = width or SURFACE_WIDTH
     try:
-        key = (path, os.stat(path).st_mtime, width, json.dumps(remote))
+        key = (path, os.stat(path).st_mtime, width, json.dumps(remote), panel)
     except OSError:
         return None
     if key in layout_cache:
         return layout_cache[key]
-    panel = shutil.which("omx-panel")
-    if not panel:
+    omx_panel = shutil.which("omx-panel")
+    if not omx_panel:
         log_once("omx-panel", "omx-panel is not installed: plugin-hostd has no controller pages")
         return None
     remote_file = None
@@ -1147,13 +1184,13 @@ def panel_layout(path, width=None, remote=None):
             extra = ["--remote", remote_file]
 
         def run(*args):
-            cmd = [panel, "describe", "--descriptor", path, *args]
+            cmd = [omx_panel, "describe", "--descriptor", path, *panel_args(panel), *args]
             return json.loads(subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30).stdout)
 
         pages = run("--pages", "--per-page", str(width), *extra)
         description = run()["description"]
         controls = description.get("controls", [])
-        description_cache[(path, key[1])] = description
+        description_cache[(path, key[1], panel)] = description
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as e:
         log_once(("omx-panel", path), "omx-panel describe of %s failed (%s): plugin-hostd has no controller pages", path, e)
         return None
@@ -1164,27 +1201,28 @@ def panel_layout(path, width=None, remote=None):
     return layout_cache[key]
 
 
-drawn_cache = {}  # (descriptor path, mtime) => (the layout the renderer draws, the description), or None
+drawn_cache = {}  # (descriptor path, mtime, panel) => (the layout the renderer draws, the description), or None
 
 
-def panel_drawn(path):
+def panel_drawn(path, panel=None):
     """What the panel's own screen draws with omx-panel's renderer: (layout, description), the layout from
     `describe --layout` (the derivation's, its displays included) and the description its curve terms are bound by.
-    None, said once, when omx-panel cannot give them (not installed, or one with no --layout)."""
+    None, said once, when omx-panel cannot give them (not installed, or one with no --layout). The plugin's own panel
+    (own_panel), when it has one, is given to both: its family, roles and displays are the plugin's."""
     try:
-        key = (path, os.stat(path).st_mtime)
+        key = (path, os.stat(path).st_mtime, panel)
     except OSError:
         return None
     if key in drawn_cache:
         return drawn_cache[key]
     drawn_cache[key] = None
-    panel = shutil.which("omx-panel")
-    if not panel:
+    omx_panel = shutil.which("omx-panel")
+    if not omx_panel:
         log_once("omx-panel", "omx-panel is not installed: plugin-hostd has no controller pages")
         return None
     try:
         def run(*args):
-            cmd = [panel, "describe", "--descriptor", path, *args]
+            cmd = [omx_panel, "describe", "--descriptor", path, *panel_args(panel), *args]
             return json.loads(subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30).stdout)
 
         layout = run("--layout")
@@ -1375,7 +1413,7 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
         """The panel's own screen (zynthian_widget_omx_panel) for a plugin whose panel has a bar group, a curve or a
         meter, for CLAP and LV2 alike: what the plain controller screens cannot show. Any other keeps them alone."""
         path = self.descriptor_path()
-        self.drawn = panel_drawn(path) if path else None
+        self.drawn = panel_drawn(path, self.own_panel()) if path else None
         if self.drawn and panel_view.drawn_parts(self.drawn[0]):
             self.custom_gui_fpath = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "zyngui",
                                                  "zynthian_widget_omx_panel.py")
@@ -1527,6 +1565,22 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
             except (plugin_hostd_down, plugin_hostd_timeout):
                 return None
 
+    def own_panel(self):
+        """The plugin's own panel for omx-panel (own_panel): the document plugin-hostd filed beside the descriptor
+        (panel_get), its panel stage waited for as the descriptor's scan is. None when it filed none: a plugin that
+        declares no panel, a scan that wrote none, or a daemon that has no panel_get (mod-host)."""
+        deadline = time.monotonic() + DESCRIPTOR_WAIT
+        while True:
+            try:
+                return own_panel(daemon.call(command("panel_get", uri_word(self.plugin_uri)))[1].strip().strip('"'))
+            except plugin_hostd_error as e:
+                if e.code == DESCRIPTOR_PENDING and time.monotonic() <= deadline:  # its panel stage still runs
+                    time.sleep(0.25)
+                    continue
+                return None
+            except (plugin_hostd_down, plugin_hostd_timeout):
+                return None
+
     def param_list(self, dlist):
         """(symbol, name, meta) in the plugin's own order: its descriptor, else its CLAP scan or its LV2 ports.
         The ports and the scan carry no scale: a stepped parameter is the descriptor's or param_info's to say."""
@@ -1583,7 +1637,7 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
                         ids[symbol_of(c["id"])] = str(c["id"])
             except (OSError, ValueError, KeyError) as e:
                 logging.error(f"Can't read descriptor {path} => {e}")
-        cut = panel_layout(path, width, self.remote_ids(dcontrols)) if path else None
+        cut = panel_layout(path, width, self.remote_ids(dcontrols), self.own_panel()) if path else None
         if not cut:
             return []
         result = []
