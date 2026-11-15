@@ -4,7 +4,7 @@
 # ZYNTHIAN PROJECT: Zynthian Engine (zynthian_omx_panel_view)
 #
 # A plugin's panel drawn by omx-panel's renderer, the one C library every OpenMixer surface draws a panel with
-# (libomx-panel-render.so.0, omx-panel's renderer/include/omx_panel_render.h): its bars, its curves and its meters,
+# (libomx-panel-render.so.1, omx-panel's renderer/include/omx_panel_render.h): its bars, its curves and its meters,
 # in the omx look. This module is the ctypes door to it, and the host's side the renderer leaves to the host: which
 # part of the panel a screen shows, the curve_bind line plugin-hostd draws a display's points from, and the reply
 # of curve_points. Nothing here draws or computes a point: the renderer draws, plugin-hostd computes (omx-dsp's
@@ -28,7 +28,7 @@ import subprocess
 import tempfile
 import threading
 
-LIBRARY = "libomx-panel-render.so.0"
+LIBRARY = "libomx-panel-render.so.1"
 # the look, the geometry and the font a view is made from: omx-panel's tools directory as the package installs it
 TOOLS_DIR = "/usr/share/omx-panel/tools"
 
@@ -123,10 +123,21 @@ def _declare(lib):
             ("omx_panel_word_name", S, [ctypes.c_int])):
         f = getattr(lib, name)
         f.restype, f.argtypes = res, args
-    # the spectrum layer (omx-panel 0.14): a renderer without it draws every panel, with no spectrum under a curve
+    _declare_spectrum(lib)
+
+
+# omx_panel_tap_mode_t: the console's tap modes, by the word the widget keeps
+TAP_MODES = {"pre": 0, "post": 1, "both": 2}
+
+
+def _declare_spectrum(lib):
+    """The spectrum layer (omx-panel 0.14.0, libomx-panel-render.so.1): both taps, the mode and the delta. A renderer
+    without it draws every panel, with no spectrum under a curve."""
     f = getattr(lib, "omx_panel_view_set_spectrum", None)
     if f is not None:
-        f.restype, f.argtypes = B, [P, U, DP, DP, DP, U, D, D, D]
+        P, U, D, B = ctypes.c_void_p, ctypes.c_uint32, ctypes.c_double, ctypes.c_bool
+        DP = ctypes.POINTER(ctypes.c_double)
+        f.restype, f.argtypes = B, [P, U, DP, DP, DP, DP, U, ctypes.c_int, B, D, D, D]
 
 
 def word_name(word):
@@ -189,19 +200,27 @@ class View:
 
     def set_spectrum(self, display, frame, mode, delta, window):
         """The spectrum under display `display`'s curve: a frame of rta_frame() (None clears it), drawn in the console's
-        `mode` (pre, post or both) with or without the `delta`, on the level window (db_min, db_max, grid_db). False
-        for a display the renderer refuses (no log axis) and for a renderer without the layer."""
+        `mode` (pre, post or both) with or without the `delta` (both only), on the level window (db_min, db_max,
+        grid_db). Both with one tap answered draws that tap alone. False for a mode that is none of the three, a display
+        the renderer refuses (no log axis) and a renderer without the layer."""
         f = getattr(self.lib, "omx_panel_view_set_spectrum", None)
-        if f is None or not window:
+        if f is None or not window or mode not in TAP_MODES:
             return False
-        tap = None if frame is None else (frame["pre"] if mode == "pre" else frame["post"] or frame["pre"])
-        if tap is None:
-            return bool(f(self.view, display, None, None, None, 0, *window))
-        # the renderer's single-trace entry (omx-panel 0.14.0): the tap the mode shows; both and the delta wait for the
-        # amended entry that takes pre, post and the mode
+        if frame is None:
+            return bool(f(self.view, display, None, None, None, None, 0, TAP_MODES["post"], False, *window))
+        pre, post = frame.get("pre"), frame.get("post")
+        if mode == "both" and not (pre and post):
+            mode = "post" if post else "pre"
+        elif mode == "post" and not post:
+            mode = "pre"
+        if mode == "pre" and not pre:
+            return bool(f(self.view, display, None, None, None, None, 0, TAP_MODES["post"], False, *window))
         n = len(frame["hz"])
         arr = ctypes.c_double * n
-        return bool(f(self.view, display, arr(*frame["hz"]), arr(*tap[0]), arr(*tap[1]), n, *window))
+        filled = pre if mode == "pre" else post
+        return bool(f(self.view, display, arr(*frame["hz"]), arr(*pre[0]) if mode != "post" else None,
+                      arr(*post[0]) if mode != "pre" else None, arr(*filled[1]), n, TAP_MODES[mode],
+                      bool(delta) and mode == "both", *window))
 
     def set_surface(self, width, height, scale=1.0):
         self.size = (width, height)

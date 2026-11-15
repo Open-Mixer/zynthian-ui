@@ -277,6 +277,9 @@ class SpectrumCall(unittest.TestCase):
             self.calls.append(tuple(list(a) if hasattr(a, "_length_") else a for a in args))
             return True
 
+        def omx_panel_view_destroy(self, v):
+            pass
+
     def view(self):
         v = view.View.__new__(view.View)
         v.lib, v.view = self.Lib(), "the view"
