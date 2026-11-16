@@ -8,8 +8,7 @@
 > [plugin-qualify](https://github.com/FreeMixer/plugin-qualify), every plugin has a Factory and a User preset bank, and
 > controller pages follow the plugin's own sections. Its tests run in CI on every change.
 >
-> On this fork the engine is the default; in the series offered upstream it stays off until a user sets it, and
-> setting `ZYNTHIAN_PLUGIN_ENGINE=jalv` goes back. Whether plugins share a worker is plugin-hostd's `grouping`
+> On this fork the engine is the one the menus offer LV2 plugins through. Whether plugins share a worker is plugin-hostd's `grouping`
 > setting in `/zynthian/config/plugin-hostd.conf`: with `grouping off` each plugin runs in a worker of its own, and
 > `grouping on` lets the daemon plan which neighbours in series share one. How to install and use it, the measurements and where it stands:
 > <https://openmixer.org/docs/zynthian>.

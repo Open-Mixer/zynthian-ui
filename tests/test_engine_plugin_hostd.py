@@ -122,7 +122,7 @@ class plugin_hostd_case(unittest.TestCase):
         self.starts = os.path.join(self.tmp, "starts")
         patcher = mock.patch.dict(os.environ, {
             "PATH": self.bin, "FAKE_HOSTD_JOURNAL": os.path.join(self.tmp, "journal"),
-            "START_STUB_LOG": self.starts, "START_STUB_DIR": self.tmp, "ZYNTHIAN_PLUGIN_ENGINE": "plugin-hostd"})
+            "START_STUB_LOG": self.starts, "START_STUB_DIR": self.tmp})
         patcher.start()
         self.addCleanup(patcher.stop)
         self.auto = self.auto_descriptors()

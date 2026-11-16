@@ -4,7 +4,7 @@ Runs the fork's plugin-hostd engine (zyngine/zynthian_engine_plugin_hostd.py, re
 chain and processor) against a plugin-hostd of its own (port 17561) on a JACK server of its own (zsamples); a probe client
 plays a note into the instance and measures the instance's outputs."""
 import os, sys, types, json, time, math
-os.environ.update(ZYNTHIAN_PLUGIN_HOSTD_PORT="17561", ZYNTHIAN_PLUGIN_ENGINE="plugin-hostd",
+os.environ.update(ZYNTHIAN_PLUGIN_HOSTD_PORT="17561",
                   ZYNTHIAN_CONFIG_DIR="/root/lane-z/cfg", LV2_PATH="/usr/lib/lv2", JACK_DEFAULT_SERVER="zsamples",
                   HOME="/root/lane-z/home", XDG_STATE_HOME="/root/lane-z/state", TMPDIR="/root/lane-z/tmp")
 ROOT = "/root/lane-z/zui"

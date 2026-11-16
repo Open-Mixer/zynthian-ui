@@ -29,8 +29,7 @@
 # A plugin installed both as CLAP and as LV2 is one row, never two: formats are invisible to the user. A CLAP row and an
 # LV2 row of one name are one plugin, and the one placed worse gives way: working before not working, then by state,
 # then CLAP before LV2 (omx-clap-host's own format), then plugin-hostd before jalv. Rows of one format stay as they
-# are: two plugins that share a name, and an LV2 plugin's jalv row beside its plugin-hostd one, which is a choice of
-# engine and not of format.
+# are: two plugins that share a name, and an LV2 plugin's jalv row beside its plugin-hostd one.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 #
