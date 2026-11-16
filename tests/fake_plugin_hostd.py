@@ -149,7 +149,8 @@ class fake_plugin_hostd:
             tag, _, wire = wire.partition(" ")
         reply = self.handle(wire)
         words = reply.split()
-        if "errors" in self.granted and len(words) == 2 and words[0] == "resp" and int(words[1]) in self.WORDS:
+        if "errors" in self.granted and len(words) == 2 and words[0] == "resp" \
+                and words[1].lstrip("-").isdigit() and int(words[1]) in self.WORDS:
             reply += " " + self.WORDS[int(words[1])]
         if tag is None:
             return [reply]
