@@ -10,6 +10,11 @@
 # of curve_points. Nothing here draws or computes a point: the renderer draws, plugin-hostd computes (omx-dsp's
 # omx_curve_points), and a missing library is said by name.
 #
+# The renderer runs in a process of its own (zynthian-ui#44): a fault inside it stops that process, never the UI's. The
+# UI's View sends each call to it over a socket and reads the drawn pixels from shared memory; when the renderer
+# stops, the call raises RendererStopped, saying how, and the next View starts it again. This file is that process
+# too (run as `python3 zynthian_omx_panel_view.py --serve <fd>`): it imports nothing but the standard library.
+#
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 #
 # This program is free software; you can redistribute it and/or modify it under the terms
@@ -22,7 +27,12 @@ import json
 import logging
 import math
 import os
+import signal
+import socket
+import subprocess
+import sys
 import tempfile
+from multiprocessing import connection, shared_memory
 
 LIBRARY = "libomx-panel-render.so.0"
 # the look, the geometry and the font a view is made from: omx-panel's tools directory as the package installs it
@@ -39,6 +49,11 @@ POINTER_TOUCH, POINTER_MOUSE = 0, 1
 
 class RendererAbsent(Exception):
     """The renderer cannot be loaded or refuses the panel: the reason, said once by the caller."""
+
+
+class RendererStopped(RendererAbsent):
+    """The renderer's process stopped (a fault inside the library, or no answer): how, said once by the caller. The
+    views it held are gone; the next View starts the renderer again."""
 
 
 class _Buffer(ctypes.Structure):
@@ -121,14 +136,19 @@ def _declare(lib):
         f.restype, f.argtypes = res, args
 
 
-def word_name(word):
-    """The name of a gesture word as omx-panel's gestures.json spells it; "" for no word, None for a value that is none."""
+def _word_name(word):
     name = library().omx_panel_word_name(word)
     return None if name is None else name.decode()
 
 
-class View:
-    """One panel layout (what `omx-panel describe --layout` prints, or a part of it) as the renderer holds it."""
+def word_name(word):
+    """The name of a gesture word as omx-panel's gestures.json spells it; "" for no word, None for a value that is none."""
+    return _host().call("word", None, word)
+
+
+class _LibraryView:
+    """One panel layout (what `omx-panel describe --layout` prints, or a part of it) as the renderer holds it, in the
+    process that loaded the library: the renderer's process."""
 
     def __init__(self, layout, tools_dir=None):
         lib = self.lib = library()
@@ -202,13 +222,13 @@ class View:
         changes = (_Change * 64)()
         a = _Answer()
         k = self.lib.omx_panel_view_input(self.view, ctypes.byref(e), changes, 64, ctypes.byref(a))
-        return [(c.control, c.fraction, c.value) for c in changes[:k]], word_name(a.word), a.selected
+        return [(c.control, c.fraction, c.value) for c in changes[:k]], _word_name(a.word), a.selected
 
     def tick(self, t_ms):
         changes = (_Change * 64)()
         a = _Answer()
         k = self.lib.omx_panel_view_tick(self.view, t_ms, changes, 64, ctypes.byref(a))
-        return [(c.control, c.fraction, c.value) for c in changes[:k]], word_name(a.word), a.selected
+        return [(c.control, c.fraction, c.value) for c in changes[:k]], _word_name(a.word), a.selected
 
     def draw(self, width, height, scale=1.0):
         """The panel drawn into width x height pixels: RGBA, straight alpha, rows of width * 4 bytes."""
@@ -217,6 +237,201 @@ class View:
         if not self.lib.omx_panel_view_draw(self.view, ctypes.byref(buf)):
             raise RendererAbsent(f"omx-panel's renderer did not draw a {width} x {height} panel")
         return pixels.raw
+
+
+# ---- The renderer's process ----
+
+# a call answers within this, else the renderer is taken as stopped (a draw of the whole screen takes milliseconds)
+ANSWER_S = 5.0
+
+_the_host = None
+
+
+def _attach(name):
+    """The UI's shared memory, attached without the resource tracker taking it over (the UI owns it)."""
+    try:
+        return shared_memory.SharedMemory(name=name, track=False)
+    except TypeError:  # Python before 3.13 has no track: the tracker would unlink the UI's segment at exit
+        from multiprocessing import resource_tracker
+        shm = shared_memory.SharedMemory(name=name)
+        resource_tracker.unregister(shm._name, "shared_memory")
+        return shm
+
+
+def _serve(fd):
+    """The renderer's process: the views it holds by number, each call answered ("ok", value) or ("refused", why)."""
+    conn = connection.Connection(fd)
+    views, memory, next_id = {}, {}, 1
+    while True:
+        try:
+            op, vid, args = conn.recv()
+        except (EOFError, OSError):
+            return
+        try:
+            if op == "open":
+                v = _LibraryView(*args)
+                views[next_id] = v
+                value = (next_id, v.symbols)
+                next_id += 1
+            elif op == "close":
+                v = views.pop(vid, None)
+                if v:
+                    v.close()
+                value = None
+            elif op == "word":
+                value = _word_name(*args)
+            elif op == "draw":
+                name, width, height, scale = args
+                pixels = views[vid].draw(width, height, scale)
+                if name not in memory:
+                    memory[name] = _attach(name)
+                memory[name].buf[:len(pixels)] = pixels
+                value = len(pixels)
+            else:
+                value = getattr(views[vid], op)(*args)
+            conn.send(("ok", value))
+        except Exception as e:  # the library's refusal, or a call it cannot take: said, the process goes on
+            conn.send(("refused", str(e) if isinstance(e, RendererAbsent) else f"{op}: {e!r}"))
+
+
+class _Host:
+    """The renderer's process as the UI holds it: started on the first view, one for every view."""
+
+    def __init__(self):
+        ours, theirs = socket.socketpair()
+        self.process = subprocess.Popen([sys.executable, "-I", os.path.abspath(__file__), "--serve", str(theirs.fileno())],
+                                        pass_fds=[theirs.fileno()], stdin=subprocess.DEVNULL)
+        theirs.close()
+        self.conn = connection.Connection(ours.detach())
+        self.stopped = None
+
+    def call(self, op, vid, *args):
+        if self.stopped:
+            raise RendererStopped(self.stopped)
+        try:
+            self.conn.send((op, vid, args))
+            if not self.conn.poll(ANSWER_S):
+                self.process.kill()
+                raise EOFError(f"no answer in {ANSWER_S:g} s")
+            kind, value = self.conn.recv()
+        except (EOFError, OSError) as e:
+            self.stop(e)
+            raise RendererStopped(self.stopped) from None
+        if kind == "refused":
+            raise RendererAbsent(value)
+        return value
+
+    def stop(self, why):
+        try:
+            code = self.process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            code = self.process.wait()
+        if code is not None and code < 0:
+            try:
+                how = signal.Signals(-code).name
+            except ValueError:
+                how = f"signal {-code}"
+        else:
+            how = f"exit {code}" if code else str(why)
+        self.stopped = f"omx-panel's renderer stopped ({how}); the panel is drawn again when it is opened again"
+        logging.error(self.stopped)
+        self.conn.close()
+
+    def alive(self):
+        return not self.stopped and self.process.poll() is None
+
+
+def _host():
+    """The renderer's process, started again when the last one stopped."""
+    global _the_host
+    if _the_host is None or not _the_host.alive():
+        _the_host = _Host()
+    return _the_host
+
+
+class View:
+    """One panel layout (what `omx-panel describe --layout` prints, or a part of it) as the renderer holds it, in the
+    renderer's process: each call is the library's, its answer the library's. RendererStopped when that process
+    stopped."""
+
+    def __init__(self, layout, tools_dir=None):
+        self.host = _host()
+        self.layout = layout
+        self.id, self.symbols = self.host.call("open", None, layout, tools_dir)
+        self.meters = [m["symbol"] for m in layout.get("meters") or []]
+        self.size = None
+        self.memory = None
+
+    def _call(self, op, *args):
+        return self.host.call(op, self.id, *args)
+
+    def close(self):
+        if self.id is not None and self.host.alive():
+            try:
+                self._call("close")
+            except RendererAbsent:
+                pass
+        self.id = None
+        if self.memory:
+            self.memory.close()
+            self.memory.unlink()
+            self.memory = None
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+    def natural_size(self):
+        return self._call("natural_size")
+
+    def set_title(self, brand, name):
+        self._call("set_title", brand, name)
+
+    def set_value(self, index, fraction, text):
+        return self._call("set_value", index, fraction, text)
+
+    def set_choice(self, index, at, count, text):
+        return self._call("set_choice", index, at, count, text)
+
+    def set_meter(self, index, value, elapsed):
+        return self._call("set_meter", index, value, elapsed)
+
+    def set_curve(self, display, points):
+        return self._call("set_curve", display, [tuple(p) for p in points])
+
+    def set_surface(self, width, height, scale=1.0):
+        self.size = (width, height)
+        return self._call("set_surface", width, height, scale)
+
+    def set_travel(self, index, lo, hi, default=None, step=0.0, log=False, integer=False):
+        return self._call("set_travel", index, lo, hi, default, step, log, integer)
+
+    def target_rect(self, index):
+        """Where control `index` takes a press, (x, y, w, h) in the surface's px, and the px a drag over its whole
+        travel covers; None for a hidden control or before set_surface."""
+        return self._call("target_rect", index)
+
+    def input(self, kind, t_ms, x=0.0, y=0.0, pointer=1, ptype=POINTER_MOUSE, fine=False, n=0, coarse=False, key=0,
+              shift=False, control=-1):
+        """One event; (the changes as [(control index, fraction, value)], the answer's word, the selected control)."""
+        return self._call("input", kind, t_ms, x, y, pointer, ptype, fine, n, coarse, key, shift, control)
+
+    def tick(self, t_ms):
+        return self._call("tick", t_ms)
+
+    def draw(self, width, height, scale=1.0):
+        """The panel drawn into width x height pixels: RGBA, straight alpha, rows of width * 4 bytes."""
+        size = width * height * 4
+        if self.memory is None or self.memory.size < size:
+            if self.memory:
+                self.memory.close()
+                self.memory.unlink()
+            self.memory = shared_memory.SharedMemory(create=True, size=size)
+        n = self._call("draw", self.memory.name, width, height, scale)
+        return bytes(self.memory.buf[:n])
 
 
 # ---- What a screen shows of the panel ----
@@ -314,3 +529,7 @@ def output_set(line):
         return int(words[1]), words[2], float(words[3])
     except ValueError:
         return None
+
+
+if __name__ == "__main__" and sys.argv[1:2] == ["--serve"]:
+    _serve(int(sys.argv[2]))
