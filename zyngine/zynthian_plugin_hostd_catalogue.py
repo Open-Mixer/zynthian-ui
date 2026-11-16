@@ -140,9 +140,6 @@ def add_catalogue(engines, clap=None, binary="plugin-hostd"):
         by_type = zynthian_lv2.engines_by_type or {}
     except ImportError:
         by_type = {}
-    # Entries of an earlier catalogue, saved with the engine config, are made again or dropped
-    for key in [k for k in engines if k.startswith("PH/")]:
-        by_type.get(engines.pop(key).get("TYPE"), {}).pop(key, None)
     added = {}
     for key, info in list(engines.items()):
         if key.startswith("JV/") and info.get("TYPE") in ENGINE_TYPES:

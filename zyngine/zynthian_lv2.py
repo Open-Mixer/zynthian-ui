@@ -282,7 +282,8 @@ def save_engines():
     global engines_mtime
 
     # Make a deep copy and remove not serializable objects (ENGINE)
-    sengines = copy.deepcopy(engines)
+    # The PH entries are made from the jalv ones at every load: they are not saved
+    sengines = copy.deepcopy({k: v for k, v in engines.items() if not k.startswith("PH/")})
     for key, info in sengines.items():
         try:
             del info['ENGINE']

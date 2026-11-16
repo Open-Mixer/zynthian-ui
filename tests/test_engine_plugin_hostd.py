@@ -1638,12 +1638,8 @@ class test_catalogue(plugin_hostd_case):
 
     def test_instruments_and_effects_enter_the_catalogue(self):
         engines = {"JV/ZamComp": lv2_info("ZamComp", "urn:zamaudio:ZamComp"),
-                   "JV/Arp": lv2_info("Arp", "urn:test:arp", "MIDI Tool"),
-                   "PH/clap:org.test.gone": lv2_info("Gone", "clap:/gone.clap#org.test.gone")}
-        _lv2.engines_by_type["Audio Effect"]["PH/clap:org.test.gone"] = engines["PH/clap:org.test.gone"]
+                   "JV/Arp": lv2_info("Arp", "urn:test:arp", "MIDI Tool")}
         added = cat.add_catalogue(engines, clap=cat.scanned_plugins(CLAP_SCAN), binary=FAKE)
-        self.assertNotIn("PH/clap:org.test.gone", engines, "a plugin no longer installed leaves the catalogue")
-        self.assertNotIn("PH/clap:org.test.gone", _lv2.engines_by_type["Audio Effect"])
         self.assertEqual(sorted(added), ["PH/ZamComp", "PH/clap:/usr/lib/clap/lsp-plugins.clap#in.lsp-plug.limiter_mono", "PH/clap:/usr/lib/clap/test.clap#org.test.synth"])
         self.assertEqual(added["PH/ZamComp"]["URL"], "urn:zamaudio:ZamComp")
         synth = added["PH/clap:/usr/lib/clap/test.clap#org.test.synth"]
