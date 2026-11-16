@@ -145,13 +145,14 @@ class CurveBinding(unittest.TestCase):
             self.assertNotIn(f'"{word}"', source)
         self.assertFalse(hasattr(view, "WORDS"))
 
-    def test_a_renderer_without_the_word_names_is_refused_with_its_reason(self):
-        # any library that lacks the renderer's functions stands for a renderer older than the one that names its words
+    def test_a_library_that_is_not_the_renderer_is_refused_as_not_installed(self):
+        # any library that lacks the renderer's functions is no renderer here
         with mock.patch.dict(os.environ, {"ZYNTHIAN_OMX_PANEL_RENDER": "libm.so.6"}), \
                 mock.patch.object(view, "_lib", None), mock.patch.object(view, "_lib_error", None):
             with self.assertRaises(view.RendererAbsent) as refused:
                 view.library()
-            self.assertIn("older than this module needs", str(refused.exception))
+            self.assertIn("is not installed", str(refused.exception))
+            self.assertNotIn("older", str(refused.exception))
 
     def test_the_points_of_a_reply(self):
         self.assertEqual(view.curve_points("3 -80.00,-80.00 -16.00,-17.56 0,-13.50"),

@@ -196,21 +196,16 @@ def get_ports(name, is_input=None):
 
 
 def hosted_key():
-    """plugin-hostd's instance key, from plugin-hostd-protocol's table (node_metadata); None from a protocol that
-    declares none."""
-    try:
-        from zyngine import zynthian_plugin_hostd_protocol
-        return zynthian_plugin_hostd_protocol.reply_codes().instance_key()
-    except Exception:
-        return None
+    """plugin-hostd's instance key, from plugin-hostd-protocol's table (node_metadata)."""
+    from zyngine import zynthian_plugin_hostd_protocol
+    return zynthian_plugin_hostd_protocol.reply_codes().instance_key()
 
 
 def hosted_client(instance):
     """The name of the JACK client that carries plugin-hostd's instance key for `instance`, or None."""
-    key = hosted_key()
-    if key is None or jclient is None:
+    if jclient is None:
         return None
-    return client_of_instance(jclient, instance, key)
+    return client_of_instance(jclient, instance, hosted_key())
 
 def get_a2m_ports():
     """ Returns list of audio to midi (port name, title)"""
@@ -985,7 +980,7 @@ def midi_autoconnect():
     # Remove mod-ui routes; plugin-hostd's clients, told by their instance key, keep theirs
     key = hosted_key()
     drop_mod_ui_routes(required_routes, chain_manager.processors.values(),
-                       hosted=(lambda client: hosted_instance(jclient, client, key) is not None) if key else None)
+                       hosted=lambda client: hosted_instance(jclient, client, key) is not None)
     # Workaround for mod-host auto routing
     try:
         port = jclient.get_port_by_name("mod-host:midi_in")

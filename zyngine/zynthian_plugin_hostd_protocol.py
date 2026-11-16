@@ -23,23 +23,16 @@ from omx_contract.catalog import load_catalog, sentence_of
 from plugin_hostd_protocol import Protocol, ProtocolError
 from plugin_hostd_protocol import words, quote, encode_path, decode_path, uri_word, pin_key  # noqa: F401
 
-# Where the files are: libplugin-hostd-protocol0 (plugin-hostd 0.16.0 on) installs them in its own directory, the
-# daemon's as plugin-hostd.json; plugin-hostd before 0.16.0 installed that one as protocol.json in its directory.
-# The first place that holds the daemon's file is the one read.
-PLACES = (("/usr/share/plugin-hostd-protocol", "plugin-hostd.json"), ("/usr/share/plugin-hostd", "protocol.json"))
-DAEMON_FILES = tuple(name for _, name in PLACES)
+# Where the files are: libplugin-hostd-protocol0 installs them in its own directory, the daemon's as plugin-hostd.json.
+PLACE = ("/usr/share/plugin-hostd-protocol", "plugin-hostd.json")
 PROTOCOL_DIR = os.environ.get("ZYNTHIAN_PLUGIN_HOSTD_PROTOCOL_DIR")
 
 
 def daemon_file(directory=None):
-    """(directory, name) of the daemon's protocol file: in the given directory (or ZYNTHIAN_PLUGIN_HOSTD_PROTOCOL_DIR)
-    under either name, else the first of PLACES that holds it; the first candidate when none does."""
+    """(directory, name) of the daemon's protocol file: in the given directory (or ZYNTHIAN_PLUGIN_HOSTD_PROTOCOL_DIR),
+    else where PLACE has it."""
     directory = directory or PROTOCOL_DIR
-    places = [(directory, name) for name in DAEMON_FILES] if directory else list(PLACES)
-    for d, name in places:
-        if os.path.isfile(os.path.join(d, name)):
-            return d, name
-    return places[0]
+    return (directory, PLACE[1]) if directory else PLACE
 
 
 def read(name, directory=None):
@@ -134,8 +127,11 @@ class reply_codes:
 
     def instance_key(self):
         """The JACK metadata key a worker sets on each instance's client, its value the instance: what tells a
-        plugin-hostd client from any other, never its name; None from a protocol before 0.5.5, which declares none."""
-        return self.node_metadata.get("instance", {}).get("key")
+        plugin-hostd client from any other, never its name. ProtocolError when the protocol declares none."""
+        try:
+            return self.node_metadata["instance"]["key"]
+        except KeyError:
+            raise ProtocolError("plugin-hostd's protocol declares no instance key (node_metadata)")
 
     def find(self, name):
         """The number a name stands for; None for a name no file declares."""

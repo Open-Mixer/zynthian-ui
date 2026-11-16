@@ -101,7 +101,7 @@ def library():
             try:
                 _declare(lib)
             except AttributeError as e:
-                _lib_error = f"omx-panel's renderer ({name}) is older than this module needs: {e}"
+                _lib_error = f"omx-panel's renderer ({name}) is not installed: {e}"
             else:
                 _lib = lib
     if _lib is None:

@@ -90,7 +90,7 @@ class test_parallel_slot(signal_path_case):
             self.assertEqual(chain.audio_routes[out], ["effect_1004"])
 
     def test_the_planner_is_asked_of_each_run_and_never_of_a_parallel_slot(self):
-        fake = self.serve(planner=True, grouping=True)
+        fake = self.serve(grouping=True)
         chain = self.chain()
         a, b, c, d, e, f = (self.add(chain, CLAP) for _ in range(6))
         self.parallel(chain, d)
@@ -119,7 +119,6 @@ class test_parallel_slot(signal_path_case):
         chain.nudge_processor(procs[3], False)  # 0 1 2 3 4 5 6, out of the slot: one run
         chain.nudge_processor(procs[1], False)  # 0 [2 1] 3 4 5 6: 1 joins 2's slot, the run after it holds 3 to 6
         self.assertEqual(self.held(fake), {(1003, 1004, 1005, 1006)})
-        self.assertEqual(ph.daemon.chain_refused, {}, "the daemon refused nothing")
 
     def test_a_restored_daemon_gets_the_runs_back(self):
         fake = self.serve()
@@ -137,10 +136,10 @@ class test_parallel_slot(signal_path_case):
         chain = self.chain()
         procs = [self.add(chain, CLAP) for _ in range(6)]
         self.parallel(chain, procs[3])
-        self.assertEqual(len(fake.chains), 2)
+        self.assertEqual(len(fake.applied_plans()), 2)
         for p in procs:
             self.remove(chain, p)
-        self.assertEqual(fake.chains, {})
+        self.assertEqual(fake.applied_plans(), {})
         self.assertEqual(ph.daemon.clients, {})
 
 
@@ -284,7 +283,7 @@ class test_figures_follow_the_signal(signal_path_case):
         return ph.estimate_steps(48000, 256, ph.chain_steps(chain))
 
     def test_a_series_chain_is_asked_once(self):
-        fake = self.serve(estimator=True)
+        fake = self.serve()
         chain = self.chain()
         self.add(chain, "PH/Amp"), self.add(chain, "PH/NoPin")
         self.assertEqual(ph.chain_steps(chain), [(("urn:test:amp", "urn:test:nopin"),)])
@@ -292,7 +291,7 @@ class test_figures_follow_the_signal(signal_path_case):
         self.assertEqual(len([line for line in fake.lines if line.startswith("estimate ")]), 1)
 
     def test_a_parallel_slot_takes_the_longest_latency_and_adds_the_rest(self):
-        fake = self.serve(estimator=True)
+        fake = self.serve()
         fake.ESTIMATES = {"urn:test:amp": (10, 1.0, 100), "urn:test:nopin": (40, 2.0, 200)}
         chain = self.chain()
         a, b, c = self.add(chain, "PH/Amp"), self.add(chain, "PH/Amp"), self.add(chain, "PH/NoPin")
@@ -305,7 +304,7 @@ class test_figures_follow_the_signal(signal_path_case):
         self.assertEqual(est["workers"], 3)
 
     def test_the_strip_splits_the_figures_as_it_splits_the_workers(self):
-        self.serve(estimator=True)
+        self.serve()
         chain = self.chain()
         self.add(chain, "PH/Amp")
         self.strip(chain)
@@ -314,7 +313,7 @@ class test_figures_follow_the_signal(signal_path_case):
         self.assertEqual(self.figures(chain)["workers"], 2)
 
     def test_an_unknown_member_is_named_by_its_place_in_the_chain(self):
-        self.serve(estimator=True)
+        self.serve()
         chain = self.chain()
         self.add(chain, "PH/Amp")
         self.foreign(chain)
@@ -324,7 +323,7 @@ class test_figures_follow_the_signal(signal_path_case):
         self.assertEqual([m["member"] for m in est["members"]], [1], "the second plugin of the chain's, not the first of its group")
 
     def test_the_menu_counts_the_candidate_before_the_strip_where_it_will_go(self):
-        self.serve(estimator=True)
+        self.serve()
         chain = self.chain()
         self.add(chain, "PH/Amp")
         self.strip(chain)
@@ -332,7 +331,7 @@ class test_figures_follow_the_signal(signal_path_case):
         self.assertEqual(ph.menu_refs(chain, "PH/NoPin", info), [(("urn:test:amp", "urn:test:nopin"),)])
 
     def test_the_menu_puts_a_replacement_in_the_place_of_what_it_replaces(self):
-        self.serve(estimator=True)
+        self.serve()
         chain = self.chain()
         a, b = self.add(chain, "PH/Amp"), self.add(chain, "PH/Amp")
         self.parallel(chain, b)
@@ -454,8 +453,8 @@ class test_chain_manager(signal_path_case):
         self.sm.start_busy("load_snapshot")  # the load is one busy section, as zynthian_state_manager's is
         self.cm.set_state(self.snapshot(*({str(10 + i): CLAP} for i in range(6))), {})
         self.sm.end_busy("load_snapshot")
-        chains = [line for line in fake.lines if line.startswith("chain ")]
-        self.assertEqual(len(chains), 1, f"one chain line for one run: {chains}")
+        plans = [line for line in fake.lines if line.startswith("plan ")]
+        self.assertEqual(len(plans), 1, f"one plan line for one run: {plans}")
         self.assertEqual(self.held(fake), {tuple(range(1000, 1006))})
         routes = self.cm.chains[1].audio_routes
         self.assertIn("effect_1000", {s for sources in routes.values() for s in sources}, "the routes follow the group")
@@ -483,7 +482,6 @@ class test_chain_manager(signal_path_case):
         self.assertEqual(sorted(self.cm.zyngines), ["MR", "PH#20", "PH#21", "PH#22"])
         self.assertEqual(len(fake.instances), 3, "the first load's plugins are gone")
         self.assertEqual(self.held(fake), {tuple(sorted(fake.instances))})
-        self.assertEqual(ph.daemon.chain_refused, {})
 
     def test_a_merge_keeps_the_plugins_in_use_and_stops_the_unused(self):
         fake = self.serve()
@@ -555,7 +553,7 @@ class test_grouping_follows_the_setting(signal_path_case):
     """grouping off in plugin-hostd.conf (its default) groups nothing, and going back to it ungroups."""
 
     def test_grouping_off_groups_nothing(self):
-        fake = self.serve(planner=True, grouping=False)
+        fake = self.serve(grouping=False)
         chain = self.chain()
         a, b = self.add(chain, CLAP), self.add(chain, CLAP)
         self.assertEqual(self.held(fake), set())
@@ -563,7 +561,7 @@ class test_grouping_follows_the_setting(signal_path_case):
         self.assertEqual((a.get_jackname(), b.get_jackname()), ("effect_1000", "effect_1001"))
 
     def test_going_back_to_grouping_off_ungroups(self):
-        fake = self.serve(planner=True, grouping=True)
+        fake = self.serve(grouping=True)
         chain = self.chain()
         a, b = self.add(chain, CLAP), self.add(chain, CLAP)
         self.assertEqual(self.held(fake), {(1000, 1001)})
@@ -574,40 +572,25 @@ class test_grouping_follows_the_setting(signal_path_case):
         self.assertFalse([line for line in fake.lines if line.startswith("chain ")])
         self.assertEqual(b.get_jackname(), "effect_1001")
 
-    def test_a_daemon_without_a_planner_is_still_given_its_chain(self):
-        fake = self.serve(planner=False)
-        chain = self.chain()
-        self.add(chain, CLAP), self.add(chain, CLAP)
-        self.assertEqual(self.held(fake), {(1000, 1001)})
-
-
 class test_an_edit_leaves_other_runs_alone(signal_path_case):
 
-    def runs_of(self, fake, planner):
-        if planner:
-            return {tuple(s): c for c, (segments, _) in fake.applied_plans().items() for s in segments if len(s) > 1}
-        return {m: c for c, m in fake.chains.items()}
+    def runs_of(self, fake):
+        return {tuple(s): c for c, (segments, _) in fake.applied_plans().items() for s in segments if len(s) > 1}
 
-    def check(self, planner):
-        fake = self.serve(planner=planner, grouping=True)
+    def test_the_untouched_run_is_left_alone(self):
+        fake = self.serve(grouping=True)
         chain = self.chain()
         a, b = self.add(chain, CLAP), self.add(chain, CLAP)
         self.strip(chain)
         self.add(chain, CLAP), self.add(chain, CLAP)
-        number = self.runs_of(fake, planner)[(1002, 1003)]
+        number = self.runs_of(fake)[(1002, 1003)]
         sent = len(fake.lines)
         self.remove(chain, a)
         self.remove(chain, b)
-        self.assertEqual(self.runs_of(fake, planner), {(1002, 1003): number}, "the run after the strip kept its number")
+        self.assertEqual(self.runs_of(fake), {(1002, 1003): number}, "the run after the strip kept its number")
         touched = [line for line in fake.lines[sent:] if line.split()[0] in ("chain", "chain_clear", "plan", "plan_clear")
                    and line.split()[1] == str(number)]
         self.assertEqual(touched, [], "nothing was said of the untouched run")
-
-    def test_with_chain(self):
-        self.check(planner=False)
-
-    def test_with_the_planner(self):
-        self.check(planner=True)
 
 
 class test_a_plugin_that_takes_notes(signal_path_case):
@@ -664,7 +647,6 @@ class test_a_run_ends_where_the_width_changes(signal_path_case):
         chain = self.chain()
         self.add(chain, CLAP), self.add(chain, "PH/Amp"), self.add(chain, CLAP)
         self.assertEqual(self.held(fake), set())
-        self.assertEqual(ph.daemon.chain_refused, {}, "nothing was offered that the worker refuses")
 
     def test_members_of_one_width_still_share(self):
         fake = self.serve_widths()
@@ -688,7 +670,6 @@ class test_a_mono_effect_runs_inside_a_stereo_run(test_a_run_ends_where_the_widt
         chain = self.chain()
         self.add(chain, CLAP), self.add(chain, "PH/Amp"), self.add(chain, CLAP)
         self.assertEqual(self.held(fake), {(1000, 1001, 1002)}, "the mono effect joined the stereo run")
-        self.assertEqual(ph.daemon.chain_refused, {})
 
     def test_members_of_one_width_still_share(self):
         fake = self.serve_widths()
@@ -704,18 +685,12 @@ class test_a_mono_effect_runs_inside_a_stereo_run(test_a_run_ends_where_the_widt
 
 
 class test_the_worker_declares_mono_in_stereo(unittest.TestCase):
-    """The worker's --capabilities decides; its version only when its --help lists no such option (older than 0.26.1),
-    and an option the help does not list is never asked: omx-clap-host 0.26.0 starts a host on one it does not know."""
+    """The worker's --capabilities decides, and nothing else is asked of it."""
 
     def check(self, answers, expected):
-        answers = dict(answers)
-        answers.setdefault("--version", "")  # every omx-clap-host takes it; one that names no version is a no
-        answers["--help"] = "  -V, --version\n" + ("      --capabilities\n" if "--capabilities" in answers else "")
-
         def run(argv, **kw):
             said = answers.get(argv[1])
-            # an omx-clap-host older than --capabilities warns of an option it does not know, says 0 and starts
-            self.assertIsNotNone(said, "asked an option the worker's --help does not list: %s" % argv[1])
+            self.assertIsNotNone(said, "asked of the worker what its --capabilities decides: %s" % argv[1])
             return mock.Mock(stdout=said, stderr="", returncode=0)
         with mock.patch.dict(ph.mono_in_stereo_cache, clear=True), \
              mock.patch.object(ph.subprocess, "run", side_effect=run) as called:
@@ -725,14 +700,8 @@ class test_the_worker_declares_mono_in_stereo(unittest.TestCase):
         self.assertEqual(called.call_count, n, "asked once")
 
     def test_the_declared_capability_decides(self):
-        self.check({"--capabilities": "chain_expect\nmono_in_stereo\n", "--version": "omx-clap-host version: 0.1.0\n"}, True)
-        self.check({"--capabilities": "chain_expect\n", "--version": "omx-clap-host version: 9.0.0\n"}, False)
-
-    def test_the_version_is_the_fallback(self):
-        self.check({"--version": "omx-clap-host version: 0.26.0\n"}, False)
-        self.check({"--version": "omx-clap-host version: 0.26.1\n"}, True)
-        self.check({"--version": "omx-clap-host version: 0.27.0~meas\n"}, True)
-        self.check({}, False)
+        self.check({"--capabilities": "chain_expect\nmono_in_stereo\n"}, True)
+        self.check({"--capabilities": "chain_expect\n"}, False)
 
     def test_no_binary_is_no(self):
         with mock.patch.dict(ph.mono_in_stereo_cache, clear=True), \
@@ -742,21 +711,8 @@ class test_the_worker_declares_mono_in_stereo(unittest.TestCase):
 
 class test_a_refusal_is_asked_again(signal_path_case):
 
-    def test_a_refused_chain_is_declared_once_it_can_be(self):
-        fake = self.serve()
-        chain = self.chain()
-        self.add(chain, NOPIN), self.add(chain, CLAP)
-        self.assertEqual(self.held(fake), set())
-        self.assertEqual(ph.daemon.chain_refused, {1: (1000, 1001)})
-        fake.instances[1000] = "urn:test:amp"  # the qualification sync gave it a pin
-        chain.rebuild_graph()
-        self.assertEqual(self.held(fake), set(), "not before the retry is due")
-        with mock.patch.object(ph, "RETRY_S", 0.0):
-            chain.rebuild_graph()
-        self.assertEqual(self.held(fake), {(1000, 1001)})
-
     def test_a_plan_with_no_verdict_is_planned_again(self):
-        fake = self.serve(planner=True, grouping=True, verdicts={"urn:test:amp": "none"})
+        fake = self.serve(grouping=True, verdicts={"urn:test:amp": "none"})
         chain = self.chain()
         self.add(chain, "PH/Amp"), self.add(chain, CLAP)
         self.assertEqual(self.held(fake), set())
@@ -765,26 +721,21 @@ class test_a_refusal_is_asked_again(signal_path_case):
             chain.rebuild_graph()
         self.assertEqual(self.held(fake), {(1000, 1001)})
 
-    def test_a_cleared_number_forgets_its_refusal(self):
-        fake = self.serve()
-        chain = self.chain()
-        a, b = self.add(chain, NOPIN), self.add(chain, CLAP)
-        self.remove(chain, a)
-        self.remove(chain, b)
-        self.assertEqual(ph.daemon.chain_refused, {})
 
+class test_the_version_of_a_worker_is_not_asked(unittest.TestCase):
+    """A worker that declares nothing in --capabilities does not run a mono member in a stereo chain, whatever it is called
+    or numbered: the version is not read."""
 
-class test_the_routes_follow_what_the_daemon_moves(signal_path_case):
+    def test_no_declaration_is_no(self):
+        asked = []
 
-    def test_a_quarantined_member_is_routed_through_its_own_client(self):
-        fake = self.serve()
-        chain = self.chain()
-        a, b, c = (self.add(chain, CLAP) for _ in range(3))
-        self.assertEqual(c.get_jackname(), "effect_1000")
-        fake.chains[1] = (1000, 1001)  # the daemon quarantined 1002 to a worker of its own
-        ph.follow_daemon()
-        self.assertEqual(c.get_jackname(), "effect_1002")
-        self.assertEqual(b.get_jackname(), "effect_1000")
+        def run(argv, **kw):
+            asked.append(argv[1])
+            return mock.Mock(stdout="omx-clap-host version: 9.0.0\n" if argv[1] == "--version" else "", stderr="", returncode=0)
+        with mock.patch.dict(ph.mono_in_stereo_cache, clear=True), mock.patch.object(ph.subprocess, "run", side_effect=run):
+            self.assertFalse(ph.mono_in_stereo())
+        self.assertNotIn("--version", asked)
+        self.assertFalse(hasattr(ph, "MONO_IN_STEREO"))
 
 
 if __name__ == "__main__":
