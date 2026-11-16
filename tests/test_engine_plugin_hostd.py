@@ -610,7 +610,7 @@ class test_processor(plugin_hostd_case):
         self.assertIn("reply.plugin-hostd.no-preset-list", logs.output[0])
 
     def lv2_amp_presets(self, my_data):
-        """The cache Zynthian keeps for the LV2 Amp: two banks of its bundle and one of the user's, saved under jalv."""
+        """The cache Zynthian keeps for the LV2 Amp: two banks of its bundle and one saved under jalv, which is not offered."""
         user = f"file://{my_data}/presets/lv2/Amp.presets.lv2/"
         LV2_PRESETS["Amp"] = {
             "Bundle A": {"bank_url": None, "presets": [{"label": "Loud_Lead", "url": "urn:test:amp#loud"}]},
@@ -641,11 +641,11 @@ class test_processor(plugin_hostd_case):
                 self.assertTrue(proc.auto_save_bank, "the save screen asks for no bank")
             self.assertEqual(menus["lv2"][0], ["Factory", "User"])
             self.assertEqual(menus["lv2"][0], menus["clap"][0], "the same bank names for both formats")
-            self.assertEqual([len(b) for b in menus["lv2"][1]], [2, 2])
+            self.assertEqual([len(b) for b in menus["lv2"][1]], [2, 1])
             self.assertEqual([len(b) for b in menus["clap"][1]], [2, 1])
             self.assertEqual(menus["lv2"][1][0][0], menus["clap"][1][0][0], "a row has the same shape for both formats")
-            self.assertEqual(menus["lv2"][2], [["clean", "Loud Lead"], ["Gig", "zz Saved"]],
-                             "plain names, sorted by name; the bundle's banks are one Factory, jalv's and ours one User")
+            self.assertEqual(menus["lv2"][2], [["clean", "Loud Lead"], ["zz Saved"]],
+                             "plain names, sorted by name; the bundle's banks are one Factory, ours alone the User")
             self.assertEqual(menus["clap"][2], [["Bright Lead", "Warm Pad"], ["zz Saved"]], "sorted the same way")
 
     def test_an_lv2_preset_loads_by_its_uri_whichever_bank_it_is_in(self):
@@ -658,10 +658,9 @@ class test_processor(plugin_hostd_case):
             self.assertTrue(proc.engine.set_preset(proc, factory[1]))
             self.assertIn("preset_load 1000 urn:test:amp#loud", fake.lines)
             self.assertEqual(proc.controllers_dict["gain"].value, 6.0, "the values are read back after the load")
-            self.assertEqual(mine[0][0], user + "Gig.ttl")
-            self.assertTrue(proc.engine.is_preset_user(mine[0]) and not proc.engine.is_preset_user(factory[0]))
-            self.assertTrue(proc.engine.set_preset(proc, mine[0]))
-            self.assertEqual(proc.controllers_dict["gain"].value, -2.0)
+            self.assertEqual([(p[0], p[2]) for p in mine], [("", "No presets")], "a preset saved under jalv is not offered")
+            self.assertFalse(any(p[0] == user + "Gig.ttl" for p in factory), "nor as a Factory one")
+            self.assertFalse(proc.engine.is_preset_user([user + "Gig.ttl"]) or proc.engine.is_preset_user(factory[0]))
             self.assertNotIn("preset_list 1000", fake.lines, "an LV2 plugin's presets are not asked of the worker")
 
     def test_a_path_with_spaces_goes_to_the_daemon_as_one_word(self):
