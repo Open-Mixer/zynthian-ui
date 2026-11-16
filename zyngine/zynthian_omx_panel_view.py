@@ -431,18 +431,31 @@ class View:
 # ---- The panel on the screen ----
 
 def changed_rows(before, after, stride):
-    """The band of rows two draws of one size differ in, (first, past the last); None when they are the same."""
+    """The band of rows two draws of one size differ in, (first, past the last); None when they are the same. A binary
+    search over the rows that match from the top and from the bottom, never a Python loop over every row."""
     if before == after:
         return None
-    a, b = memoryview(before), memoryview(after)
-    rows = len(after) // stride
-    top = 0
-    while top < rows and a[top * stride:(top + 1) * stride] == b[top * stride:(top + 1) * stride]:
-        top += 1
-    bottom = rows
-    while bottom > top and a[(bottom - 1) * stride:bottom * stride] == b[(bottom - 1) * stride:bottom * stride]:
-        bottom -= 1
-    return top, bottom
+    # each step is one memcmp of `before` against a window on `after`, no copy (a memoryview slice compared with ==
+    # goes item by item: a row loop over them took 7.3 ms of a 1024 x 416 frame on the Pi)
+    a, b = bytes(before), memoryview(after)
+    n = len(b)
+    rows = n // stride
+    lo, hi = 0, rows  # rows above `lo` match
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if a.startswith(b[:mid * stride]):
+            lo = mid
+        else:
+            hi = mid - 1
+    top = lo
+    lo, hi = 0, rows - top - 1  # rows below the band that match from the bottom, leaving the top row in
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if a.endswith(b[n - mid * stride:]):
+            lo = mid
+        else:
+            hi = mid - 1
+    return top, rows - lo
 
 
 class PanelImage:

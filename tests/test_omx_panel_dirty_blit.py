@@ -105,6 +105,21 @@ class DirtyBlit(unittest.TestCase):
         self.assertEqual(self.screen.tobytes(), shown(frame(30)).tobytes())
 
 
+class ChangedRows(unittest.TestCase):
+    """The band of rows two draws differ in, wherever the change is."""
+
+    def test_the_band(self):
+        stride, rows = 16, 50
+        base = bytes(stride * rows)
+        for first, last in ((0, 1), (49, 50), (20, 21), (0, 50), (3, 47), (10, 30)):
+            with self.subTest(rows=(first, last)):
+                b = bytearray(base)
+                b[first * stride] = 1
+                b[(last - 1) * stride + stride - 1] = 1
+                self.assertEqual(view.changed_rows(base, bytes(b), stride), (first, last))
+        self.assertIsNone(view.changed_rows(base, base, stride))
+
+
 @unittest.skipUnless(Image, "no PIL")
 class OnePath(unittest.TestCase):
     def test_the_widget_and_the_pi_measurement_blit_through_panel_image(self):
