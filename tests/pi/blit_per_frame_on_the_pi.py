@@ -69,7 +69,9 @@ def drag(view_class, what, name, symbol, root, canvas):
         n += 1
         a = time.monotonic()
         offset = travel * 0.4 * (1 if (n // 60) % 2 else -1) * ((n % 60) / 60.0)  # up and down the travel
-        changes, _, _ = view.input(pv.EVENT_MOVE, a * 1000.0, cx + (0 if w < h else offset), cy - (offset if w < h else 0))
+        # a drag is vertical, up to raise, as the gestures declare it for a bar and a dot alike (a sideways drag moved
+        # nothing: the frames of 16596f12's bar rows were all the same draw)
+        changes, _, _ = view.input(pv.EVENT_MOVE, a * 1000.0, cx, cy - offset)
         for c, fraction, _ in changes:
             view.set_value(c, fraction, "")
         b = time.monotonic()
