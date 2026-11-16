@@ -126,6 +126,15 @@ def compare_declaration():
     return compare_declared[panel]
 
 
+def refuse_nul(line):
+    """A NUL closes a command on the wire: a line holding one is refused, naming the word, before anything is written."""
+    if "\0" in line:
+        words = line.split(" ")
+        at = next(n for n, w in enumerate(words, 1) if "\0" in w)
+        raise plugin_hostd_error(protocol.code("reply.host.invalid-operation"),
+                                 f"{words[0]}: word {at} holds a NUL, which closes a command")
+
+
 class plugin_hostd_error(Exception):
     """A negative reply, carrying its code and its name."""
 
@@ -281,7 +290,9 @@ class plugin_hostd_client:
 
     def call(self, line, timeout=TIMEOUT):
         """Send a line, return (code, rest) or raise plugin_hostd_error for a negative code.
-        A connection error is raised as OSError; a timeout as plugin_hostd_timeout."""
+        A connection error is raised as OSError; a timeout as plugin_hostd_timeout.
+        A line holding a NUL is refused first: the NUL closes a command, so it would be sent as two."""
+        refuse_nul(line)
         try:
             if self.sock is None:
                 self.sock = socket.create_connection((self.host, self.port), timeout=TIMEOUT)
@@ -292,7 +303,7 @@ class plugin_hostd_client:
             self.close()
             raise
         words = reply.split(" ", 2)
-        if len(words) < 2 or words[0] != "resp":
+        if len(words) < 2 or words[0] != "resp" or not words[1].lstrip("-").isdigit():
             raise plugin_hostd_error(protocol.code("reply.host.invalid-operation"), f"{line} (reply '{reply[:64]}')")
         code = int(words[1])
         rest = words[2] if len(words) > 2 else ""

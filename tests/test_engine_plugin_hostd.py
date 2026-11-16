@@ -1754,5 +1754,57 @@ class test_no_old_daemons(plugin_hostd_case):
         self.assertEqual(ph.worker_record("w1:4309:clap:up:1:qualified:own:1000")[3:], ("own", None, [1000]))
 
 
+class test_nul_framing(plugin_hostd_case):
+    """A line is closed by one NUL: a NUL inside a word would make one command two, and every reply after it would
+    answer the wrong request. The line is refused at the door, before anything is written."""
+
+    LINE = "param_set 1000 ga\0in 0.5"
+
+    def refused(self, **kw):
+        fake = self.serve(**kw)
+        client = ph.plugin_hostd_client(self.port)
+        client.call("add urn:test:amp 1000")
+        before = list(fake.wire)
+        with self.assertRaises(ph.plugin_hostd_error) as e:
+            client.call(self.LINE)
+        self.assertEqual(fake.wire, before, "not a byte of the refused line reached the daemon")
+        self.assertEqual(e.exception.code, ph.protocol.code("reply.host.invalid-operation"))
+        self.assertIn("word 3", str(e.exception), "the field is named")
+        self.assertNotIn("\0", str(e.exception))
+
+    def test_a_line_with_a_nul_in_a_word_is_refused_and_nothing_is_written(self):
+        self.refused()
+
+    def test_the_same_with_tags_granted(self):
+        self.refused(hello=True, bulk=True)
+
+    def test_the_reply_after_a_refused_line_is_the_reply_of_its_own_request(self):
+        fake = self.serve()
+        client = ph.plugin_hostd_client(self.port)
+        client.call("add urn:test:amp 1000")
+        client.call("param_set 1000 gain 2")
+        try:
+            client.call(self.LINE)
+        except ph.plugin_hostd_error:
+            pass
+        self.assertEqual(client.call("param_get 1000 gain"), (0, "2.0000"))
+        self.assertEqual(client.call("param_get 1000 gain"), (0, "2.0000"))
+
+    def test_the_engine_s_own_send_path_refuses_it_too(self):
+        fake = self.serve()
+        ph.daemon.call("add urn:test:amp 1000")
+        before = list(fake.wire)
+        with self.assertRaises(ph.plugin_hostd_error):
+            ph.daemon.call(ph.command("patch_set", 1000, "urn:p", "/a\0b.wav"))
+        self.assertEqual(fake.wire, before)
+
+    def test_a_reply_whose_code_is_no_number_is_a_plugin_hostd_error(self):
+        fake = self.serve()
+        fake.handle = lambda line: "resp abc"
+        client = ph.plugin_hostd_client(self.port)
+        with self.assertRaises(ph.plugin_hostd_error):
+            client.call("worker_list")
+
+
 if __name__ == "__main__":
     unittest.main()
