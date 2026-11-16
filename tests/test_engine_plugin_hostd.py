@@ -1797,7 +1797,8 @@ class test_nul_framing(plugin_hostd_case):
 
     def test_a_reply_whose_code_is_no_number_is_a_plugin_hostd_error(self):
         fake = self.serve()
-        fake.handle = lambda line: "resp abc"
+        hello = fake.handle
+        fake.handle = lambda line: hello(line) if line.split()[0] == "hello" else "resp abc"
         client = ph.plugin_hostd_client(self.port)
         with self.assertRaises(ph.plugin_hostd_error):
             client.call("worker_list")
