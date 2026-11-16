@@ -59,6 +59,7 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         self.touch = self.slots = None
         self.polling = False
         self.drawn = None  # the renderer's view of the screen's part of the panel, see build_drawn
+        self.stopped = None  # how the renderer stopped: the panel is strips until it is opened again
         self.drawn_page = None
         self.drawn_state = None
         self.image = None
@@ -100,6 +101,7 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
 
     def set_processor(self, processor):
         super().set_processor(processor)
+        self.stopped = None  # opened again: the renderer is started again
         self.build()
 
     def on_word(self, zctrl, word):
@@ -126,12 +128,15 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         if self.drawn:
             self.drawn.close()
         self.drawn = self.drawn_state = None
-        if not drawn or self.width < 2 or self.height < 2:
+        if not drawn or self.width < 2 or self.height < 2 or self.stopped:
             return False
         keys = self.page_keys()
         part, self.display_map = panel_view.screen_part(drawn[0], set(keys))
         try:
             view = panel_view.View(part)
+        except panel_view.RendererStopped as e:
+            self.renderer_stopped(e)
+            return False
         except panel_view.RendererAbsent as e:
             if not getattr(zynthian_widget_omx_panel, "said", False):
                 zynthian_widget_omx_panel.said = True
@@ -207,7 +212,12 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
     def drawn_input(self, kind, e=None, **kw):
         """An event to the renderer; the controls it moved are set, and `more` opens the surface's menu."""
         x, y = (e.x, e.y) if e is not None else (0, 0)
-        changes, word, _ = self.drawn.input(kind, time.monotonic() * 1000.0, x, y, **kw)
+        try:
+            changes, word, _ = self.drawn.input(kind, time.monotonic() * 1000.0, x, y, **kw)
+        except panel_view.RendererStopped as e:
+            self.renderer_stopped(e)
+            self.refresh_gui()
+            return
         by_index = dict(self.controls)
         for index, fraction, value in changes:
             z = by_index.get(index)
@@ -269,11 +279,27 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
             gestures.tk_key(row, e)
             self.refresh_gui()
 
+    def renderer_stopped(self, e):
+        """The renderer stopped under this panel: the view is dropped and the panel is strips, saying so, until it is
+        opened again (a renderer that faults on this panel is not started again on every refresh)."""
+        if self.drawn:
+            self.drawn.close()
+        self.drawn = self.drawn_state = None
+        self.stopped = str(e)
+        self.build()
+
     def refresh_gui(self):
-        if self.drawn and self.refresh_drawn():
-            return
+        if self.drawn:
+            try:
+                if self.refresh_drawn():
+                    return
+            except panel_view.RendererStopped as e:
+                self.renderer_stopped(e)
         c = self.widget_canvas
         c.delete("all")
+        if self.stopped:
+            c.create_text(self.width / 2, self.height - MARGIN, anchor="s", text="omx-panel's renderer stopped",
+                          fill=zynthian_gui_config.color_tx_off)
         if not self.panel:
             c.create_text(self.width / 2, self.height / 2, text=self.table_error or "", fill=zynthian_gui_config.color_tx_off)
             return
