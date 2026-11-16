@@ -249,13 +249,7 @@ _the_host = None
 
 def _attach(name):
     """The UI's shared memory, attached without the resource tracker taking it over (the UI owns it)."""
-    try:
-        return shared_memory.SharedMemory(name=name, track=False)
-    except TypeError:  # Python before 3.13 has no track: the tracker would unlink the UI's segment at exit
-        from multiprocessing import resource_tracker
-        shm = shared_memory.SharedMemory(name=name)
-        resource_tracker.unregister(shm._name, "shared_memory")
-        return shm
+    return shared_memory.SharedMemory(name=name, track=False)
 
 
 def _serve(fd):
