@@ -3,7 +3,8 @@
 # The cost of one drag frame of a drawn panel on the Pi, by hand (not collected by CI; zynthian-ui#44): a bar of the
 # graphic EQ and a band dot of eq8 dragged for DRAG_S seconds each, at the widget's size on the 1024 px screen. Each frame is
 # what the panel widget does on a drag (zyngui/zynthian_widget_omx_panel.py, drawn_input then paint): the event to the
-# renderer, its draw, the RGBA to Tk image conversion over the look's background, and the canvas update, each timed.
+# renderer, its draw, the blit (the panel view's PanelImage, the widget's own path: only the rows the draw changed are
+# converted over the background and copied into the photo on the screen, #59), and the canvas update, each timed.
 # Frames run back to back: the frame rate is what the screen reached. Run once in the renderer's own process (the
 # panel view's View, as the UI runs it now) and once with the library in this process (the view before #44), so the
 # process boundary's cost is the difference. One JSON line per run goes to stdout; the figures go into
@@ -51,7 +52,6 @@ def quantiles(ms):
 
 
 def drag(view_class, what, name, symbol, root, canvas):
-    from PIL import Image, ImageTk
     view = view_class(layout(name, symbol))
     view.set_surface(W, H)
     i = view.symbols.index(symbol)
@@ -59,11 +59,11 @@ def drag(view_class, what, name, symbol, root, canvas):
         view.set_value(k, 0.5, "")
     (x, y, w, h), travel = view.target_rect(i)
     cx, cy = x + w / 2, y + h / 2
-    back = Image.new("RGBA", (W, H), "#000000")
+    screen = pv.PanelImage("#000000", canvas)
     t0 = time.monotonic()
     view.input(pv.EVENT_DOWN, t0 * 1000.0, cx, cy)
-    parts = {"input": [], "draw": [], "convert": [], "canvas": [], "frame": []}
-    keep = None
+    parts = {"input": [], "draw": [], "blit": [], "canvas": [], "frame": []}
+    rows = []
     n = 0
     while time.monotonic() - t0 < SECONDS:
         n += 1
@@ -75,13 +75,11 @@ def drag(view_class, what, name, symbol, root, canvas):
         b = time.monotonic()
         rgba = view.draw(W, H)
         c = time.monotonic()
-        keep = ImageTk.PhotoImage(Image.alpha_composite(back, Image.frombuffer("RGBA", (W, H), rgba, "raw", "RGBA", 0, 1)))
+        rows.append(sum(box[3] for box in screen.show(rgba, W, H)))
         d = time.monotonic()
-        canvas.delete("all")
-        canvas.create_image(0, 0, anchor="nw", image=keep)
         root.update()
         e = time.monotonic()
-        for k, v in (("input", b - a), ("draw", c - b), ("convert", d - c), ("canvas", e - d), ("frame", e - a)):
+        for k, v in (("input", b - a), ("draw", c - b), ("blit", d - c), ("canvas", e - d), ("frame", e - a)):
             parts[k].append(v * 1000.0)
     view.input(pv.EVENT_UP, time.monotonic() * 1000.0, cx, cy)
     view.close()
@@ -89,6 +87,7 @@ def drag(view_class, what, name, symbol, root, canvas):
     result = {"drag": what, "plugin": name, "control": symbol, "size": f"{W}x{H}", "frames": n,
               "fps": round(n / elapsed, 1)}
     result.update({k: quantiles(v) for k, v in parts.items()})
+    result["rows blitted"] = quantiles(rows)
     result["red"] = result["frame"]["p99"] > FRAME_MS
     return result
 
