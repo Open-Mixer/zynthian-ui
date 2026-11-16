@@ -33,7 +33,7 @@ class estimate_footer(plugin_hostd_case):
         return est.estimator(ph.estimate, delay=0.0)
 
     def test_the_footer_says_the_chains_figures_with_the_candidate_in_it(self):
-        fake = self.serve(estimator=True)
+        fake = self.serve()
         chain = self.chain()
         self.add(chain, "JV/Amp")
         refs = ph.menu_refs(chain, "PH/NoPin", self.info["JV/NoPin"] | {"URL": "urn:test:nopin"})
@@ -44,7 +44,7 @@ class estimate_footer(plugin_hostd_case):
         self.assertIn("estimate 48000 256 urn:test:amp urn:test:nopin", fake.lines)
 
     def test_a_plugin_the_records_lack_is_counted_unknown(self):
-        self.serve(estimator=True)
+        self.serve()
         e = self.estimator()
         e.request("k", 96000, 128, ["urn:test:amp", "urn:test:big"])
         # the member's reason is NO_RECORD's sentence from its owner, in the device's language (#6)
@@ -53,6 +53,7 @@ class estimate_footer(plugin_hostd_case):
 
     def test_a_daemon_without_the_verb_gives_no_figure_and_no_unavailable_text(self):
         fake = self.serve()
+        fake.verb_estimate = lambda *a: "resp -902"
         e = self.estimator()
         e.request("a", 48000, 256, ["urn:test:amp"])
         self.assertEqual(wait_for(e), ("a", None))
@@ -67,7 +68,7 @@ class estimate_footer(plugin_hostd_case):
         self.assertEqual(ph.menu_refs(None, "JV/Amp", self.info["JV/Amp"]), [])
 
     def test_the_newest_question_is_the_one_answered(self):
-        fake = self.serve(estimator=True)
+        fake = self.serve()
         e = est.estimator(ph.estimate, delay=0.2)
         for i, ref in enumerate(["urn:test:amp", "urn:test:nopin", "urn:test:big"]):
             e.request(i, 48000, 256, [ref])
@@ -75,7 +76,7 @@ class estimate_footer(plugin_hostd_case):
         self.assertEqual(len([l for l in fake.lines if l.startswith("estimate")]), 1, "debounced to one request")
 
     def test_the_chain_view_has_the_figures_of_the_whole_chain_after_an_insert(self):
-        self.serve(estimator=True)
+        self.serve()
         self.sm.get_jackd_samplerate.return_value = 48000
         self.sm.get_jackd_blocksize.return_value = 256
         chain = self.chain()

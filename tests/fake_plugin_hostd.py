@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-# A stand-in for plugin-hostd on its command port (0.12 verbs; plan, plan_get and plan_clear of 0.13 on request): NUL-terminated lines, one reply each,
+# A stand-in for plugin-hostd on its command port: NUL-terminated lines, one reply each,
 # the replies and refusal codes its README documents. Protocol 0.3 of plugin-hostd-protocol (hello with tags and
-# error words, param_get_many, param_set_many) on request: hello=True; without it the fake is an old daemon. It runs in a thread of a test, or as a
+# error words, param_get_many, param_set_many), plan, plan_get, plan_clear and estimate. hello_reply makes it a
+# daemon that does not speak hello. It runs in a thread of a test, or as a
 # program started the way the engine starts the daemon: fake_plugin_hostd.py -n -p <port> [-c <conf>].
 # Every line it takes is appended to $FAKE_HOSTD_JOURNAL when that is set.
 #
@@ -55,9 +56,8 @@ PLUGINS = {
 
 class fake_plugin_hostd:
 
-    def __init__(self, port, journal=None, descriptors=None, mod_host=False, planner=False, grouping=False,
-                 group_max=8, verdicts=None, estimator=False, hello=False, bulk=False, stale_tags=False,
-                 hello_reply="resp -902", panels=None):
+    def __init__(self, port, journal=None, descriptors=None, mod_host=False, grouping=True,
+                 group_max=8, verdicts=None, stale_tags=False, hello_reply=None, panels=None):
         self.port = port
         self.journal = journal
         self.descriptors = descriptors or {}
@@ -71,15 +71,11 @@ class fake_plugin_hostd:
         self.bypass = {}
         self.windows = set()  # instances whose own window is shown
         self.chains = {}  # chain => tuple of instances
-        self.planner = planner  # answer plan, plan_get and plan_clear; else -902 like plugin-hostd 0.12
         self.grouping = grouping  # the setting: whether a plan moves anything
         self.group_max = group_max
-        self.estimator = estimator  # answer estimate (plugin-hostd 0.14); else -902 like the daemons before it
         self.verdicts = verdicts or {}  # uri => pin verdict word; none is "in-process"
         self.plans = {}  # chain => (segments, {instance: reason}) as the last plan answered it
-        self.hello = hello  # answer hello, protocol 0.3; else an old daemon, which answers hello_reply
-        self.hello_reply = hello_reply  # what an old daemon says to hello: not found, as mod-host does, or the refusal
-        self.bulk = bulk  # answer param_get_many and param_set_many; else -902 like a daemon that does not serve them
+        self.hello_reply = hello_reply  # what a daemon that does not speak hello says to it (not found, as mod-host does, or the refusal); None answers it
         self.stale_tags = stale_tags  # send a reply of a tag nobody waits for before each tagged reply
         self.granted = set()  # the extensions this connection was granted
         self.connections = 0
@@ -160,7 +156,7 @@ class fake_plugin_hostd:
         return ([f"@stale {reply}"] if self.stale_tags else []) + [f"{tag} {reply}"]
 
     def verb_hello(self, version, *extensions):
-        if not self.hello:
+        if self.hello_reply is not None:
             return self.hello_reply
         if not version.isdigit() or int(version) < 1:
             return "resp -902"
@@ -169,7 +165,7 @@ class fake_plugin_hostd:
 
     def verb_param_get_many(self, instance, *symbols):
         n = int(instance)
-        if not self.bulk or not symbols:
+        if not symbols:
             return "resp -902"
         if n not in self.instances:
             return "resp -3"
@@ -180,8 +176,6 @@ class fake_plugin_hostd:
     def verb_param_set_many(self, instance, *pairs):
         """All or nothing: every pair is checked before one is set, the first refused answers its position."""
         n = int(instance)
-        if not self.bulk:
-            return "resp -902"
         if n not in self.instances:
             return "resp -3"
         if not pairs or len(pairs) % 2:
@@ -208,9 +202,7 @@ class fake_plugin_hostd:
             method = getattr(self, "verb_" + verb, None)
             if method is None or (self.mod_host and verb in ("worker_list", "chain", "chain_get", "chain_clear",
                                                               "descriptor_get", "panel_get", "preset_list",
-                                                              "preset_get")) \
-                    or (not self.planner and verb.startswith("plan")) \
-                    or (not self.estimator and verb == "estimate"):
+                                                              "preset_get")):
                 return "resp -902"
             return method(*args)
         except (TypeError, ValueError, KeyError, IndexError):
@@ -586,9 +578,7 @@ def main(argv):
     if os.environ.get("FAKE_HOSTD_DESCRIPTORS"):
         with open(os.environ["FAKE_HOSTD_DESCRIPTORS"]) as f:
             descriptors = json.load(f)
-    new = os.environ.get("FAKE_HOSTD_PROTOCOL") == "0.3"  # a daemon of protocol 0.3, else an old one
-    daemon = fake_plugin_hostd(port, os.environ.get("FAKE_HOSTD_JOURNAL"), descriptors, hello=new,
-                               bulk=new and os.environ.get("FAKE_HOSTD_BULK", "1") == "1")
+    daemon = fake_plugin_hostd(port, os.environ.get("FAKE_HOSTD_JOURNAL"), descriptors)
     time.sleep(float(os.environ.get("FAKE_HOSTD_READY_DELAY", "0")))  # listening, not yet ready
     print("plugin-hostd ready!", flush=True)
     daemon.serve()
