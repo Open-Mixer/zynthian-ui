@@ -60,8 +60,7 @@ class zynthian_gui_selector_grid(zynthian_gui_base):
         self.selected_node = 0  # Selected node id
 
         # Canvas for drawing the graph
-        # the tiles are panels on the screen's background, as a list is
-        self.canvas = tkinter.Canvas(self.main_frame, bg=zynthian_gui_config.color_bg, highlightthickness=0)
+        self.canvas = tkinter.Canvas(self.main_frame, bg=zynthian_gui_config.color_grid_bg, highlightthickness=0)
         self.canvas.pack(fill=tkinter.BOTH, expand=True)
         # Bind Mouse Events
         self.canvas.bind("<Button-1>", self.on_press)
@@ -152,8 +151,8 @@ class zynthian_gui_selector_grid(zynthian_gui_base):
             return self.icons[icon_fname]
 
     def _draw_node(self, idx, node, x, y):
-        # the look's colours, in the roles the list screens give them: an item with no action on the panel highlight
-        fill = zynthian_gui_config.color_panel_bg if node["action"] else zynthian_gui_config.color_panel_hl
+        # the look's grid tokens (zynthian_gui_config.color_grid_*)
+        fill = zynthian_gui_config.color_grid_tile if node["action"] else zynthian_gui_config.color_grid_tile_off
         self.canvas.create_rectangle(x, y, x + self.BLOCK_WIDTH, y + self.BLOCK_HEIGHT,
             fill=fill,
             outline=fill,
@@ -165,7 +164,7 @@ class zynthian_gui_selector_grid(zynthian_gui_base):
                     image=img,
                     anchor="w",
                     tags=("node", f"node_{idx}", "img"))
-        fill = zynthian_gui_config.color_panel_tx if node["action"] else zynthian_gui_config.color_tx_off
+        fill = zynthian_gui_config.color_grid_tx if node["action"] else zynthian_gui_config.color_grid_tx_off
         self.canvas.create_text(
             x + 2 * self.BLOCK_WIDTH // 3, y + self.BLOCK_HEIGHT // 2,
             text=node["title"],
@@ -213,7 +212,7 @@ class zynthian_gui_selector_grid(zynthian_gui_base):
         """
         self.canvas.itemconfig("node && rect", outline="")
         node_tags = f"node_{self.selected_node} && rect"
-        self.canvas.itemconfig(node_tags, outline=zynthian_gui_config.color_ctrl_bg_on, width=2)  # a list's selection
+        self.canvas.itemconfig(node_tags, outline=zynthian_gui_config.color_grid_sel, width=2)
         if self.shown and self.zyngui.tts:
             self.zyngui.tts.announce(self.config[self.selected_node]["title"])
 
