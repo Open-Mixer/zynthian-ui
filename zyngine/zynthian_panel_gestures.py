@@ -37,7 +37,7 @@ ENV_TABLE = "ZYNTHIAN_OMX_GESTURES"
 
 
 class GestureTableAbsent(OSError):
-    """The omx-panel installed here carries no schema/gestures.json (a release before the gesture vocabulary)."""
+    """The omx-panel installed here carries no schema/gestures.json."""
 
 
 def table_path():
