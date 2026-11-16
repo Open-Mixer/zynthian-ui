@@ -1842,7 +1842,8 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
     # ---- Presets ----
     # Every plugin shows the same two banks, whatever its format: Factory, the presets the
     # plugin ships, and User, the user's; plain names, sorted by name, the same save, rename and delete. The format is
-    # only in a preset's key: an LV2 preset's URI (its bundle's, from zynthian_lv2's cache), a key of the daemon's preset_get for a CLAP preset, or the path of a preset file the worker
+    # only in a preset's key: an LV2 preset's URI (its bundle's, or a user preset Zynthian saved under jalv, from
+    # zynthian_lv2's cache), a key of the daemon's preset_get for a CLAP preset, or the path of a preset file the worker
     # wrote through preset_save. A bank with nothing in it shows one row that says so, which loads nothing.
 
     NO_PRESETS = "No presets"
@@ -1898,8 +1899,10 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
         return presets
 
     def user_presets(self):
-        """[(key, name)] of the user's presets: the files saved through plugin-hostd."""
-        return self.preset_files()
+        """[(key, name)] of the user's presets: the files saved through plugin-hostd, and an LV2 plugin's under jalv."""
+        lv2 = [(p["url"], p["label"].replace("_", " ").strip()) for info in self.lv2_preset_info().values()
+               for p in info.get("presets", []) if self.is_lv2_user_url(p.get("url"))] if self.is_lv2() else []
+        return self.preset_files() + lv2
 
     def get_bank_list(self, processor=None):
         return [self.FACTORY, self.USER]
@@ -1917,7 +1920,7 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
     def is_preset_user(self, preset):
         if not preset or not isinstance(preset[0], str):
             return False
-        return preset[0] == self.USER[0] or preset[0].startswith(self.user_dir() + os.sep)
+        return preset[0] == self.USER[0] or preset[0].startswith(self.user_dir() + os.sep) or self.is_lv2_user_url(preset[0])
 
     def edit_preset_file(self, path, **members):
         with open(path) as fh:
