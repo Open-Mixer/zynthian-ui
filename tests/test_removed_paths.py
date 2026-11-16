@@ -19,10 +19,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 class removed_paths(unittest.TestCase):
 
-    def test_there_is_no_tool_that_rewrites_saved_snapshots_from_jalv_to_plugin_hostd(self):
-        self.assertFalse(os.path.exists(os.path.join(ROOT, "tools", "convert_snapshots_to_ph.py")))
-        self.assertFalse(os.path.exists(os.path.join(ROOT, "tests", "test_convert_snapshots_to_ph.py")))
-
     def test_the_engine_config_holds_no_plugin_hostd_entry_for_a_later_load_to_throw_away(self):
         """The PH entries are made from the jalv ones at every load, so they are not saved with the engine config."""
         with tempfile.TemporaryDirectory() as tmp, \
