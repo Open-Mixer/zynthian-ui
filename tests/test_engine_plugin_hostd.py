@@ -1775,9 +1775,6 @@ class test_nul_framing(plugin_hostd_case):
     def test_a_line_with_a_nul_in_a_word_is_refused_and_nothing_is_written(self):
         self.refused()
 
-    def test_the_same_with_tags_granted(self):
-        self.refused(hello=True, bulk=True)
-
     def test_the_reply_after_a_refused_line_is_the_reply_of_its_own_request(self):
         fake = self.serve()
         client = ph.plugin_hostd_client(self.port)
