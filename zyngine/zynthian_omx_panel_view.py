@@ -448,7 +448,7 @@ def changed_rows(before, after, stride):
         else:
             hi = mid - 1
     top = lo
-    lo, hi = 0, rows - top - 1  # rows below the band that match from the bottom, leaving the top row in
+    lo, hi = 0, rows - top  # rows below the band that match from the bottom (a suffix holding row `top` never does)
     while lo < hi:
         mid = (lo + hi + 1) // 2
         if a.endswith(b[n - mid * stride:]):
