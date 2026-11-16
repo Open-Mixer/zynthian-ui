@@ -16,6 +16,7 @@
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -25,8 +26,10 @@ import tkinter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
-sys.path.insert(0, ROOT)
-from zyngine import zynthian_omx_panel_view as pv  # noqa: E402
+# the view module by its path, as the tests load it: the zyngine package needs the Zynthian's native libraries
+_spec = importlib.util.spec_from_file_location("panel_view", os.path.join(ROOT, "zyngine", "zynthian_omx_panel_view.py"))
+pv = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(pv)
 
 FIXTURES = os.path.join(ROOT, "tests", "fixtures", "omx_panel")
 SECONDS = float(os.environ.get("DRAG_S", "30"))
@@ -98,7 +101,10 @@ def main():
     canvas.pack()
     root.update()
     red = False
-    for where, view_class in (("renderer process", pv.View), ("in the UI's process", pv._LibraryView)):
+    modes = [("renderer process", pv.View), ("in the UI's process", pv._LibraryView)]
+    if os.environ.get("ORDER") == "in-process-first":  # the order is varied: a run must not owe its figure to its place
+        modes.reverse()
+    for where, view_class in modes:
         for what, name, symbol in DRAGS:
             r = drag(view_class, what, name, symbol, root, canvas)
             r.update(where=where, commit=commit)
