@@ -338,11 +338,12 @@ class test_protocol(plugin_hostd_case):
 
     def test_the_instance_key_is_the_table_s(self):
         """plugin-hostd#33: the key a worker sets on an instance's client is the one the client's table declares, and a
-        table before 0.5.5, which declares none, gives None"""
+        table before 0.5.5, which declares none, is an error"""
         key = "http://example.org/test#instance"
         p = self.codes(*self.declared(node_metadata=[{"name": "instance", "key": key}]))
         self.assertEqual(p.instance_key(), key)
-        self.assertIsNone(self.codes(*self.declared()).instance_key())
+        with self.assertRaises(plugin_hostd_protocol.ProtocolError):
+            self.codes(*self.declared()).instance_key()
 
     def test_the_installed_files_name_what_the_engine_branches_on(self):
         self.assertEqual(ph.protocol.name(-101), "reply.host.uri-invalid", "mod-host.json's name, not a retyped one")
@@ -1860,6 +1861,94 @@ class test_protocol_03(plugin_hostd_case):
         self.assertEqual(len(sent), 10)
         self.assertIn("param_set 1000 p4 33", sent)
         self.assertEqual(fresh.params[1000]["p4"], 33.0)
+
+
+class test_no_old_daemons(plugin_hostd_case):
+    """What a plugin-hostd that is too old to answer hello, the bulk verbs, plan or estimate gets: a refusal, never a
+    way around. The engine requires a daemon of the contract-versions floor."""
+
+    CLAP = "PH/clap:/usr/lib/clap/lsp-plugins.clap#in.lsp-plug.limiter_mono"
+
+    def sent(self, fake, prefix):
+        return [line for line in fake.lines if line.startswith(prefix)]
+
+    def test_a_daemon_that_does_not_answer_hello_is_refused_to_start_with(self):
+        for reply in ("not found", "resp -902"):
+            with self.subTest(reply=reply):
+                ph.daemon = ph.plugin_hostd_daemon(self.port)
+                fake = self.serve(hello_reply=reply)
+                with self.assertRaises(ph.plugin_hostd_down) as refused:
+                    ph.daemon.ensure()
+                self.assertIn("hello", str(refused.exception))
+                self.assertIsNone(ph.daemon.client.sock, "the connection is let go")
+                ph.daemon.client.close()
+                fake.stop()
+                time.sleep(0.05)
+                self.port = ph.daemon.client.port = free_port()
+
+    def test_a_refused_bulk_read_is_an_error_and_is_not_read_again_one_by_one(self):
+        fake = self.serve(descriptors={"urn:test:big": os.path.join(FIXTURES, "big.descriptor.json")}, hello=True, bulk=True)
+        proc = self.add(self.chain(), "PH/Big")
+        fake.params[1000]["p1"] = 9.0
+        fake.lines.clear()
+        with mock.patch.object(fake, "verb_param_get_many", lambda *a: "resp -103"):
+            proc.engine.refresh_values()
+        self.assertEqual(self.sent(fake, "param_get "), [], "no per-symbol reads around the refusal")
+        self.assertNotEqual(proc.controllers_dict["p1"].value, 9.0)
+
+    def test_a_refused_bulk_write_on_replay_is_an_error_and_not_put_back_value_by_value(self):
+        fake = self.serve(descriptors={"urn:test:big": os.path.join(FIXTURES, "big.descriptor.json")}, hello=True, bulk=True)
+        proc = self.add(self.chain(), "PH/Big")
+        proc.controllers_dict["p4"].set_value(33.0)
+        fake.stop()
+        time.sleep(0.05)
+        fresh = self.serve(hello=True, bulk=True)
+        fresh.verb_param_set_many = lambda *a: "resp -103 3"
+        with self.assertLogs(level=logging.ERROR) as logs:
+            ph.daemon.restore()
+        self.assertTrue([r for r in logs.output if "replay" in r], logs.output)
+        self.assertEqual(self.sent(fresh, "param_set "), [])
+
+    def test_a_daemon_that_refuses_plan_has_every_member_run_alone_and_no_chain_is_sent(self):
+        fake = self.serve(planner=False, hello=True, bulk=True)
+        chain = self.chain()
+        procs = [self.add(chain, self.CLAP) for _ in range(3)]
+        self.assertEqual(self.sent(fake, "chain "), [], "no chain line around the refusal")
+        self.assertNotIn(1, fake.chains)
+        self.assertEqual(set(ph.daemon.reasons), {1000, 1001, 1002})
+        self.assertTrue(all(r.startswith("plan-refused:") for r in ph.daemon.reasons.values()), ph.daemon.reasons)
+        self.assertFalse(hasattr(ph.daemon, "plan_verbs"))
+
+    def test_a_refused_estimate_is_an_error_each_time_and_there_is_no_unavailable_state(self):
+        fake = self.serve(hello=True, bulk=True)
+        for _ in range(2):
+            with self.assertRaises(ph.plugin_hostd_error):
+                ph.estimate(48000, 256, ["urn:test:amp"])
+        self.assertEqual(len(self.sent(fake, "estimate")), 2, "asked each time: the refusal is not remembered")
+        self.assertFalse(hasattr(ph.daemon, "estimate_verb"))
+        self.assertFalse(hasattr(ph.zynthian_plugin_hostd_estimate, "estimate_unavailable"))
+
+    def test_the_daemon_file_is_read_where_libplugin_hostd_protocol0_installs_it_and_nowhere_else(self):
+        old_home = os.path.join(self.tmp, "old")
+        os.makedirs(old_home)
+        with open(os.path.join(old_home, "protocol.json"), "w") as f:
+            json.dump({"config": [{"key": "odd", "default": 8}]}, f)
+        files = ph.zynthian_plugin_hostd_protocol
+        with mock.patch.object(files, "PROTOCOL_DIR", None):
+            self.assertIsNone(files.config_default("odd", old_home), "protocol.json is no daemon file")
+            self.assertEqual(files.daemon_file(old_home), (old_home, "plugin-hostd.json"))
+
+    def test_a_client_that_carries_no_instance_key_is_an_error_not_effect_n(self):
+        ac = sys.modules["zynautoconnect"]
+        self.serve()
+        proc = self.add(self.chain(), "PH/Amp")
+        ac.hosted_client.side_effect = lambda instance: None
+        with self.assertRaises(ph.plugin_hostd_down):
+            proc.engine.client_name()
+
+    def test_a_worker_record_of_the_shape_before_the_core_and_pool_fields_is_not_read(self):
+        self.assertIsNone(ph.worker_record("w1:4309:clap:up:own:1000"))
+        self.assertEqual(ph.worker_record("w1:4309:clap:up:1:qualified:own:1000")[3:], ("own", None, [1000]))
 
 
 if __name__ == "__main__":

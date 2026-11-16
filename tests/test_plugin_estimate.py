@@ -51,18 +51,17 @@ class estimate_footer(plugin_hostd_case):
         no_record = est.reason(ph_protocol.reply_codes().code("reply.plugin-hostd.no-record"))
         self.assertEqual(wait_for(e)[1], "chain: +0 fr latency, 1.5 %% CPU, RAM unknown, 1 workers, 1 unknown (member 2: %s)" % no_record)
 
-    def test_a_daemon_without_the_verb_says_unavailable_once_and_is_not_asked_again(self):
+    def test_a_daemon_without_the_verb_gives_no_figure_and_no_unavailable_text(self):
         fake = self.serve()
         e = self.estimator()
         e.request("a", 48000, 256, ["urn:test:amp"])
-        self.assertEqual(wait_for(e), ("a", "estimate unavailable"))
+        self.assertEqual(wait_for(e), ("a", None))
         e.request("b", 48000, 256, ["urn:test:nopin"])
         end = time.time() + 5
         while (e.result or (None,))[0] != "b" and time.time() < end:
             time.sleep(0.01)
-        self.assertEqual(e.result, ("b", None), "said once, then nothing")
-        self.assertEqual([l for l in fake.lines if l.startswith("estimate")], ["estimate 48000 256 urn:test:amp"])
-        self.assertFalse(ph.daemon.estimate_verb)
+        self.assertEqual(e.result, ("b", None))
+        self.assertEqual(len([l for l in fake.lines if l.startswith("estimate")]), 2, "a refusal is not remembered")
 
     def test_a_row_the_daemon_does_not_run_asks_nothing(self):
         self.assertEqual(ph.menu_refs(None, "JV/Amp", self.info["JV/Amp"]), [])

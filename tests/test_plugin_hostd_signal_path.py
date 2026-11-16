@@ -787,5 +787,21 @@ class test_the_routes_follow_what_the_daemon_moves(signal_path_case):
         self.assertEqual(b.get_jackname(), "effect_1000")
 
 
+class test_the_version_of_a_worker_is_not_asked(unittest.TestCase):
+    """A worker that declares nothing in --capabilities does not run a mono member in a stereo chain, whatever it is called
+    or numbered: the version is not read."""
+
+    def test_no_declaration_is_no(self):
+        asked = []
+
+        def run(argv, **kw):
+            asked.append(argv[1])
+            return mock.Mock(stdout="omx-clap-host version: 9.0.0\n" if argv[1] == "--version" else "", stderr="", returncode=0)
+        with mock.patch.dict(ph.mono_in_stereo_cache, clear=True), mock.patch.object(ph.subprocess, "run", side_effect=run):
+            self.assertFalse(ph.mono_in_stereo())
+        self.assertNotIn("--version", asked)
+        self.assertFalse(hasattr(ph, "MONO_IN_STEREO"))
+
+
 if __name__ == "__main__":
     unittest.main()
