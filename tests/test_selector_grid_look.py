@@ -1,10 +1,14 @@
 # -*- coding: utf-8 -*-
 #
 # The main menu's grid (zyngui/zynthian_gui_selector_grid.py, the main menu and the add-chain screen) draws in the
-# active UI look (zynthian-ui#55): its tiles, their text and the selection frame read zynthian_gui_config's colours,
-# the ones the list screens use for the same roles, never a colour of its own. The grid's own drawing methods run
-# under two looks over a canvas that records what it is asked to draw; tkinter, PIL, the config and the base screen
-# are stand-ins (the real config reads the Pi's wiring at import).
+# active UI look (zynthian-ui#55): its ground, tiles, text and selection frame are look tokens of their own
+# (ZYNTHIAN_UI_COLOR_GRID_*, zynthian_gui_config's color_grid_*), never a colour of the grid's. Stock is Zynthian's own
+# look as upstream draws it: with no token set, or with the stock look's, the grid draws exactly what it drew before
+# the tokens, the greys, the white and #aaaaaa text and the yellow frame on the panel colour. A look that sets the
+# tokens (OpenMixer vintage) draws in them. The colour roles are the real config's own lines (zynthian_gui_config.py's
+# color_* assignments, run under each look's environment; the module itself reads the Pi's wiring at import), the
+# grid's drawing methods run over a canvas that records what it is asked to draw; tkinter, PIL and the base screen
+# are stand-ins.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
@@ -22,23 +26,40 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 GRID = os.path.join(ROOT, "zyngui", "zynthian_gui_selector_grid.py")
 
-# The colour roles a look sets (ZYNTHIAN_UI_COLOR_*), as zynthian_gui_config names them, with every derived role the
-# grid could read. Two looks with no value in common: the values are the stock look's and OpenMixer vintage's.
-ROLES = ("color_bg", "color_tx", "color_tx_off", "color_on", "color_off", "color_hl", "color_ml", "color_panel_bg",
-         "color_panel_hl")
-STOCK = dict(zip(ROLES, ("#000000", "#ffffff", "#e0e0e0", "#ff0000", "#5a626d", "#00c000", "#f0f000", "#3a424d",
-                         "#2a323d")))
-VINTAGE = dict(zip(ROLES, ("#0b0e11", "#eaf0f4", "#8a97a3", "#e8732c", "#0d1115", "#e9dfc6", "#f2b03a", "#15191e",
-                           "#242b33")))
+CONFIG = os.path.join(ROOT, "zyngui", "zynthian_gui_config.py")
+
+# What the grid drew before the tokens, in every look: upstream Zynthian's main menu
+UPSTREAM = {"canvas": "#3a424d", "tile": "#666666", "tile_off": "#444444", "text": "#ffffff", "text_off": "#aaaaaa",
+            "frame": "yellow", "frame_off": ""}
+
+# The looks as zynthian-sys declares them (config/ui-looks/*.sh): the ZYNTHIAN_UI_COLOR_* each sets
+STOCK = {"ZYNTHIAN_UI_COLOR_BG": "#000000", "ZYNTHIAN_UI_COLOR_TX": "#ffffff", "ZYNTHIAN_UI_COLOR_TX_OFF": "#e0e0e0",
+         "ZYNTHIAN_UI_COLOR_ON": "#ff0000", "ZYNTHIAN_UI_COLOR_OFF": "#5a626d", "ZYNTHIAN_UI_COLOR_HL": "#00c000",
+         "ZYNTHIAN_UI_COLOR_ML": "#f0f000", "ZYNTHIAN_UI_COLOR_PANEL_BG": "#3a424d",
+         "ZYNTHIAN_UI_COLOR_PANEL_HL": "#2a323d",
+         "ZYNTHIAN_UI_COLOR_GRID_BG": "#3a424d", "ZYNTHIAN_UI_COLOR_GRID_TILE": "#666666",
+         "ZYNTHIAN_UI_COLOR_GRID_TILE_OFF": "#444444", "ZYNTHIAN_UI_COLOR_GRID_TX": "#ffffff",
+         "ZYNTHIAN_UI_COLOR_GRID_TX_OFF": "#aaaaaa", "ZYNTHIAN_UI_COLOR_GRID_SEL": "yellow"}
+VINTAGE = {"ZYNTHIAN_UI_COLOR_BG": "#0b0e11", "ZYNTHIAN_UI_COLOR_TX": "#eaf0f4", "ZYNTHIAN_UI_COLOR_TX_OFF": "#8a97a3",
+           "ZYNTHIAN_UI_COLOR_ON": "#e8732c", "ZYNTHIAN_UI_COLOR_OFF": "#0d1115", "ZYNTHIAN_UI_COLOR_HL": "#e9dfc6",
+           "ZYNTHIAN_UI_COLOR_ML": "#f2b03a", "ZYNTHIAN_UI_COLOR_PANEL_BG": "#15191e",
+           "ZYNTHIAN_UI_COLOR_PANEL_HL": "#242b33",
+           "ZYNTHIAN_UI_COLOR_GRID_BG": "#0b0e11", "ZYNTHIAN_UI_COLOR_GRID_TILE": "#15191e",
+           "ZYNTHIAN_UI_COLOR_GRID_TILE_OFF": "#242b33", "ZYNTHIAN_UI_COLOR_GRID_TX": "#eaf0f4",
+           "ZYNTHIAN_UI_COLOR_GRID_TX_OFF": "#8a97a3", "ZYNTHIAN_UI_COLOR_GRID_SEL": "#e8732c"}
+GRID_TOKENS = {"canvas": "ZYNTHIAN_UI_COLOR_GRID_BG", "tile": "ZYNTHIAN_UI_COLOR_GRID_TILE",
+               "tile_off": "ZYNTHIAN_UI_COLOR_GRID_TILE_OFF", "text": "ZYNTHIAN_UI_COLOR_GRID_TX",
+               "text_off": "ZYNTHIAN_UI_COLOR_GRID_TX_OFF", "frame": "ZYNTHIAN_UI_COLOR_GRID_SEL"}
 
 
-def derived(look):
-    """The roles zynthian_gui_config derives from the ones a look sets."""
-    c = dict(look)
-    c.update(color_panel_tx=look["color_tx"], color_ctrl_bg_on=look["color_on"], color_ctrl_bg_off=look["color_off"],
-             color_ctrl_tx=look["color_tx"], color_ctrl_tx_off=look["color_tx_off"], color_header_bg=look["color_bg"],
-             color_header_tx=look["color_tx"], color_panel_bd=look["color_bg"])
-    return c
+def roles(environ):
+    """zynthian_gui_config's colour roles under <environ>: its own module-level color_* lines, run in order."""
+    tree = ast.parse(open(CONFIG).read())
+    lines = [n for n in tree.body if isinstance(n, ast.Assign) and len(n.targets) == 1
+             and isinstance(n.targets[0], ast.Name) and n.targets[0].id.startswith("color_")]
+    space = {"os": types.SimpleNamespace(environ=dict(environ))}
+    exec(compile(ast.Module(body=lines, type_ignores=[]), CONFIG, "exec"), space)
+    return {k: v for k, v in space.items() if k.startswith("color_")}
 
 
 class Canvas:
@@ -75,7 +96,7 @@ class Canvas:
 def load_grid(look):
     """zynthian_gui_selector_grid as zynthian_gui.py loads it, with zynthian_gui_config carrying <look>."""
     config = types.ModuleType("zyngui.zynthian_gui_config")
-    config.__dict__.update(derived(look), font_family="sans")
+    config.__dict__.update(roles(look), font_family="sans")
     gui = types.ModuleType("zyngui")
     gui.__path__ = []
     gui.zynthian_gui_config = config
@@ -130,31 +151,24 @@ class SelectorGridLook(unittest.TestCase):
                         found.append(f"line {value.lineno}: {node.arg}={value.value!r}")
         self.assertEqual(sorted(set(found)), [], "a colour the active look does not set")
 
-    def test_each_part_in_its_role(self):
-        """Each part reads the role the list screens use for it: the grid's ground the screen's background, a tile
-        the panel (a list on the background), one with no action the panel highlight (as a list item with none), the
-        text and its dimmed form, the frame the selection colour."""
-        for name, look in (("stock", STOCK), ("vintage", VINTAGE)):
+    def test_stock_is_upstream(self):
+        """With no look set, and with the stock look, the grid draws exactly what upstream Zynthian draws."""
+        for name, look in (("no look", {}), ("stock", STOCK)):
             with self.subTest(look=name):
-                c = derived(look)
-                self.assertEqual(drawn(look), {
-                    "canvas": c["color_bg"], "tile": c["color_panel_bg"], "tile_off": c["color_panel_hl"],
-                    "text": c["color_panel_tx"], "text_off": c["color_tx_off"],
-                    "frame": c["color_ctrl_bg_on"], "frame_off": ""})
+                self.assertEqual(drawn(look), UPSTREAM)
 
-    def test_tiles_stand_out(self):
-        """A tile, with an action or none, is never the colour of the ground it is drawn on."""
-        for name, look in (("stock", STOCK), ("vintage", VINTAGE)):
-            with self.subTest(look=name):
-                d = drawn(look)
-                self.assertNotIn(d["canvas"], (d["tile"], d["tile_off"]))
+    def test_a_look_draws_its_tokens(self):
+        """Vintage's grid is its own tokens, part by part; no tile is the colour of its ground."""
+        d = drawn(VINTAGE)
+        self.assertEqual(d, dict({part: VINTAGE[key] for part, key in GRID_TOKENS.items()}, frame_off=""))
+        self.assertNotIn(d["canvas"], (d["tile"], d["tile_off"]))
 
-    def test_two_looks_two_grids(self):
-        """The tiles, the text and the frame all change with the look."""
-        stock, vintage = drawn(STOCK), drawn(VINTAGE)
-        for part in ("canvas", "tile", "tile_off", "text", "text_off", "frame"):
-            with self.subTest(part=part):
-                self.assertNotEqual(stock[part], vintage[part])
+    def test_each_token_moves_its_part_alone(self):
+        """Each token, set on its own over stock, changes its part of the grid and no other."""
+        for part, key in GRID_TOKENS.items():
+            with self.subTest(token=key):
+                d = drawn(dict(STOCK, **{key: "#123456"}))
+                self.assertEqual(d, dict(UPSTREAM, **{part: "#123456"}))
 
 
 if __name__ == "__main__":
