@@ -124,7 +124,7 @@ image and the frame go, the stock items come back, until the controller is built
 
 ## Held to
 
-`tests/test_ui_look_widgets.py` (36, the drift check among them skipped where no omx-panel tools directory is named), with real PIL (the Pi has it; CI installs it); the renderer's
+`tests/test_ui_look_widgets.py` (39, the drift check among them skipped where no omx-panel tools directory is named), with real PIL (the Pi has it; CI installs it); the renderer's
 view is a stand-in that records the description, the look and the readings and draws a PIL frame:
 
 - the switch: `ui_look` from the environment; unset and `stock` read `stock`; a word that is no
@@ -151,7 +151,13 @@ view is a stand-in that records the description, the look and the readings and d
 - the look's way to the renderer: the look dir carries the host's look and the renderer's geometry,
   font and gestures byte for byte; `View` passes the look (or none) to the renderer's process;
 - the fixture `tests/fixtures/omx_panel/look.json` is omx-panel's `tools/look.json` byte for byte
-  where `$ZYNTHIAN_OMX_PANEL_TOOLS` names one (CI builds omx-panel at the commit `tests.yml` pins).
+  where `$ZYNTHIAN_OMX_PANEL_TOOLS` names one (CI builds omx-panel at the commit `tests.yml` pins);
+- a refused look is read once and said once: the second controller meets the cached refusal after the
+  base file is gone, and no view opens in the renderer's own look;
+- in CI (`CI=true`) a skip is a failure: PIL must be there (`python3-pil`, as on the Pi) and
+  `$ZYNTHIAN_OMX_PANEL_TOOLS` must be named, else two tests fail by name, and `tests.yml` refuses a
+  log with a skipped drawn-controller test. The tests set their own tools directory explicitly, so
+  the environment of a desk or of CI never reaches them.
 
 Where the renderer is built (CI, the Pi), the pixels themselves are zynthian-ui#74.
 
