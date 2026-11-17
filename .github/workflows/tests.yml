@@ -99,6 +99,12 @@ jobs:
           echo "ZYNTHIAN_OMX_GESTURES=/tmp/omx-panel/schema/gestures.json" >> "$GITHUB_ENV"
           echo "GESTURES FROM BRANCH $SHA"
           make -C /tmp/omx-panel/renderer build/libomx-panel-render.so.0
+          # the real command (dist/bin/omx-panel.mjs): the two tests that run it compare the recorded cut with it and
+          # drive the engine through it, and skip without OMX_PANEL_REAL, so the recordings could drift unseen
+          apt-get install -y -qq --no-install-recommends nodejs npm
+          (cd /tmp/omx-panel && npm ci --ignore-scripts --no-audit --no-fund && npm run build)
+          test -f /tmp/omx-panel/dist/bin/omx-panel.mjs
+          echo "OMX_PANEL_REAL=node /tmp/omx-panel/dist/bin/omx-panel.mjs" >> "$GITHUB_ENV"
           echo "ZYNTHIAN_OMX_PANEL_RENDER=/tmp/omx-panel/renderer/build/libomx-panel-render.so.0" >> "$GITHUB_ENV"
           echo "ZYNTHIAN_OMX_PANEL_TOOLS=/tmp/omx-panel/tools" >> "$GITHUB_ENV"
 
@@ -117,4 +123,9 @@ jobs:
 
 
       - name: python3 -m pytest -q tests/
-        run: python3 -m pytest -q -rs tests/
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 -m pytest -q -rs tests/ | tee /tmp/pytest.log
+          # a test that needs the real omx-panel and skipped ran nothing: refused
+          ! grep -q 'OMX_PANEL_REAL is' /tmp/pytest.log || { echo "::error::a test that needs the real omx-panel was skipped"; exit 1; }
