@@ -31,6 +31,7 @@ from zyngine import zynthian_omx_panel_view as panel_view
 from zyngine import zynthian_panel_gestures as gestures
 from zyngine import zynthian_position_law as position_law
 from zyngine import zynthian_touch_layer as touch
+from zyngine import zynthian_ui_look as ui_look
 from zyngui import zynthian_gui_config
 from zyngui.zynthian_widget_base import zynthian_widget_base
 
@@ -133,7 +134,7 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         keys = self.page_keys()
         part, self.display_map = panel_view.screen_part(drawn[0], set(keys))
         try:
-            view = panel_view.View(part)
+            view = panel_view.View(part, look=ui_look.look_for(zynthian_gui_config, panel_view.tools_dir()))
         except panel_view.RendererStopped as e:
             self.renderer_stopped(e)
             return False

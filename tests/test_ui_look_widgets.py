@@ -225,6 +225,7 @@ def load_controller(environ, tools_dir=None):
     tk.font = tkfont
     view = load_module("zyngine.zynthian_omx_panel_view", VIEW)
     view.View = FakeView
+    FakeView.module = view
     if tools_dir:
         view.TOOLS_DIR = tools_dir
     modules = {"tkinter": tk, "tkinter.font": tkfont, "zyngui": gui, "zyngui.zynthian_gui_config": config, "zyngine": engine,
@@ -319,8 +320,9 @@ class DrawnController(unittest.TestCase):
         test = self
 
         class Recorded(self.cls):
-            def show_image(self, image):
+            def photo_of(self, image):
                 test.images.append(image)
+                return ("photo", image.size)
 
         self.Recorded = Recorded
 
@@ -412,8 +414,7 @@ class DrawnController(unittest.TestCase):
         self.assertEqual(self.images, [])
 
     def test_without_the_renderer_the_stock_widget_is_drawn_and_the_reason_said_once(self):
-        view = sys.modules.get("zyngine.zynthian_omx_panel_view") or load_module("zyngine.zynthian_omx_panel_view", VIEW)
-        FakeView.refuse = view.RendererAbsent("omx-panel's renderer (libomx-panel-render.so.0) is not installed: no")
+        FakeView.refuse = FakeView.module.RendererAbsent("omx-panel's renderer (libomx-panel-render.so.0) is not installed: no")
         with self.assertLogs(level="WARNING") as log:
             a = self.controller(Zctrl())
             b = self.controller(Zctrl(symbol="res", short_name="Res"))

@@ -27,6 +27,7 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 VIEW = os.path.join(ROOT, "zyngine", "zynthian_omx_panel_view.py")
+LOOK = os.path.join(ROOT, "zyngine", "zynthian_ui_look.py")
 WIDGET = os.path.join(ROOT, "zyngui", "zynthian_widget_omx_panel.py")
 LAYOUT = os.path.join(HERE, "fixtures", "omx_panel", "omx-eq8.json")
 
@@ -150,12 +151,15 @@ def load_widget():
     def no_touch():
         raise NoTouchDevice("none here")
 
-    zyngine = stand_in("zyngine", __path__=[], zynthian_omx_panel_view=panel_view)
+    spec = importlib.util.spec_from_file_location("ui_look_under_test", LOOK)
+    ui_look = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ui_look)
+    zyngine = stand_in("zyngine", __path__=[], zynthian_omx_panel_view=panel_view, zynthian_ui_look=ui_look)
     config = stand_in("zyngui.zynthian_gui_config", color_bg="#000000", color_tx="#ffffff", color_tx_off="#888888",
                       color_on="#ff0000")
     modules = {
         "tkinter": mock.MagicMock(), "PIL": mock.MagicMock(), "zyngine": zyngine,
-        "zyngine.zynthian_omx_panel_view": panel_view,
+        "zyngine.zynthian_omx_panel_view": panel_view, "zyngine.zynthian_ui_look": ui_look,
         "zyngine.zynthian_panel_gestures": stand_in("g", Panel=mock.MagicMock(), GestureTableAbsent=type("A", (Exception,), {})),
         "zyngine.zynthian_position_law": stand_in("p"),
         "zyngine.zynthian_touch_layer": stand_in("t", EvdevSource=no_touch, NoTouchDevice=NoTouchDevice),
@@ -176,7 +180,7 @@ class FakeView:
     opened = 0
     crash = True
 
-    def __init__(self, layout):
+    def __init__(self, layout, tools_dir=None, look=None):
         FakeView.opened += 1
         self.symbols, self.meters, self.drew = [], [], 0
 

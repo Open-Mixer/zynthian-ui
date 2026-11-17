@@ -1,0 +1,62 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+# ******************************************************************************
+# ZYNTHIAN PROJECT: Zynthian Engine (zynthian_ui_look)
+#
+# The UI's look as omx-panel's renderer takes it (docs/ui-look-drawn-widgets.md): the renderer draws from colour roles
+# (omx-panel schema/look-roles.json) and refuses a look short of any, so the host values every role. The base is the
+# renderer's own look.json, the file it reads by default from its tools directory (every role at its default, the
+# console's dark theme); over it, the roles Zynthian's palette has a colour for take zynthian_gui_config's colour, the
+# one the level-1 preset (zynthian-sys config/ui-looks) generated from the same console token. Nothing here types a
+# colour or a role name the renderer's file does not carry.
+#
+# Standard library only: the renderer's process imports this module too.
+#
+# Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
+#
+# This program is free software; you can redistribute it and/or modify it under the terms
+# of the GNU General Public License as published by the Free Software Foundation; either
+# version 2 of the License, or any later version. See the LICENSE.txt file.
+# ******************************************************************************
+
+import json
+import os
+
+# The palette table: a colour role of the renderer, and the zynthian_gui_config colour that values it (the same console
+# token under the vintage preset: --surface, --surface-3, --meter-track, --ink, --ink-dim, --legend, --accent,
+# --state-engaged, --meter-green, --meter-amber, --danger)
+ROLES = (("--surface", "color_panel_bg"), ("--surface-3", "color_panel_hl"), ("--glass", "color_off"),
+         ("--ink", "color_tx"), ("--ink-dim", "color_tx_off"), ("--legend", "color_hl"), ("--accent", "color_on"),
+         ("--state-engaged", "color_ml"), ("--meter-green", "color_midi"), ("--meter-amber", "color_alt2"),
+         ("--meter-red", "color_error"))
+
+STOCK = "stock"
+
+
+class LookShort(Exception):
+    """The renderer's look names no role the table values: the renderer and this table disagree, said by the role."""
+
+
+def tokens(colors, base):
+    """The look document for the renderer: <base> (its look.json, parsed) with the palette's roles valued from
+    <colors> (zynthian_gui_config, or anything with its color_* attributes)."""
+    tok = dict(base["tokens"])
+    for role, name in ROLES:
+        if role not in tok:
+            raise LookShort(f"the renderer's look names no role {role} (for {name}): its look.json and this table disagree")
+        tok[role] = getattr(colors, name)
+    return {**base, "tokens": tok}
+
+
+def look_for(config, tools_dir):
+    """The look a view is opened with under <config>'s ui_look: None under stock (the renderer's own look), else the
+    palette over the renderer's look.json in <tools_dir>; None too when that file is not there (the renderer is
+    absent, and says so itself when the view is opened)."""
+    if getattr(config, "ui_look", STOCK) == STOCK:
+        return None
+    try:
+        with open(os.path.join(tools_dir, "look.json")) as f:
+            base = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return tokens(config, base)
