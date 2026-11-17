@@ -124,7 +124,7 @@ image and the frame go, the stock items come back, until the controller is built
 
 ## Held to
 
-`tests/test_ui_look_widgets.py` (39, the drift check among them skipped where no omx-panel tools directory is named), with real PIL (the Pi has it; CI installs it); the renderer's
+`tests/test_ui_look_widgets.py` (42, the drift check among them skipped where no omx-panel tools directory is named), with real PIL (the Pi has it; CI installs it); the renderer's
 view is a stand-in that records the description, the look and the readings and draws a PIL frame:
 
 - the switch: `ui_look` from the environment; unset and `stock` read `stock`; a word that is no
@@ -159,13 +159,22 @@ view is a stand-in that records the description, the look and the readings and d
   log with a skipped drawn-controller test. The tests set their own tools directory explicitly, so
   the environment of a desk or of CI never reaches them.
 
-Where the renderer is built (CI, the Pi), the pixels themselves are zynthian-ui#74.
+Where the renderer is built (CI, the Pi), the pixels themselves (zynthian-ui#74), under the
+`renderer()` skip of `tests/test_omx_panel_view.py`: the drawn controller's own one-knob description,
+opened with `zynthian_ui_look.tokens` over the fixture, drawn by `libomx-panel-render.so.0` and
+painted by the controller. The accent (`#e8732c`) is read opaque in the middle of the pointer and
+`--surface` opaque on the panel's face beside the knob; outside the panel's round corner the
+renderer draws nothing and the controller's image carries `color_panel_bg`; a look with another
+accent and surface moves both. In CI a missing renderer is a named failure.
 
 ## Owed
 
-- Pi screenshots, stock and vintage, of the main menu, a chain and the control screen, with the
-  Pi lock: `tools/pi/screenshots.sh` is not written yet; the shots are taken with
-  `ssh <pi> 'ZYNTHIAN_UI_LOOK=vintage ...'` and `scrot` on the Pi's display, named in the PR.
+- `tools/pi/screenshots.sh` is not written: the Pi shots (stock and vintage, named in the PR) were
+  taken by hand with `scrot` on the Pi's display, the screens reached through the UI's CUIA port.
+- The controller's cell: the one-control panel is drawn at the renderer's own size at the cell's
+  left (120 x 165 px of a 256 x 176 px cell on the Pi), its knob a third of the stock arc's
+  diameter and its label cut to that width; filling the cell is the renderer's layout (with
+  omx-panel#94).
 - A Fable look review against the console's vintage screens, from those shots.
 - zynthian-sys: `config/ui-looks/openmixer-vintage.sh` exports `ZYNTHIAN_UI_LOOK=vintage` and
   `stock.sh` exports `ZYNTHIAN_UI_LOOK=stock` (the pin recomputes; `tests/ui-looks-check.sh` grows
@@ -173,4 +182,3 @@ Where the renderer is built (CI, the Pi), the pixels themselves are zynthian-ui#
 - omx-panel#93: the knob's metal and relief, the console's finish, drawn by the renderer.
 - omx-panel#94: a face without a head for a one-control description (the controller's cell carries
   the renderer's head today, empty).
-- zynthian-ui#74: the vintage controller through the real renderer, a pixel proof in CI and on the Pi.
