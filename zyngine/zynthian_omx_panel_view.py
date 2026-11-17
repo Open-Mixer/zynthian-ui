@@ -199,7 +199,7 @@ class _LibraryView:
         self.size = None
 
     def close(self):
-        if self.view:
+        if getattr(self, "view", None):  # none yet when the library refused the panel, or it could not be written
             self.lib.omx_panel_view_destroy(self.view)
             self.view = None
 
@@ -296,9 +296,17 @@ def _attach(name):
 
 
 def _serve(fd):
-    """The renderer's process: the views it holds by number, each call answered ("ok", value) or ("refused", why)."""
+    """The renderer's process: the views it holds by number, each call answered ("ok", value) or ("refused", why). A
+    view's shared memory is attached at its first draw and let go when the view closes or draws into another (a
+    bigger one): kept, each view ever drawn would hold a file of the process's 1024 (zynthian-ui#79)."""
     conn = connection.Connection(fd)
-    views, memory, next_id = {}, {}, 1
+    views, memory, next_id = {}, {}, 1  # memory: view number => (name, the attached memory)
+
+    def let_go(vid):
+        held = memory.pop(vid, None)
+        if held:
+            held[1].close()
+
     while True:
         try:
             op, vid, args = conn.recv()
@@ -314,15 +322,17 @@ def _serve(fd):
                 v = views.pop(vid, None)
                 if v:
                     v.close()
+                let_go(vid)
                 value = None
             elif op == "word":
                 value = _word_name(*args)
             elif op == "draw":
                 name, width, height, scale = args
                 pixels = views[vid].draw(width, height, scale)
-                if name not in memory:
-                    memory[name] = _attach(name)
-                memory[name].buf[:len(pixels)] = pixels
+                if vid not in memory or memory[vid][0] != name:
+                    let_go(vid)
+                    memory[vid] = (name, _attach(name))
+                memory[vid][1].buf[:len(pixels)] = pixels
                 value = len(pixels)
             else:
                 value = getattr(views[vid], op)(*args)

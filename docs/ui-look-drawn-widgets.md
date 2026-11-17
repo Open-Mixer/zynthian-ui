@@ -145,7 +145,14 @@ was wrong with the renderer. Two things hold it now:
   the session). No lock is held across a Tk call: a Tk call from another thread waits for Tk's
   thread, which would be waiting for the lock.
 
-Held by `tests/test_omx_panel_renderer_race.py` (11): two threads over the real `View` and a real
+A third thing came out of the walk on the Pi with those two in place: the renderer's process
+attached each view's shared memory at its first draw and never let it go. Five views a page, some
+200 pages, and it held 1020 deleted files of its 1024: the next view was refused (`Too many open
+files`) and the controllers were drawn stock. The process now lets a view's memory go when the
+view closes, or draws into another.
+
+Held by `tests/test_omx_panel_renderer_race.py` (13): the renderer's process holds no more files
+after 40 views drawn and closed than after one, nor after a view drawn at ten growing sizes; two threads over the real `View` and a real
 renderer process (a stub library built from C) each get their own answers and the renderer runs
 on; a page change, a blank slot and an encoder's move from another thread make no renderer call in
 that thread, and Tk's thread draws them; the panel's build likewise, once; after a stop the next
