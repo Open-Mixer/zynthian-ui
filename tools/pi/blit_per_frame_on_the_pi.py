@@ -12,7 +12,7 @@
 # (16.7 ms at 60 Hz) is red.
 #
 #   DISPLAY=:0 XAUTHORITY=... ZYNTHIAN_OMX_PANEL_TOOLS=/usr/share/omx-panel/tools DRAG_S=30 W=1024 H=416 \
-#   python3 tests/pi/blit_per_frame_on_the_pi.py
+#   python3 tools/pi/blit_per_frame_on_the_pi.py
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later

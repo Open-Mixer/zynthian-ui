@@ -13,6 +13,7 @@ import sys
 import json
 import time
 import types
+import shlex
 import shutil
 import signal
 import socket
@@ -25,6 +26,7 @@ import plugin_hostd_protocol
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 FIXTURES = os.path.join(HERE, "fixtures", "plugin_hostd")
+RUN_PATH = os.environ.get("PATH", os.defpath)  # before any test narrows it
 FAKE = os.path.join(HERE, "fake_plugin_hostd.py")
 START_STUB = os.path.join(FIXTURES, "plugin-hostd-start")  # zynthian-sys's sbin/plugin-hostd-start.sh
 sys.path[:0] = [HERE, ROOT]
@@ -151,9 +153,9 @@ class plugin_hostd_case(unittest.TestCase):
         cat.add_catalogue(self.info, clap=cat.scanned_plugins(CLAP_SCAN), binary=FAKE)
         # The graph as a worker leaves it after a chain: a member it runs in the head's client has no port
         sys.modules["zynautoconnect"].get_ports.return_value = []
-        # a protocol before 0.5.5 declares no instance key; test_hosted_client gives one
-        sys.modules["zynautoconnect"].hosted_key.return_value = None
-        sys.modules["zynautoconnect"].hosted_client.side_effect = None
+        # a worker sets the instance key on its client, which is called effect_<instance> unless a test says otherwise
+        sys.modules["zynautoconnect"].hosted_key.return_value = "http://openmixer.org/ns/plugin-hostd#instance"
+        sys.modules["zynautoconnect"].hosted_client.side_effect = lambda instance: f"effect_{instance}"
         self.sm = mock.MagicMock()
         self.sm.chain_manager.engine_info = self.info
         self.sm.chain_manager.chains = {}
@@ -296,11 +298,11 @@ class test_daemon(plugin_hostd_case):
         self.assertNotEqual(ph.daemon.pid, first)
         second = str(ph.daemon.pid)
         lines = [line for pid, line in self.journal() if pid == second]
-        for expected in ("add urn:test:amp 1000", "add urn:test:amp 1001", "param_set 1001 gain 4.5",
-                         "chain 1 1000 1001"):
+        for expected in ("add urn:test:amp 1000", "add urn:test:amp 1001", "param_set_many 1001 gain 4.5",
+                         "plan 1 1000 1001"):
             self.assertIn(expected, lines)
         self.assertEqual(lines[-1], "param_set 1000 gain -2", "the command that met the dead daemon is sent last")
-        self.assertLess(lines.index("param_set 1001 gain 4.5"), lines.index("chain 1 1000 1001"))
+        self.assertLess(lines.index("param_set_many 1001 gain 4.5"), lines.index("plan 1 1000 1001"))
 
 
 class test_protocol(plugin_hostd_case):
@@ -338,18 +340,18 @@ class test_protocol(plugin_hostd_case):
 
     def test_the_instance_key_is_the_table_s(self):
         """plugin-hostd#33: the key a worker sets on an instance's client is the one the client's table declares, and a
-        table before 0.5.5, which declares none, gives None"""
+        table before 0.5.5, which declares none, is an error"""
         key = "http://example.org/test#instance"
         p = self.codes(*self.declared(node_metadata=[{"name": "instance", "key": key}]))
         self.assertEqual(p.instance_key(), key)
-        self.assertIsNone(self.codes(*self.declared()).instance_key())
+        with self.assertRaises(plugin_hostd_protocol.ProtocolError):
+            self.codes(*self.declared()).instance_key()
 
     def test_the_installed_files_name_what_the_engine_branches_on(self):
         self.assertEqual(ph.protocol.name(-101), "reply.host.uri-invalid", "mod-host.json's name, not a retyped one")
         for code, name in ((-2, "reply.host.instance-already-exists"), (-529, "reply.plugin-hostd.descriptor-absent"),
                            (-902, "reply.host.invalid-operation")):
             self.assertEqual(ph.protocol.name(code), name)
-        self.assertEqual(ph.CHAIN_FALLBACK_CODES, (-501, -519, -520, -521))
         self.assertEqual((ph.DESCRIPTOR_PENDING, ph.DESCRIPTOR_NONE), (-530, (-529, -531)))
 
     def test_the_codes_are_the_client_s_reading_of_the_table(self):
@@ -394,8 +396,7 @@ class test_protocol(plugin_hostd_case):
         self.assertEqual(ph.protocol.judged, needs, "the engine says verify() once it has asked for every name")
         self.assertIn(pending, needs, "the engine asks the owner for the name where it uses it")
         self.assertEqual(sorted(needs), sorted(["reply.plugin-hostd." + n for n in (
-            "placement-invalid", "chain-duplicate", "chain-instance-busy", "chain-mixed-format", "descriptor-absent",
-            "descriptor-scan-failed", "descriptor-pending")] + ["reply.host.invalid-operation",
+            "descriptor-absent", "descriptor-scan-failed", "descriptor-pending")] + ["reply.host.invalid-operation",
                                                                  "reply.host.memory-allocation",
                                                                  "reply.host.instance-already-exists"]))
         declared = {n: -700 - i for i, n in enumerate(needs) if n != pending and n.startswith("reply.")}
@@ -428,28 +429,11 @@ class test_protocol(plugin_hostd_case):
         with open(ph.__file__) as f:
             source = f.read()
         named = re.findall(r"""(protocol\.\w+\()?["']reply\.[a-z-]+\.[a-z-]+["']""", source)
-        self.assertGreaterEqual(len(named), 16)
+        self.assertGreaterEqual(len(named), 9)
         self.assertTrue(all(n in ("protocol.need(", "protocol.code(", "protocol.find(") for n in named),
                         "a reply code named anywhere but the argument of need, code or find is a retyped one")
         for verb in ("pin_accept", "pin_clear", "pin_reload"):
             self.assertIn('command("%s"' % verb, source)
-
-    def test_the_daemon_file_is_read_where_libplugin_hostd_protocol0_installs_it(self):
-        """plugin-hostd 0.16.0 moved it: /usr/share/plugin-hostd-protocol/plugin-hostd.json, no protocol.json. The
-        defaults of its configuration are read from the first place that holds it."""
-        new_home, old_home = os.path.join(self.tmp, "new"), os.path.join(self.tmp, "old")
-        for home, name, value in ((new_home, "plugin-hostd.json", 7), (old_home, "protocol.json", 8)):
-            os.makedirs(home)
-            with open(os.path.join(home, name), "w") as f:
-                json.dump({"config": [{"key": "odd", "default": value}]}, f)
-        places = ((new_home, "plugin-hostd.json"), (old_home, "protocol.json"))
-        files = ph.zynthian_plugin_hostd_protocol
-        with mock.patch.object(files, "PROTOCOL_DIR", None), mock.patch.object(files, "PLACES", places):
-            self.assertEqual(files.config_default("odd"), 7, "the new home is read first")
-            self.assertEqual(files.config_default("odd", new_home), 7,
-                             "a directory given holds the daemon's file under its new name")
-            os.remove(os.path.join(new_home, "plugin-hostd.json"))
-            self.assertEqual(files.config_default("odd"), 8, "a plugin-hostd before 0.16.0 still has its file read")
 
     def test_the_engine_reads_the_files_once_at_import(self):
         with mock.patch.object(ph.zynthian_plugin_hostd_protocol, "read", side_effect=AssertionError("read again")):
@@ -736,79 +720,16 @@ class test_processor(plugin_hostd_case):
         self.assertEqual(fake.params[1000]["gain"], 5.0)
 
 
-class test_chain(plugin_hostd_case):
-
-    def test_insert_reorder_and_remove_declare_the_chain(self):
-        fake = self.serve()
-        chain = self.chain()
-        a, b, c = (self.add(chain, "PH/Amp") for _ in range(3))
-        self.assertIn("chain 1 1000 1001", fake.lines)
-        self.assertEqual(fake.chains[1], (1000, 1001, 1002))
-        sent = fake.lines.count("chain 1 1000 1001 1002")
-        chain.rebuild_graph()
-        self.assertEqual(fake.lines.count("chain 1 1000 1001 1002"), sent, "an unchanged chain is not sent again")
-        chain.nudge_processor(c, True)  # into the slot of b, in parallel: same order
-        chain.nudge_processor(c, True)  # out of it, before b
-        self.assertEqual(fake.chains[1], (1000, 1002, 1001))
-        self.remove(chain, b)
-        self.assertEqual(fake.chains[1], (1000, 1002))
-        self.assertLess(fake.lines.index("chain 1 1000 1002"), fake.lines.index("remove 1001"))
-        self.remove(chain, c)
-        self.assertNotIn(1, fake.chains, "a chain of one member is cleared")
-        self.assertIn("chain_clear 1", fake.lines)
-
-    def test_a_refused_chain_falls_back_to_separate_workers_and_logs_once(self):
-        fake = self.serve()
-        chain = self.chain()
-        self.add(chain, "PH/Amp")
-        self.add(chain, "PH/Amp")
-        self.assertEqual(fake.chains[1], (1000, 1001))
-        with self.assertLogs(level=logging.WARNING) as logs:
-            self.add(chain, "PH/NoPin")
-            chain.rebuild_graph()
-            self.add(chain, "PH/Amp")
-            logging.warning("end")
-        refused = [r for r in logs.output if "separate workers" in r]
-        self.assertEqual(len(refused), 1)
-        self.assertIn("reply.plugin-hostd.placement-invalid", refused[0])
-        self.assertNotIn(1, fake.chains, "the chain it had is cleared, each member back in a worker of its own")
-        self.assertEqual(fake.lines.count("chain 1 1000 1001 1002"), 1, "refused members are not sent again")
-
-    def test_each_fallback_code_falls_back_and_another_refusal_does_not(self):
-        fake = self.serve()
-        chain = self.chain()
-        self.add(chain, "PH/Amp")
-        for code in (-501, -519, -520, -521, -518):
-            ph.daemon.chain_refused.clear()
-            ph.daemon.chains[1] = (1000, 9999)
-            fake.chains[1] = (1000,)
-            fake.verb_chain = lambda *args, code=code: f"resp {code}"
-            self.add(chain, "PH/Amp") if code == -501 else chain.rebuild_graph()
-            fell_back = code in ph.CHAIN_FALLBACK_CODES
-            self.assertEqual(1 not in fake.chains, fell_back, f"code {code}")
-            self.assertEqual(1 in ph.daemon.chain_refused, fell_back, f"code {code}")
-
-
 class test_chain_jack_names(plugin_hostd_case):
     """The members of a CLAP chain are one jack client; the processors name the client the daemon says."""
 
     CLAP = "PH/clap:/usr/lib/clap/lsp-plugins.clap#in.lsp-plug.limiter_mono"
 
-    def test_the_daemons_replies_name_the_chains_client(self):
-        # The replies of the issue: three CLAP members added, chain 1 0 1 2, read back
-        fake = self.serve()
-        fake.verb_chain_get = lambda chain: "resp 0 w4 0,1,2 0,1,2"
-        fake.verb_worker_list = lambda: "resp 1 w4:111797:clap:up:1:qualified:chain:1:0,1,2"
-        ph.daemon.call("worker_list")
-        ph.daemon.engines = {i: types.SimpleNamespace(jackname=f"effect_{i}") for i in (0, 1, 2)}
-        self.addCleanup(ph.daemon.engines.clear)
-        self.assertEqual(ph.chain_clients(1), {0: "effect_0", 1: "effect_0", 2: "effect_0"})
-
     def test_a_chain_of_clap_members_is_one_client_named_for_its_head(self):
         fake = self.serve()
         chain = self.chain()
         procs = [self.add(chain, self.CLAP) for _ in range(3)]
-        self.assertEqual(fake.chains[1], (1000, 1001, 1002))
+        self.assertEqual(fake.plans[1][0], [[1000, 1001, 1002]])
         self.assertEqual([p.jackname for p in procs], ["effect_1000"] * 3)
         self.assertEqual([p.engine.jackname for p in procs], ["effect_1000", "effect_1001", "effect_1002"],
                          "each engine still names its own instance")
@@ -825,8 +746,8 @@ class test_chain_jack_names(plugin_hostd_case):
         fake = self.serve()
         chain = self.chain()
         a, b = self.add(chain, "PH/Amp"), self.add(chain, self.CLAP)
-        self.assertEqual(fake.chains[1], (1000, 1001))
-        self.assertIn(":lv2-clap:up:1:qualified:chain:1:1000,1001", fake.verb_worker_list())
+        self.assertEqual(fake.plans[1][0], [[1000, 1001]])
+        self.assertIn(":lv2-clap:up:1:qualified:chain:1", fake.verb_worker_list())
         self.assertEqual((a.jackname, b.jackname), ("effect_1000", "effect_1000"))
         self.assertNotIn("effect_1001", {name for dst, src in chain.audio_routes.items() for name in [dst] + src})
         for out in chain.get_audio_out():
@@ -838,15 +759,6 @@ class test_chain_jack_names(plugin_hostd_case):
         a, b = self.add(chain, "PH/Amp"), self.add(chain, "PH/Amp")
         self.assertEqual((a.jackname, b.jackname), ("effect_1000", "effect_1001"))
 
-    def test_a_member_the_worker_does_not_run_keeps_its_own_client(self):
-        fake = self.serve()
-        chain_get = fake.verb_chain_get
-        # 1001 is quarantined: declared, not running
-        fake.verb_chain_get = lambda c: re.sub(r"(\S+) (\S+) (\S+)$", r"\1 \2 1000,1002", chain_get(c))
-        chain = self.chain()
-        procs = [self.add(chain, self.CLAP) for _ in range(3)]
-        self.assertEqual([p.jackname for p in procs], ["effect_1000", "effect_1001", "effect_1000"])
-
     def test_a_member_taken_out_goes_back_to_its_own_client_and_the_head_moves(self):
         self.serve()
         chain = self.chain()
@@ -857,14 +769,6 @@ class test_chain_jack_names(plugin_hostd_case):
         self.assertEqual(b.jackname, "effect_1001")
         self.assertNotIn(1, ph.daemon.clients)
 
-    def test_a_refused_chain_gives_every_member_its_own_client(self):
-        self.serve()
-        chain = self.chain()
-        a, b = self.add(chain, self.CLAP), self.add(chain, self.CLAP)
-        self.assertEqual((a.jackname, b.jackname), ("effect_1000", "effect_1000"))
-        c = self.add(chain, "PH/NoPin")  # -501: the daemon will not run the three together
-        self.assertEqual([p.jackname for p in (a, b, c)], ["effect_1000", "effect_1001", "effect_1002"])
-
     def test_a_restored_daemon_names_the_clients_again(self):
         fake = self.serve()
         chain = self.chain()
@@ -873,7 +777,7 @@ class test_chain_jack_names(plugin_hostd_case):
         fake.stop()
         fake2 = self.serve()
         ph.daemon.call("worker_list")
-        self.assertEqual(fake2.chains[1], (1000, 1001))
+        self.assertEqual(fake2.plans[1][0], [[1000, 1001]])
         self.assertEqual([p.jackname for p in procs], ["effect_1000", "effect_1000"])
 
 
@@ -890,7 +794,7 @@ class test_plan(plugin_hostd_case):
 
     def test_the_segments_are_the_daemons_and_a_lone_member_stays_its_own_client(self):
         # plan 1 1000 1001 1002 1003 1004 answered resp 0 1000,1001;1002;1003,1004
-        fake = self.serve(planner=True, grouping=True, verdicts=self.ISOLATED)
+        fake = self.serve(grouping=True, verdicts=self.ISOLATED)
         chain, procs = self.five(fake)
         self.assertEqual(fake.lines.count("plan 1 1000 1001 1002 1003 1004"), 1)
         self.assertEqual(fake.plans[1][0], [[1000, 1001], [1002], [1003, 1004]])
@@ -907,14 +811,14 @@ class test_plan(plugin_hostd_case):
         self.assertNotIn("chain:1.1:", workers, "a lone segment has no worker of its own to name")
 
     def test_a_segment_worker_of_the_lv2_row_keeps_a_client_per_member(self):
-        fake = self.serve(planner=True, grouping=True)
+        fake = self.serve(grouping=True)
         chain = self.chain()
         a, b = self.add(chain, "PH/Amp"), self.add(chain, "PH/Amp")
         self.assertIn(":lv2:up:1:qualified:chain:1.0:1000,1001", fake.verb_worker_list())
         self.assertEqual((a.jackname, b.jackname), ("effect_1000", "effect_1001"))
 
     def test_the_reason_of_every_member_left_alone_is_what_plan_get_says(self):
-        fake = self.serve(planner=True, grouping=True, verdicts=self.ISOLATED)
+        fake = self.serve(grouping=True, verdicts=self.ISOLATED)
         chain, procs = self.five(fake, ("clap", "amp", "clap", "clap", "amp"))
         self.assertEqual(fake.verb_plan_get(1), "resp 0 1000;1001;1002,1003;1004 1000:no-neighbour,1001:verdict-isolated,"
                                                 "1004:verdict-isolated -;-;-,-;-")
@@ -926,7 +830,7 @@ class test_plan(plugin_hostd_case):
                           grouping.text("verdict-isolated")])
 
     def test_a_member_leaving_replans_and_the_reasons_follow(self):
-        fake = self.serve(planner=True, grouping=True, verdicts=self.ISOLATED)
+        fake = self.serve(grouping=True, verdicts=self.ISOLATED)
         chain, procs = self.five(fake)
         self.remove(chain, procs[2])  # the isolated one
         self.assertEqual(fake.plans[1][0], [[1000, 1001, 1003, 1004]])
@@ -941,7 +845,7 @@ class test_plan(plugin_hostd_case):
         self.assertEqual(procs[4].jackname, "effect_1004")
 
     def test_an_unchanged_chain_is_not_planned_again(self):
-        fake = self.serve(planner=True, grouping=True)
+        fake = self.serve(grouping=True)
         chain, procs = self.five(fake, ("clap",) * 3)
         sent = fake.lines.count("plan 1 1000 1001 1002")
         chain.rebuild_graph()
@@ -949,7 +853,7 @@ class test_plan(plugin_hostd_case):
         self.assertEqual(sent, 1)
 
     def test_a_member_the_worker_does_not_run_keeps_its_own_client(self):
-        fake = self.serve(planner=True, grouping=True)
+        fake = self.serve(grouping=True)
         worker_list = fake.verb_worker_list
         # 1001 is quarantined: it has a worker of its own and the segment's worker no longer runs it
         fake.verb_worker_list = lambda: worker_list().replace("1000,1001,1002", "1000,1002") \
@@ -958,38 +862,15 @@ class test_plan(plugin_hostd_case):
         self.assertEqual([p.jackname for p in procs], ["effect_1000", "effect_1001", "effect_1000"])
 
     def test_a_member_the_daemon_lists_in_the_segment_and_in_a_worker_of_its_own_keeps_its_own_client(self):
-        fake = self.serve(planner=True, grouping=True)
+        fake = self.serve(grouping=True)
         worker_list = fake.verb_worker_list
         fake.verb_worker_list = lambda: worker_list().replace("resp 1", "resp 2") + " w1:1:clap:up:1:qualified:own:1001"
         chain, procs = self.five(fake, ("clap",) * 3)
         self.assertEqual([p.jackname for p in procs], ["effect_1000", "effect_1001", "effect_1000"])
 
-    def test_a_daemon_that_does_not_know_plan_gets_the_whole_chain_and_one_log_line(self):
-        fake = self.serve(planner=False)
-        with self.assertLogs(level=logging.WARNING) as logs:
-            chain, procs = self.five(fake, ("clap",) * 3)
-            chain.rebuild_graph()
-            logging.warning("end")
-        said = [r for r in logs.output if "does not answer plan" in r]
-        self.assertEqual(len(said), 1, "the fallback is told once, not at every rebuild")
-        self.assertEqual(fake.chains[1], (1000, 1001, 1002))
-        self.assertEqual([p.jackname for p in procs], ["effect_1000"] * 3)
-        self.assertEqual(fake.lines.count("plan 1 1000 1001"), 1, "the plan is asked once of such a daemon")
-        self.assertEqual(ph.daemon.reasons, {})
-        self.assertFalse(ph.daemon.plan_verbs)
-
-    def test_a_refusal_of_chain_still_falls_back_with_the_old_daemon(self):
-        fake = self.serve(planner=False)
-        chain = self.chain()
-        self.add(chain, "PH/Amp")
-        self.add(chain, "PH/Amp")
-        self.add(chain, "PH/NoPin")
-        self.assertNotIn(1, fake.chains)
-        self.assertIn(1, ph.daemon.chain_refused)
-
     def test_with_grouping_off_nothing_runs_together(self):
         # the setting is the daemon's answer, and going around it with chain would group what it says not to
-        fake = self.serve(planner=True, grouping=False, verdicts=self.ISOLATED)
+        fake = self.serve(grouping=False, verdicts=self.ISOLATED)
         chain, procs = self.five(fake, ("clap",) * 3)
         self.assertNotIn(1, fake.chains)
         self.assertFalse([l for l in fake.lines if l.startswith("chain ")], "no chain line goes around the setting")
@@ -1005,7 +886,7 @@ class test_plan(plugin_hostd_case):
                          "once grouping is known to be off nothing is asked again")
 
     def test_a_refused_plan_leaves_every_member_alone_with_the_refusal_as_the_reason(self):
-        fake = self.serve(planner=True, grouping=True)
+        fake = self.serve(grouping=True)
         fake.verb_plan = lambda *args: "resp -501"
         with self.assertLogs(level=logging.WARNING) as logs:
             chain, procs = self.five(fake, ("clap",) * 3)
@@ -1016,18 +897,18 @@ class test_plan(plugin_hostd_case):
         self.assertEqual(len([r for r in logs.output if "every member runs alone" in r]), 2, "one per change of members")
 
     def test_a_malformed_reply_is_logged_and_leaves_the_members_as_they_were(self):
-        fake = self.serve(planner=True, grouping=True)
+        fake = self.serve(grouping=True)
         fake.verb_plan = lambda *args: "resp 0 x;y"
         with self.assertLogs(level=logging.ERROR):
             chain, procs = self.five(fake, ("clap",) * 2)
         self.assertEqual([p.jackname for p in procs], ["effect_1000", "effect_1001"])
 
     def test_a_restored_daemon_is_planned_again(self):
-        fake = self.serve(planner=True, grouping=True, verdicts=self.ISOLATED)
+        fake = self.serve(grouping=True, verdicts=self.ISOLATED)
         chain, procs = self.five(fake)
         ph.daemon.client.close()
         fake.stop()
-        fake2 = self.serve(planner=True, grouping=True, verdicts=self.ISOLATED)
+        fake2 = self.serve(grouping=True, verdicts=self.ISOLATED)
         ph.daemon.call("worker_list")
         self.assertEqual(fake2.plans[1][0], [[1000, 1001], [1002], [1003, 1004]])
         self.assertEqual([p.jackname for p in procs],
@@ -1444,8 +1325,11 @@ class test_compare(plugin_hostd_case):
     def test_the_real_command_answers_the_engine(self):
         fake, proc = self.easy_plugin(easy=None)
         os.unlink(os.path.join(self.bin, "omx-panel"))
+        # the tests' PATH holds python3 only: the command's program is found on the PATH the run started with
+        real = shlex.split(os.environ["OMX_PANEL_REAL"])
+        real[0] = shutil.which(real[0], path=RUN_PATH) or real[0]
         with open(os.path.join(self.bin, "omx-panel"), "w") as f:
-            f.write(f'#!/bin/sh\nexec {os.environ["OMX_PANEL_REAL"]} "$@"\n')
+            f.write(f'#!/bin/sh\nexec {shlex.join(real)} "$@"\n')
         os.chmod(os.path.join(self.bin, "omx-panel"), 0o755)
         engine = proc.engine
         proc.controllers_dict["p1"].set_value(25.0)
@@ -1639,12 +1523,8 @@ class test_catalogue(plugin_hostd_case):
 
     def test_instruments_and_effects_enter_the_catalogue(self):
         engines = {"JV/ZamComp": lv2_info("ZamComp", "urn:zamaudio:ZamComp"),
-                   "JV/Arp": lv2_info("Arp", "urn:test:arp", "MIDI Tool"),
-                   "PH/clap:org.test.gone": lv2_info("Gone", "clap:/gone.clap#org.test.gone")}
-        _lv2.engines_by_type["Audio Effect"]["PH/clap:org.test.gone"] = engines["PH/clap:org.test.gone"]
+                   "JV/Arp": lv2_info("Arp", "urn:test:arp", "MIDI Tool")}
         added = cat.add_catalogue(engines, clap=cat.scanned_plugins(CLAP_SCAN), binary=FAKE)
-        self.assertNotIn("PH/clap:org.test.gone", engines, "a plugin no longer installed leaves the catalogue")
-        self.assertNotIn("PH/clap:org.test.gone", _lv2.engines_by_type["Audio Effect"])
         self.assertEqual(sorted(added), ["PH/ZamComp", "PH/clap:/usr/lib/clap/lsp-plugins.clap#in.lsp-plug.limiter_mono", "PH/clap:/usr/lib/clap/test.clap#org.test.synth"])
         self.assertEqual(added["PH/ZamComp"]["URL"], "urn:zamaudio:ZamComp")
         synth = added["PH/clap:/usr/lib/clap/test.clap#org.test.synth"]
@@ -1664,9 +1544,7 @@ class test_catalogue(plugin_hostd_case):
 
 class test_protocol_03(plugin_hostd_case):
     """Protocol 0.3 of plugin-hostd-protocol: hello with tags and error words, tagged requests matched by tag, the
-    bulk verbs. Each behaviour is driven against a daemon that speaks it and an old one that does not."""
-
-    NEW = dict(hello=True, bulk=True)
+    bulk verbs."""
 
     def big(self, **kw):
         return self.serve(descriptors={"urn:test:big": os.path.join(FIXTURES, "big.descriptor.json")}, **kw)
@@ -1677,35 +1555,16 @@ class test_protocol_03(plugin_hostd_case):
     # ---- hello ----
 
     def test_hello_is_the_first_line_and_asks_for_tags_and_error_words(self):
-        fake = self.serve(**self.NEW)
+        fake = self.serve()
         self.add(self.chain(), "PH/Amp")
         self.assertEqual(fake.wire[0], "hello 1 tags errors", "before any other line, and untagged")
         self.assertEqual(sum(w.endswith("hello 1 tags errors") for w in fake.wire), 1, "once per connection")
         self.assertEqual((ph.daemon.client.version, ph.daemon.client.granted), (1, ("tags", "errors")))
 
-    def test_a_daemon_that_answers_not_found_or_a_refusal_to_hello_is_worked_with_as_before(self):
-        for reply in ("not found", "resp -902"):
-            with self.subTest(reply=reply):
-                ph.daemon = ph.plugin_hostd_daemon(self.port)
-                fake = self.serve(hello_reply=reply)
-                chain = self.chain()
-                proc = self.add(chain, "PH/Amp")
-                proc.controllers_dict["gain"].set_value(3.0)
-                self.assertEqual(fake.params[1000]["gain"], 3.0)
-                self.assertIsNone(ph.daemon.client.version)
-                self.assertEqual(ph.daemon.client.granted, ())
-                self.assertFalse([w for w in fake.wire[1:] if w.startswith("@")], "no tag to a daemon that never granted them")
-                self.assertFalse([w for w in fake.wire if "_many" in w], "no bulk line to a daemon that never said hello")
-                self.remove(chain, proc)
-                ph.daemon.client.close()
-                fake.stop()
-                time.sleep(0.05)
-                self.port = ph.daemon.client.port = free_port()
-
     # ---- tags ----
 
     def test_every_request_after_hello_carries_its_own_tag(self):
-        fake = self.serve(**self.NEW)
+        fake = self.serve()
         proc = self.add(self.chain(), "PH/Amp")
         proc.controllers_dict["gain"].set_value(2.0)
         tagged = fake.wire[1:]
@@ -1716,7 +1575,7 @@ class test_protocol_03(plugin_hostd_case):
         self.assertEqual(fake.params[1000]["gain"], 2.0, "the reply of each was matched to its request")
 
     def test_a_reply_of_another_tag_is_dropped_and_the_connection_kept(self):
-        fake = self.serve(stale_tags=True, **self.NEW)
+        fake = self.serve(stale_tags=True, )
         client = ph.plugin_hostd_client(self.port)
         client.call("add urn:test:amp 1000")
         for _ in range(3):
@@ -1726,7 +1585,7 @@ class test_protocol_03(plugin_hostd_case):
         self.assertIsNotNone(client.sock)
 
     def test_the_engine_does_not_restore_over_a_stale_reply(self):
-        fake = self.serve(stale_tags=True, **self.NEW)
+        fake = self.serve(stale_tags=True, )
         proc = self.add(self.chain(), "PH/Amp")
         proc.controllers_dict["gain"].set_value(5.0)
         fake.params[1000]["gain"] = 7.0
@@ -1738,7 +1597,7 @@ class test_protocol_03(plugin_hostd_case):
     # ---- error words ----
 
     def test_an_error_name_is_the_error_word_the_daemon_sent(self):
-        self.serve(**self.NEW)
+        self.serve()
         client = ph.plugin_hostd_client(self.port)
         client.call("add urn:test:amp 1000")
         with self.assertRaises(ph.plugin_hostd_error) as refused:
@@ -1747,15 +1606,8 @@ class test_protocol_03(plugin_hostd_case):
                          (-103, "reply.host.param-symbol-invalid", "reply.host.param-symbol-invalid"))
         self.assertIn("reply.host.param-symbol-invalid", str(refused.exception))
 
-    def test_an_old_daemon_has_its_error_names_from_the_protocol_files(self):
-        self.serve()
-        client = ph.plugin_hostd_client(self.port)
-        with self.assertRaises(ph.plugin_hostd_error) as refused:
-            client.call("chain_get 7")
-        self.assertEqual((refused.exception.name, refused.exception.word), ("reply.plugin-hostd.no-such-chain", None))
-
     def test_a_refusal_with_a_position_keeps_the_position_and_no_word(self):
-        self.serve(**self.NEW)
+        self.serve()
         client = ph.plugin_hostd_client(self.port)
         client.call("add urn:test:amp 1000")
         with self.assertRaises(ph.plugin_hostd_error) as refused:
@@ -1766,7 +1618,7 @@ class test_protocol_03(plugin_hostd_case):
     # ---- bulk reads ----
 
     def test_the_values_are_read_back_in_one_line(self):
-        fake = self.big(**self.NEW)
+        fake = self.big()
         proc = self.add(self.chain(), "PH/Big")
         self.assertEqual(self.sent(fake, "param_get "), [], "build_controllers asked for the values in bulk")
         self.assertEqual(self.sent(fake, "param_get_many"), ["param_get_many 1000 " + " ".join(f"p{i}" for i in range(10))])
@@ -1778,44 +1630,10 @@ class test_protocol_03(plugin_hostd_case):
         self.assertEqual(len(self.sent(fake, "param_get_many")), 1)
         self.assertEqual([proc.controllers_dict[f"p{i}"].value for i in range(10)], [float(i) for i in range(10)])
 
-    def test_a_daemon_that_does_not_serve_the_bulk_verbs_is_read_one_by_one_and_asked_once(self):
-        fake = self.big(hello=True)
-        proc = self.add(self.chain(), "PH/Big")
-        fake.params[1000]["p3"] = 42.0
-        fake.lines.clear()
-        proc.engine.refresh_values()
-        self.assertEqual(len(self.sent(fake, "param_get ")), 10)
-        self.assertEqual(self.sent(fake, "param_get_many"), [], "refused once, for the session")
-        self.assertEqual(proc.controllers_dict["p3"].value, 42.0)
-
-    def test_a_bulk_read_the_daemon_refuses_falls_back_to_one_by_one(self):
-        fake = self.big(**self.NEW)
-        proc = self.add(self.chain(), "PH/Big")
-        fake.params[1000]["p1"] = 9.0
-        fake.lines.clear()
-        with mock.patch.object(fake, "verb_param_get_many", lambda *a: "resp -103"):
-            proc.engine.refresh_values()
-        self.assertEqual(len(self.sent(fake, "param_get ")), 10)
-        self.assertEqual(proc.controllers_dict["p1"].value, 9.0)
-
-    def test_an_old_daemon_is_read_one_by_one(self):
-        fake = self.big()
-        proc = self.add(self.chain(), "PH/Big")
-        self.assertEqual(len(self.sent(fake, "param_get ")), 10)
-        self.assertEqual(self.sent(fake, "param_get_many"), [])
-        fake.params[1000]["p2"] = 5.0
-        proc.engine.refresh_values()
-        self.assertEqual(proc.controllers_dict["p2"].value, 5.0)
-
     # ---- bulk writes on replay ----
 
-    def start_new(self, bulk="1"):
+    def killed_and_replayed(self):
         ph.daemon.start_script = START_STUB
-        os.environ["FAKE_HOSTD_PROTOCOL"] = "0.3"
-        os.environ["FAKE_HOSTD_BULK"] = bulk
-
-    def killed_and_replayed(self, bulk="1"):
-        self.start_new(bulk)
         chain = self.chain()
         proc = self.add(chain, "PH/Amp")
         proc.controllers_dict["gain"].set_value(4.5)
@@ -1833,38 +1651,162 @@ class test_protocol_03(plugin_hostd_case):
         self.assertLess(lines.index("add urn:test:amp 1000"), many)
         self.assertNotIn("param_set 1000 gain -2", lines[:many + 1], "the replay sent no line of its own for the value")
 
-    def test_a_restored_daemon_that_serves_no_bulk_gets_one_line_per_value(self):
-        lines = self.killed_and_replayed(bulk="0")
-        self.assertIn("param_set_many 1000 gain -2", lines, "asked once, refused")
-        self.assertEqual(lines.count("param_set 1000 gain -2"), 2, "the replay's, and the command that met the dead daemon")
-
     def test_replay_lines_group_the_values_of_a_bulk_daemon(self):
-        fake = self.big(**self.NEW)
+        fake = self.big()
         engine = self.add(self.chain(), "PH/Big").engine
         engine.zctrls["p2"].value = 2.5
-        lines = engine.replay_lines(bulk=True)
+        lines = engine.replay_lines()
         self.assertEqual(lines[0], "add urn:test:big 1000")
         self.assertEqual(len(lines), 3, "add, the values, the bypass")
         self.assertEqual(lines[2], "bypass 1000 0")
         self.assertTrue(lines[1].startswith("param_set_many 1000 p0 "), lines[1])
         self.assertIn(" p2 2.5", lines[1])
-        old = engine.replay_lines()
-        self.assertEqual(len(old), 12)
-        self.assertTrue(all(line.startswith("param_set 1000 p") for line in old[1:-1]))
 
-    def test_a_refused_bulk_write_is_put_back_value_by_value(self):
-        fake = self.big(**self.NEW)
+class test_no_old_daemons(plugin_hostd_case):
+    """What a plugin-hostd that is too old to answer hello, the bulk verbs, plan or estimate gets: a refusal, never a
+    way around. The engine requires a daemon of the contract-versions floor."""
+
+    CLAP = "PH/clap:/usr/lib/clap/lsp-plugins.clap#in.lsp-plug.limiter_mono"
+
+    def sent(self, fake, prefix):
+        return [line for line in fake.lines if line.startswith(prefix)]
+
+    def test_a_daemon_that_does_not_answer_hello_is_refused_to_start_with(self):
+        for reply in ("not found", "resp -902"):
+            with self.subTest(reply=reply):
+                ph.daemon = ph.plugin_hostd_daemon(self.port)
+                fake = self.serve(hello_reply=reply)
+                with self.assertRaises(ph.plugin_hostd_down) as refused:
+                    ph.daemon.ensure()
+                self.assertIn("hello", str(refused.exception))
+                self.assertIsNone(ph.daemon.client.sock, "the connection is let go")
+                ph.daemon.client.close()
+                fake.stop()
+                time.sleep(0.05)
+                self.port = ph.daemon.client.port = free_port()
+
+    def test_a_refused_bulk_read_is_an_error_and_is_not_read_again_one_by_one(self):
+        fake = self.serve(descriptors={"urn:test:big": os.path.join(FIXTURES, "big.descriptor.json")})
+        proc = self.add(self.chain(), "PH/Big")
+        fake.params[1000]["p1"] = 9.0
+        fake.lines.clear()
+        with mock.patch.object(fake, "verb_param_get_many", lambda *a: "resp -103"):
+            proc.engine.refresh_values()
+        self.assertEqual(self.sent(fake, "param_get "), [], "no per-symbol reads around the refusal")
+        self.assertNotEqual(proc.controllers_dict["p1"].value, 9.0)
+
+    def test_a_refused_bulk_write_on_replay_is_an_error_and_not_put_back_value_by_value(self):
+        fake = self.serve(descriptors={"urn:test:big": os.path.join(FIXTURES, "big.descriptor.json")})
         proc = self.add(self.chain(), "PH/Big")
         proc.controllers_dict["p4"].set_value(33.0)
         fake.stop()
         time.sleep(0.05)
-        fresh = self.serve(**self.NEW)
+        fresh = self.serve()
         fresh.verb_param_set_many = lambda *a: "resp -103 3"
-        ph.daemon.restore()
-        sent = self.sent(fresh, "param_set ")
-        self.assertEqual(len(sent), 10)
-        self.assertIn("param_set 1000 p4 33", sent)
-        self.assertEqual(fresh.params[1000]["p4"], 33.0)
+        with self.assertLogs(level=logging.ERROR) as logs:
+            ph.daemon.restore()
+        self.assertTrue([r for r in logs.output if "replay" in r], logs.output)
+        self.assertEqual(self.sent(fresh, "param_set "), [])
+
+    def test_a_daemon_that_refuses_plan_has_every_member_run_alone_and_no_chain_is_sent(self):
+        fake = self.serve()
+        fake.verb_plan = lambda *a: "resp -902"
+        chain = self.chain()
+        procs = [self.add(chain, self.CLAP) for _ in range(3)]
+        self.assertEqual(self.sent(fake, "chain "), [], "no chain line around the refusal")
+        self.assertNotIn(1, fake.chains)
+        self.assertEqual(set(ph.daemon.reasons), {1000, 1001, 1002})
+        self.assertTrue(all(r.startswith("plan-refused:") for r in ph.daemon.reasons.values()), ph.daemon.reasons)
+        self.assertFalse(hasattr(ph.daemon, "plan_verbs"))
+
+    def test_a_refused_estimate_is_an_error_each_time_and_there_is_no_unavailable_state(self):
+        fake = self.serve()
+        fake.verb_estimate = lambda *a: "resp -902"
+        for _ in range(2):
+            with self.assertRaises(ph.plugin_hostd_error):
+                ph.estimate(48000, 256, ["urn:test:amp"])
+        self.assertEqual(len(self.sent(fake, "estimate")), 2, "asked each time: the refusal is not remembered")
+        self.assertFalse(hasattr(ph.daemon, "estimate_verb"))
+        self.assertFalse(hasattr(ph.zynthian_plugin_hostd_estimate, "estimate_unavailable"))
+
+    def test_the_daemon_file_is_read_where_libplugin_hostd_protocol0_installs_it_and_nowhere_else(self):
+        """plugin-hostd 0.16.0 moved it: /usr/share/plugin-hostd-protocol/plugin-hostd.json. The defaults of its
+        configuration are read from there, or from the directory given."""
+        old_home, new_home = os.path.join(self.tmp, "old"), os.path.join(self.tmp, "new")
+        os.makedirs(old_home)
+        os.makedirs(new_home)
+        with open(os.path.join(old_home, "protocol.json"), "w") as f:
+            json.dump({"config": [{"key": "odd", "default": 8}]}, f)
+        with open(os.path.join(new_home, "plugin-hostd.json"), "w") as f:
+            json.dump({"config": [{"key": "odd", "default": 7}]}, f)
+        files = ph.zynthian_plugin_hostd_protocol
+        with mock.patch.object(files, "PROTOCOL_DIR", None), mock.patch.object(files, "PLACE", (new_home, "plugin-hostd.json")):
+            self.assertEqual(files.config_default("odd"), 7)
+            self.assertEqual(files.config_default("odd", new_home), 7)
+            self.assertIsNone(files.config_default("odd", old_home), "protocol.json is no daemon file")
+            self.assertEqual(files.daemon_file(old_home), (old_home, "plugin-hostd.json"))
+
+    def test_a_client_that_carries_no_instance_key_is_an_error_not_effect_n(self):
+        ac = sys.modules["zynautoconnect"]
+        self.serve()
+        proc = self.add(self.chain(), "PH/Amp")
+        ac.hosted_client.side_effect = lambda instance: None
+        with self.assertRaises(ph.plugin_hostd_down):
+            proc.engine.client_name()
+
+    def test_a_worker_record_of_the_shape_before_the_core_and_pool_fields_is_not_read(self):
+        self.assertIsNone(ph.worker_record("w1:4309:clap:up:own:1000"))
+        self.assertEqual(ph.worker_record("w1:4309:clap:up:1:qualified:own:1000")[3:], ("own", None, [1000]))
+
+
+class test_nul_framing(plugin_hostd_case):
+    """A line is closed by one NUL: a NUL inside a word would make one command two, and every reply after it would
+    answer the wrong request. The line is refused at the door, before anything is written."""
+
+    LINE = "param_set 1000 ga\0in 0.5"
+
+    def refused(self, **kw):
+        fake = self.serve(**kw)
+        client = ph.plugin_hostd_client(self.port)
+        client.call("add urn:test:amp 1000")
+        before = list(fake.wire)
+        with self.assertRaises(ph.plugin_hostd_error) as e:
+            client.call(self.LINE)
+        self.assertEqual(fake.wire, before, "not a byte of the refused line reached the daemon")
+        self.assertEqual(e.exception.code, ph.protocol.code("reply.host.invalid-operation"))
+        self.assertIn("word 3", str(e.exception), "the field is named")
+        self.assertNotIn("\0", str(e.exception))
+
+    def test_a_line_with_a_nul_in_a_word_is_refused_and_nothing_is_written(self):
+        self.refused()
+
+    def test_the_reply_after_a_refused_line_is_the_reply_of_its_own_request(self):
+        fake = self.serve()
+        client = ph.plugin_hostd_client(self.port)
+        client.call("add urn:test:amp 1000")
+        client.call("param_set 1000 gain 2")
+        try:
+            client.call(self.LINE)
+        except ph.plugin_hostd_error:
+            pass
+        self.assertEqual(client.call("param_get 1000 gain"), (0, "2.0000"))
+        self.assertEqual(client.call("param_get 1000 gain"), (0, "2.0000"))
+
+    def test_the_engine_s_own_send_path_refuses_it_too(self):
+        fake = self.serve()
+        ph.daemon.call("add urn:test:amp 1000")
+        before = list(fake.wire)
+        with self.assertRaises(ph.plugin_hostd_error):
+            ph.daemon.call(ph.command("patch_set", 1000, "urn:p", "/a\0b.wav"))
+        self.assertEqual(fake.wire, before)
+
+    def test_a_reply_whose_code_is_no_number_is_a_plugin_hostd_error(self):
+        fake = self.serve()
+        hello = fake.handle
+        fake.handle = lambda line: hello(line) if line.split()[0] == "hello" else "resp abc"
+        client = ph.plugin_hostd_client(self.port)
+        with self.assertRaises(ph.plugin_hostd_error):
+            client.call("worker_list")
 
 
 if __name__ == "__main__":

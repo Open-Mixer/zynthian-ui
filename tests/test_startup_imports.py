@@ -2,7 +2,13 @@
 #
 # The engine screen imports the way zynthian_main.py does, with the real zyngine package: a name that
 # the package exports for a class and a module alike must resolve to the module where a function is used.
-# Needs the Zynthian's native libraries (tkinter, zyncore, ...); without them it is skipped.
+# Needs a Zynthian: tkinter and PIL.ImageTk, the zyncoder and zynlibs native libraries on JACK, and the tree under
+# /zynthian (config, wiring profiles) that zynthian_gui_config reads at import. The CI container is Debian with
+# python3 and pytest and none of that (the zyncoder directory of this repository is a submodule that is not checked
+# out there), so it cannot run in CI: it skips with the reason, and runs on the Pi with `python3 -m pytest
+# tests/test_startup_imports.py`.
+# A module that is absent (ModuleNotFoundError) or a missing /zynthian tree skips; a library that is present and fails
+# to load (any other ImportError, an OSError) fails, on the Pi too.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
@@ -11,20 +17,51 @@ import os
 import ast
 import sys
 import glob
+import types
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class startup_imports(unittest.TestCase):
 
+    def run_with_import_raising(self, error):
+        """The engine-screen test, with the zyngui import raising `error`: how it ends."""
+        fake = types.ModuleType("zyngui")
+        fake.__path__ = []
+
+        def fail(name):
+            raise error
+        fake.__getattr__ = fail
+        outcome = unittest.TestResult()
+        with mock.patch.dict(sys.modules, {"zyngui": fake}):
+            startup_imports("test_the_engine_screen_resolves_the_estimate_function_and_the_chain_options_the_daemon").run(outcome)
+        return outcome
+
+    def test_a_native_library_that_fails_to_load_fails_the_test(self):
+        outcome = self.run_with_import_raising(OSError("cannot load libzyncore.so"))
+        self.assertEqual((len(outcome.skipped), len(outcome.errors)), (0, 1), "a library that is there and will not load is a red, never a skip")
+
+    def test_an_extension_that_is_there_and_fails_to_load_fails_the_test(self):
+        outcome = self.run_with_import_raising(ImportError("libzyncore.so: undefined symbol: foo"))
+        self.assertEqual((len(outcome.skipped), len(outcome.errors)), (0, 1), "an ImportError from the loader is a red, never a skip")
+
+    def test_a_module_that_is_absent_skips(self):
+        outcome = self.run_with_import_raising(ModuleNotFoundError("No module named 'tkinter'"))
+        self.assertEqual((len(outcome.skipped), len(outcome.errors)), (1, 0))
+
+    def test_a_host_with_no_zynthian_tree_skips(self):
+        outcome = self.run_with_import_raising(FileNotFoundError("/zynthian/config"))
+        self.assertEqual((len(outcome.skipped), len(outcome.errors)), (1, 0))
+
     def test_the_engine_screen_resolves_the_estimate_function_and_the_chain_options_the_daemon(self):
         if ROOT not in sys.path:
             sys.path.insert(0, ROOT)
         try:
             from zyngui import zynthian_gui_engine, zynthian_gui_chain_options
-        except ImportError as e:
-            self.skipTest(f"not a Zynthian: {e}")
+        except (ModuleNotFoundError, FileNotFoundError) as e:  # a module this host lacks, or no /zynthian tree; any other ImportError or OSError is a present library that will not load, and fails
+            self.skipTest(f"not a Zynthian, so it cannot run in CI (it needs the Zynthian's tkinter, zyncoder and /zynthian tree) and runs on the Pi: {e}")
         for screen in (zynthian_gui_engine, zynthian_gui_chain_options):
             self.assertTrue(hasattr(screen.plugin_hostd, "estimate"), screen.__name__)
             self.assertTrue(hasattr(screen.plugin_hostd, "daemon"), screen.__name__)

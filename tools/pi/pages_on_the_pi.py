@@ -6,7 +6,7 @@
 # named by OMX_PANEL prints for the descriptor the daemon scanned: `describe --pages --per-page 4`.
 #
 #   OMX_PANEL=/root/z-pages/bin-omx-panel PHD_PORT=17556 PHD_URI=http://lsp-plug.in/plugins/lv2/para_equalizer_x8_mono \
-#   JACK_DEFAULT_SERVER=zpages python3 -m pytest -s tests/pi/pages_on_the_pi.py
+#   JACK_DEFAULT_SERVER=zpages python3 -m pytest -s tools/pi/pages_on_the_pi.py
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
@@ -17,7 +17,7 @@ import subprocess
 import sys
 import unittest
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "tests")  # the tests these reuse
 sys.path.insert(0, HERE)
 from test_engine_plugin_hostd import plugin_hostd_case, ph, clap_plugin, clap_scan  # noqa: E402
 from zyngine import zynthian_plugin_hostd_catalogue as cat  # noqa: E402

@@ -1,7 +1,7 @@
 # One drag frame of a drawn panel on the Pi (zynthian-ui#44)
 
 Measured on 2026-11-16 on the Raspberry Pi 5 (Zynthian, 1024 x 768 screen, the UI running beside it) with
-`tests/pi/blit_per_frame_on_the_pi.py`. The panel view and widget code is 97e896ab (the renderer in a process of its
+`tools/pi/blit_per_frame_on_the_pi.py`. The panel view and widget code is 97e896ab (the renderer in a process of its
 own); the script is 16b378af with the two edits committed beside this note (the view module loaded by its path, and
 `ORDER`). The renderer is the Pi's libomx-panel-render0 0.13.7.
 

@@ -208,7 +208,10 @@ class zynthian_gui_control(zynthian_gui_selector):
                     self.index = i + curproc.get_current_screen_index()
                 for cscr in screen_list:
                     try:
-                        self.list_data.append((screen_list[cscr][0].group_symbol, i, cscr, processor, j))
+                        # a slot may be blank (None, plugin-hostd's pages): the group is a control's the page holds,
+                        # the page's own name when it holds none
+                        group = next((z.group_symbol for z in screen_list[cscr] if z is not None), cscr)
+                        self.list_data.append((group, i, cscr, processor, j))
                         i += 1
                         j += 1
                     except Exception as e:
@@ -240,6 +243,8 @@ class zynthian_gui_control(zynthian_gui_selector):
     def get_screen_type(self):
         self.widget_zctrl = None
         for zctrl in self.zcontrollers:
+            if zctrl is None:  # a blank slot
+                continue
             if hasattr(zctrl, "envelope"):
                 self.screen_type = "envelope"
                 break
