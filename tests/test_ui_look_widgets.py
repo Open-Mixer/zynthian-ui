@@ -30,6 +30,7 @@ import unittest
 from unittest import mock
 
 from tests.omx_panel_widget_stub import load_widget
+from tests.test_omx_panel_view import renderer, view as real_view
 
 try:
     from PIL import Image, ImageDraw
@@ -338,6 +339,10 @@ class WhatCIMustHave(unittest.TestCase):
     def test_ci_names_omx_panels_tools_so_the_fixture_is_held(self):
         self.assertTrue(os.environ.get("ZYNTHIAN_OMX_PANEL_TOOLS"), "CI names no $ZYNTHIAN_OMX_PANEL_TOOLS: the fixture drift check ran nothing")
 
+    @unittest.skipUnless(CI, "a desk may lack omx-panel's renderer: the pixel test skips and says so")
+    def test_ci_has_the_renderer_so_the_pixels_are_read(self):
+        self.assertTrue(renderer(), "CI has no omx-panel renderer (libomx-panel-render.so.0): the pixel test ran nothing")
+
 
 @unittest.skipUnless(Image, "no PIL")
 class DrawnController(unittest.TestCase):
@@ -551,6 +556,87 @@ class DrawnController(unittest.TestCase):
         ctrl.pickup = True
         ctrl.zynpot_abs(0.5)
         self.assertEqual(ctrl.items[ctrl.graph_pickup]["state"], "hidden")
+
+
+# ---- The pixels, where the renderer is built (CI, the Pi): zynthian-ui#74
+
+def rgb(colour):
+    return tuple(int(colour[k:k + 2], 16) for k in (1, 3, 5))
+
+
+@unittest.skipUnless(Image and renderer(), "omx-panel's renderer is not installed")
+class RealRenderer(unittest.TestCase):
+    """The vintage controller through the real libomx-panel-render.so.0: the drawn controller's own one-knob
+    description, opened with zynthian_ui_look.tokens over the fixture, drawn by the library and painted by the
+    controller; the colours are read where the renderer puts them (view.c draw_knob: the pointer a segment from 0.28
+    to 0.78 of the radius in --accent; the panel's face in --surface, round the section the knob sits in)."""
+
+    W, H = 240, 200
+
+    def setUp(self):
+        with open(LOOK_BASE) as f:
+            self.tools = tools_dir_with(json.load(f))
+        self.addCleanup(shutil.rmtree, self.tools, True)
+        cls, self.config, loaded = load_controller(VINTAGE, tools_dir=self.tools)
+        self.look = loaded["zyngine.zynthian_ui_look"]
+        loaded["zyngine.zynthian_omx_panel_view"].View = real_view.View  # the renderer itself, not the stand-in
+
+        class Shown(cls):
+            def photo_of(self, image):
+                return ("photo", image.size)
+
+        self.ctrl = Shown(0, None, Zctrl(value=0.5))
+        self.ctrl._w, self.ctrl._h = self.W, self.H
+        self.ctrl.on_size(None)
+        self.assertFalse(self.ctrl.stock, "the renderer took the description and the look")
+        self.addCleanup(self.ctrl.view.close)
+
+    def knob(self):
+        """The knob's centre and radius: its target rect is its bounding square."""
+        (x, y, w, h), _ = self.ctrl.view.target_rect(0)
+        return x + w / 2, y + h / 2, h / 2
+
+    def beside(self, image):
+        """The colours on the knob's row from the canvas edge to the knob's rim: the panel's border, its face, the
+        section the knob sits in, each in its role's colour."""
+        cx, cy, r = self.knob()
+        return {image.getpixel((x, int(cy))) for x in range(int(cx - r))}
+
+    def test_the_knobs_pointer_is_the_accent_and_the_face_the_surface(self):
+        view = self.ctrl.view
+        self.assertEqual(view.layout["controls"][0]["standard"], {"widget": "knob"})
+        self.assertEqual(self.ctrl.value_plot, 0.5)  # the pointer stands at 12 o'clock
+        cx, cy, r = self.knob()
+        pointer = (int(cx), int(cy - r * 0.53))  # the middle of the pointer's segment
+        accent, surface = rgb(VINTAGE_ROLES["--accent"]), rgb(VINTAGE_ROLES["--surface"])
+        # the renderer's own pixels: opaque, in the look's colours
+        raw = Image.frombuffer("RGBA", (self.W, self.H), view.draw(self.W, self.H), "raw", "RGBA", 0, 1)
+        self.assertEqual(raw.getpixel(pointer), accent + (255,))
+        self.assertIn(surface + (255,), self.beside(raw))
+        self.assertNotIn(accent + (255,), self.beside(raw))
+        # and what the controller shows: the same pixels over color_panel_bg
+        self.assertEqual(self.ctrl.image.getpixel(pointer)[:3], accent)
+        self.assertEqual(raw.getpixel((0, 0))[3], 0)  # outside the panel's round corner the renderer draws nothing
+        self.assertEqual(self.ctrl.image.getpixel((0, 0))[:3], rgb(self.config.color_panel_bg))
+        self.assertIn(surface + (255,), self.beside(self.ctrl.image))
+
+    def test_the_colours_follow_the_look_given(self):
+        # the same description in a look whose accent and surface are other colours: the pointer and the face follow
+        # the look, so the colours above are the preset's and not the renderer's own
+        cx, cy, r = self.knob()
+        pointer = (int(cx), int(cy - r * 0.53))
+        with open(LOOK_BASE) as f:
+            base = json.load(f)
+        colours = types.SimpleNamespace(**{**vars(self.config), "color_on": "#123456", "color_panel_bg": "#654321"})
+        other = real_view.View(self.ctrl.view.layout, look=self.look.tokens(colours, base))
+        self.addCleanup(other.close)
+        other.set_title("", "")
+        other.set_surface(self.W, self.H)
+        other.set_value(0, 0.5, "0.50")
+        raw = Image.frombuffer("RGBA", (self.W, self.H), other.draw(self.W, self.H), "raw", "RGBA", 0, 1)
+        self.assertEqual(raw.getpixel(pointer), rgb("#123456") + (255,))
+        self.assertIn(rgb("#654321") + (255,), self.beside(raw))
+        self.assertNotIn(rgb(VINTAGE_ROLES["--surface"]) + (255,), self.beside(raw))
 
 
 # ---- The plugin panel over a look short of a role
