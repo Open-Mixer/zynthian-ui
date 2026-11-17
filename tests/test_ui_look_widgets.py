@@ -459,6 +459,24 @@ class DrawnController(unittest.TestCase):
         self.assertEqual(FakeView.opened, [])
         self.assertEqual(self.images, [])
 
+    def test_a_blank_slot_shows_no_face_and_the_next_controller_is_drawn_again(self):
+        # a page's blank slot: the control screen configures the controller with None and shows it
+        ctrl = self.controller(Zctrl())
+        first = FakeView.opened[-1]
+        self.assertEqual([i["kind"] for i in ctrl.items.values()].count("image"), 1)
+        ctrl.config(None)
+        ctrl.show()
+        self.assertEqual([i["kind"] for i in ctrl.items.values()].count("image"), 0, "the last controller's face is gone")
+        self.assertTrue(first.closed)
+        self.assertIsNone(ctrl.view)
+        if ctrl.frame_item is not None:
+            self.assertEqual(ctrl.items[ctrl.frame_item]["state"], "hidden")
+        ctrl.config(Zctrl(symbol="resonance", short_name="Resonance", name="Resonance"))
+        ctrl.show()
+        self.assertEqual(FakeView.opened[-1].layout["controls"][0]["symbol"], "resonance")
+        self.assertEqual([i["kind"] for i in ctrl.items.values()].count("image"), 1)
+        self.assertEqual(ctrl.order.index(ctrl.midi_bind) > ctrl.order.index(ctrl.image_item), True, "the MIDI bind stays above")
+
     def test_without_the_renderer_the_stock_widget_is_drawn_and_the_reason_said_once(self):
         FakeView.refuse = FakeView.module.RendererAbsent("omx-panel's renderer (libomx-panel-render.so.0) is not installed: no")
         with self.assertLogs(level="WARNING") as log:
