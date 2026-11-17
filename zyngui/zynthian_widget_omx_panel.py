@@ -63,7 +63,7 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         self.stopped = None  # how the renderer stopped: the panel is strips until it is opened again
         self.drawn_page = None
         self.drawn_state = None
-        self.image = None
+        self.panel_image = None  # the panel on the canvas, blitted where a draw changed (panel_view.PanelImage)
         self.meter_at = {}
         try:  # Tk sees one pointer; a multi-touch screen's fingers come from the evdev slots (a pinch needs two)
             self.touch = touch.EvdevSource()
@@ -129,6 +129,8 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         if self.drawn:
             self.drawn.close()
         self.drawn = self.drawn_state = None
+        if self.panel_image:
+            self.panel_image.forget()
         if not drawn or self.width < 2 or self.height < 2 or self.stopped:
             return False
         keys = self.page_keys()
@@ -197,19 +199,17 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
                 self.meter_at[sym] = now
                 view.set_meter(i, value, elapsed)
                 changed = True
-        if changed or self.image is None:
+        if changed or self.panel_image is None or self.panel_image.last is None:
             self.paint(view)
         return True
 
     def paint(self, view):
-        from PIL import Image, ImageTk
+        """The draw on the canvas: only the rows it changed are converted and blitted."""
         w, h = self.width, self.height
-        rgba = Image.frombuffer("RGBA", (w, h), view.draw(w, h), "raw", "RGBA", 0, 1)
-        back = Image.new("RGBA", (w, h), zynthian_gui_config.color_bg)
-        self.image = ImageTk.PhotoImage(Image.alpha_composite(back, rgba))
-        c = self.widget_canvas
-        c.delete("all")
-        c.create_image(0, 0, anchor="nw", image=self.image)
+        if self.panel_image is None:
+            self.panel_image = panel_view.PanelImage(zynthian_gui_config.color_bg, self.widget_canvas)
+        self.panel_image.background = zynthian_gui_config.color_bg
+        self.panel_image.show(view.draw(w, h), w, h)
 
     def drawn_input(self, kind, e=None, **kw):
         """An event to the renderer; the controls it moved are set, and `more` opens the surface's menu."""
@@ -299,6 +299,8 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
                 self.renderer_stopped(e)
         c = self.widget_canvas
         c.delete("all")
+        if self.panel_image:
+            self.panel_image.forget()
         if self.stopped:
             c.create_text(self.width / 2, self.height - MARGIN, anchor="s", text="omx-panel's renderer stopped",
                           fill=zynthian_gui_config.color_tx_off)
