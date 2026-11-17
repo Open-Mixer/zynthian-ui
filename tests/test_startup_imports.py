@@ -5,10 +5,9 @@
 # Needs a Zynthian: tkinter and PIL.ImageTk, the zyncoder and zynlibs native libraries on JACK, and the tree under
 # /zynthian (config, wiring profiles) that zynthian_gui_config reads at import. The CI container is Debian with
 # python3 and pytest and none of that (the zyncoder directory of this repository is a submodule that is not checked
-# out there), so it cannot run in CI: it skips with the reason, and runs on the Pi with `python3 -m pytest
-# tests/test_startup_imports.py`.
-# A module that is absent (ModuleNotFoundError) or a missing /zynthian tree skips; a library that is present and fails
-# to load (any other ImportError, an OSError) fails, on the Pi too.
+# out there), so it cannot run in CI. The skip is decided from the host, before the import: no /zynthian tree, no
+# attempt, a skip that says so. On a host that has the tree (the Pi: `python3 -m pytest tests/test_startup_imports.py`)
+# nothing is caught, so any import error, of a dependency, of our own module or of a library, fails.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
@@ -71,10 +70,10 @@ class startup_imports(unittest.TestCase):
     def test_the_engine_screen_resolves_the_estimate_function_and_the_chain_options_the_daemon(self):
         if ROOT not in sys.path:
             sys.path.insert(0, ROOT)
-        try:
-            from zyngui import zynthian_gui_engine, zynthian_gui_chain_options
-        except (ModuleNotFoundError, FileNotFoundError) as e:  # a module this host lacks, or no /zynthian tree; any other ImportError or OSError is a present library that will not load, and fails
-            self.skipTest(f"not a Zynthian, so it cannot run in CI (it needs the Zynthian's tkinter, zyncoder and /zynthian tree) and runs on the Pi: {e}")
+        if not os.path.isdir(ZYNTHIAN_TREE):
+            self.skipTest(f"not a Zynthian: there is no {ZYNTHIAN_TREE} tree, so the UI cannot be imported here (CI is one such "
+                          "host); it runs on the Pi, where any import error fails")
+        from zyngui import zynthian_gui_engine, zynthian_gui_chain_options
         for screen in (zynthian_gui_engine, zynthian_gui_chain_options):
             self.assertTrue(hasattr(screen.plugin_hostd, "estimate"), screen.__name__)
             self.assertTrue(hasattr(screen.plugin_hostd, "daemon"), screen.__name__)
