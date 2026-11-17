@@ -27,6 +27,7 @@ import json
 import logging
 import math
 import os
+import shutil
 import signal
 import socket
 import subprocess
@@ -146,22 +147,47 @@ def word_name(word):
     return _host().call("word", None, word)
 
 
+def tools_dir():
+    """The renderer's data directory: $ZYNTHIAN_OMX_PANEL_TOOLS, else where the omx-panel package installs it."""
+    return os.environ.get("ZYNTHIAN_OMX_PANEL_TOOLS", TOOLS_DIR)
+
+
+def look_dir(look, tools):
+    """A data directory for the renderer carrying the host's <look> (a look document, zynthian_ui_look.tokens) as its
+    look.json, and the renderer's own geometry, fonts and gesture declaration linked from <tools>: the renderer reads a
+    look from a directory and copies what it reads, so the caller removes the directory once the view is made."""
+    d = tempfile.mkdtemp(suffix=".look")
+    with open(os.path.join(d, "look.json"), "w") as f:
+        json.dump(look, f)
+    for name in ("look", "fonts"):
+        os.symlink(os.path.join(tools, name), os.path.join(d, name))
+    # omx-panel's schema/gestures.json: beside the tools directory in the source tree, inside it where the package installs it
+    for gestures in (os.path.join(tools, "gestures.json"), os.path.join(tools, "..", "schema", "gestures.json")):
+        if os.path.exists(gestures):
+            os.symlink(gestures, os.path.join(d, "gestures.json"))
+            break
+    return d
+
+
 class _LibraryView:
     """One panel layout (what `omx-panel describe --layout` prints, or a part of it) as the renderer holds it, in the
     process that loaded the library: the renderer's process."""
 
-    def __init__(self, layout, tools_dir=None):
+    def __init__(self, layout, tools_dir_=None, look=None):
         lib = self.lib = library()
         self.layout = layout
         with tempfile.NamedTemporaryFile("w", suffix=".layout.json", delete=False) as f:
             json.dump(layout, f)
             path = f.name
         err = ctypes.create_string_buffer(512)
+        tools = tools_dir_ or tools_dir()
+        data = look_dir(look, tools) if look else None
         try:
-            tools = tools_dir or os.environ.get("ZYNTHIAN_OMX_PANEL_TOOLS", TOOLS_DIR)
-            self.view = lib.omx_panel_view_create_from_files(path.encode(), tools.encode(), err, len(err))
+            self.view = lib.omx_panel_view_create_from_files(path.encode(), (data or tools).encode(), err, len(err))
         finally:
             os.unlink(path)
+            if data:
+                shutil.rmtree(data, ignore_errors=True)
         if not self.view:
             raise RendererAbsent(f"omx-panel's renderer refused the panel: {err.value.decode(errors='replace')}")
         self.symbols = [lib.omx_panel_view_symbol(self.view, i).decode() for i in range(lib.omx_panel_view_count(self.view))]
@@ -349,10 +375,12 @@ class View:
     renderer's process: each call is the library's, its answer the library's. RendererStopped when that process
     stopped."""
 
-    def __init__(self, layout, tools_dir=None):
+    def __init__(self, layout, tools_dir=None, look=None):
+        """<look>: the host's look document (zynthian_ui_look.tokens) the panel is drawn in; None draws it in the
+        renderer's own look."""
         self.host = _host()
         self.layout = layout
-        self.id, self.symbols = self.host.call("open", None, layout, tools_dir)
+        self.id, self.symbols = self.host.call("open", None, layout, tools_dir, look)
         self.meters = [m["symbol"] for m in layout.get("meters") or []]
         self.size = None
         self.memory = None

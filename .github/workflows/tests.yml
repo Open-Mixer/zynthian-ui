@@ -129,3 +129,5 @@ jobs:
           python3 -m pytest -q -rs tests/ | tee /tmp/pytest.log
           # a test that needs the real omx-panel and skipped ran nothing: refused
           ! grep -q 'OMX_PANEL_REAL is' /tmp/pytest.log || { echo "::error::a test that needs the real omx-panel was skipped"; exit 1; }
+          # the drawn-controller tests need PIL (python3-pil above) and omx-panel's tools directory: skipped, they ran nothing
+          ! grep -qE 'no PIL|no omx-panel tools directory' /tmp/pytest.log || { echo "::error::a drawn-controller test was skipped"; exit 1; }
