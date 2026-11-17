@@ -23,10 +23,13 @@ import json
 import os
 import re
 import sys
+import shutil
 import tempfile
 import types
 import unittest
 from unittest import mock
+
+from tests.omx_panel_widget_stub import load_widget
 
 try:
     from PIL import Image, ImageDraw
@@ -91,11 +94,13 @@ class Canvas:
 
     def __init__(self, parent=None, **kw):
         self.kw, self.items, self.n = kw, {}, 0
+        self.order = []  # the stacking order, bottom first
         self._w = self._h = 1
 
     def _item(self, kind, *xy, **kw):
         self.n += 1
         self.items[self.n] = {"kind": kind, "coords": xy, "state": "normal", **kw}
+        self.order.append(self.n)
         return self.n
 
     def create_arc(self, *xy, **kw): return self._item("arc", *xy, **kw)
@@ -121,8 +126,12 @@ class Canvas:
     def delete(self, item):
         for i in self._ids(item):
             self.items.pop(i, None)
+            self.order.remove(i)
 
-    def tag_raise(self, *a): pass
+    def tag_raise(self, item, above=None):
+        for i in self._ids(item):
+            self.order.remove(i)
+            self.order.append(i)
     def bind(self, *a, **kw): pass
     def winfo_width(self): return self._w
     def winfo_height(self): return self._h
@@ -180,6 +189,10 @@ class FakeView:
     def set_choice(self, i, at, count, text): self.calls.append(("choice", i, at, count, text))
     def set_travel(self, *a, **kw): self.calls.append(("travel",) + a)
     def close(self): self.closed = True
+    rect = ((10.0, 20.0, 100.0, 60.0), 60.0)  # where the knob takes a press: its bounding square, and the drag's travel
+
+    def target_rect(self, index):
+        return FakeView.rect
 
     def draw(self, w, h, scale=1.0):
         if FakeView.stop_at_draw:
@@ -205,6 +218,7 @@ def load_controller(environ, tools_dir=None):
     """zyngui.zynthian_gui_controller as zynthian_gui.py imports it, with zynthian_gui_config carrying <environ>'s look;
     the renderer's View is FakeView. Returns (the class the module exports, the config, sys.modules as loaded)."""
     FakeView.opened, FakeView.refuse, FakeView.stop_at_draw = [], None, False
+    FakeView.rect = ((10.0, 20.0, 100.0, 60.0), 60.0)
     values = config_under(environ)
     zyngui = mock.MagicMock()
     zyngui.chain_manager.get_midi_learn_from_zctrl.return_value = None
@@ -329,6 +343,19 @@ class DrawnController(unittest.TestCase):
 
         self.Recorded = Recorded
 
+    def reload(self, base):
+        """The controller class again, over a tools directory whose look.json is <base>."""
+        self.tools = tools_dir_with(base)
+        self.cls, self.config, _ = load_controller(VINTAGE, tools_dir=self.tools)
+        test = self
+
+        class Recorded(self.cls):
+            def photo_of(self, image):
+                test.images.append(image)
+                return ("photo", image.size)
+
+        self.Recorded = Recorded
+
     def controller(self, zctrl, w=120, h=100, **kw):
         ctrl = self.Recorded(0, None, zctrl, **kw)
         ctrl._w, ctrl._h = w, h
@@ -341,7 +368,7 @@ class DrawnController(unittest.TestCase):
         self.assertEqual(stock.__name__, "zynthian_gui_controller")
         own = {k for k, v in vars(self.cls).items() if callable(v) and not k.startswith("__")}
         overridden = own & set(vars(stock))
-        self.assertEqual(overridden, {"show", "on_size", "plot_value", "set_title", "_set_color_graph"})
+        self.assertEqual(overridden, {"show", "on_size", "plot_value", "set_title", "_set_color_graph", "zynpot_abs"})
 
     def test_a_numeric_controller_is_a_knob_with_its_value(self):
         ctrl = self.controller(Zctrl(value=0.25))
@@ -442,6 +469,98 @@ class DrawnController(unittest.TestCase):
         self.assertEqual([o for o in ctrl.of("rectangle") if o["state"] == "normal"], [])
         self.assertTrue(FakeView.opened[-1].closed)
 
+    def test_a_look_short_of_a_role_is_refused_by_name_once_and_every_controller_draws_stock(self):
+        base = json.load(open(LOOK_BASE))
+        self.reload({**base, "tokens": {k: v for k, v in base["tokens"].items() if k != "--legend"}})
+        with self.assertLogs(level="WARNING") as log:
+            a = self.controller(Zctrl())
+            b = self.controller(Zctrl(symbol="res", short_name="Res"))
+        self.assertEqual(len([m for m in log.output if "--legend" in m]), 1, log.output)
+        self.assertEqual(FakeView.opened, [], "no view is opened in the renderer's own look")
+        for ctrl in (a, b):
+            self.assertEqual(ctrl.items[ctrl.graph]["state"], "normal")
+            self.assertEqual(ctrl.of("image"), [])
+
+    def test_a_look_without_tokens_is_refused_by_name_and_draws_stock(self):
+        self.reload({"theme": "dark"})
+        with self.assertLogs(level="WARNING") as log:
+            ctrl = self.controller(Zctrl())
+        self.assertTrue(any("tokens" in m for m in log.output), log.output)
+        self.assertEqual(FakeView.opened, [])
+        self.assertEqual(ctrl.items[ctrl.graph]["state"], "normal")
+
+    def test_the_look_is_read_once_for_every_controller(self):
+        self.controller(Zctrl())
+        shutil.rmtree(self.tools)  # the base is gone: a second read would find nothing
+        self.controller(Zctrl(symbol="res", short_name="Res"))
+        self.assertEqual(len(FakeView.opened), 2)
+        self.assertEqual(FakeView.opened[0].look, FakeView.opened[1].look)
+        self.assertEqual(FakeView.opened[1].look["tokens"]["--accent"], "#e8732c")
+
+    def test_the_midi_bind_text_stays_over_the_drawn_face(self):
+        ctrl = self.controller(Zctrl())
+        ctrl.plot_midi_bind("1#74", self.config.color_ml)
+        bind = ctrl.items[ctrl.midi_bind]
+        self.assertEqual((bind["state"], bind["text"], bind["fill"]), ("normal", "1#74", self.config.color_ml))
+        self.assertGreater(ctrl.order.index(ctrl.midi_bind), ctrl.order.index(ctrl.image_item), "the text is above the image")
+
+    def test_the_pickup_marker_sits_on_the_renderers_knob(self):
+        ctrl = self.controller(Zctrl(value=0.25))
+        ctrl.pickup = True
+        ctrl.zynpot_abs(0.5)
+        marker = ctrl.items[ctrl.graph_pickup]
+        self.assertEqual(marker["state"], "normal")
+        self.assertGreater(ctrl.order.index(ctrl.graph_pickup), ctrl.order.index(ctrl.image_item), "the marker is above the image")
+        # the knob: the renderer's target rect (10, 20, 100 x 60), its circle centred at (60, 50), radius 30
+        self.assertEqual(marker["coords"], (28.0, 18.0, 92.0, 82.0))
+        # the encoder at 0.5 of a 270 degree travel points straight up: Tk's 90 degrees, a 12 degree marker centred there
+        self.assertEqual((marker["start"], marker["extent"]), (84.0, 12))
+        self.assertEqual(marker["outline"], self.config.color_ctrl_tx_off)
+        ctrl.zynpot_abs(0.25)  # within 1 % of the value: the pickup ends and the marker goes
+        self.assertEqual(ctrl.items[ctrl.graph_pickup]["state"], "hidden")
+
+    def test_the_pickup_marker_has_no_place_on_a_control_without_a_knob(self):
+        FakeView.rect = None
+        ctrl = self.controller(Zctrl(is_path=True, value="/a/b.wav"))
+        ctrl.pickup = True
+        ctrl.zynpot_abs(0.5)
+        self.assertEqual(ctrl.items[ctrl.graph_pickup]["state"], "hidden")
+
+
+# ---- The plugin panel over a look short of a role
+
+class PanelOverAShortLook(unittest.TestCase):
+    def test_a_look_short_of_a_role_draws_strips_and_is_said_once(self):
+        base = json.load(open(LOOK_BASE))
+        tools = tools_dir_with({**base, "tokens": {k: v for k, v in base["tokens"].items() if k != "--legend"}})
+        module, panel_view, modules = load_widget(ui_look="vintage", color_panel_bg="#15191e", color_panel_hl="#242b33",
+                                                 color_off="#0d1115", color_hl="#e9dfc6", color_ml="#f2b03a", color_midi="#34d17b",
+                                                 color_alt2="#f2b632", color_error="#ff5a4d")
+        opened = []
+        with mock.patch.dict(sys.modules, modules), mock.patch.dict(os.environ, {"ZYNTHIAN_OMX_PANEL_TOOLS": tools}), \
+                mock.patch.object(panel_view, "View", lambda *a, **kw: opened.append(kw) or mock.MagicMock(symbols=[], meters=[])), \
+                mock.patch.object(panel_view, "screen_part", lambda layout, keys: (layout, {})):
+            module.zynthian_widget_omx_panel.said = False
+            w = module.zynthian_widget_omx_panel(None)
+            w.width, w.height = 120, 60
+            w.zyngui_control = types.SimpleNamespace(zcontrollers=[], show_menu=lambda: None)
+            engine = types.SimpleNamespace(drawn=({"controls": []},), name="omx eq8", zctrls={}, curve=lambda d: [], meter=lambda s: None)
+            w.set_processor(types.SimpleNamespace(engine=engine))
+            with self.assertLogs(level="WARNING") as log:
+                self.assertFalse(w.build_drawn())
+                self.assertFalse(w.build_drawn())
+        self.assertEqual(len([m for m in log.output if "--legend" in m]), 1, log.output)
+        self.assertEqual(opened, [], "no view is opened in the renderer's own look")
+
+
+# ---- The fixture is omx-panel's file
+
+class LookBaseFixture(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get("ZYNTHIAN_OMX_PANEL_TOOLS"), "no omx-panel tools directory ($ZYNTHIAN_OMX_PANEL_TOOLS, CI builds one)")
+    def test_the_fixture_is_the_renderers_look_json_byte_for_byte(self):
+        with open(LOOK_BASE, "rb") as ours, open(os.path.join(os.environ["ZYNTHIAN_OMX_PANEL_TOOLS"], "look.json"), "rb") as theirs:
+            self.assertEqual(ours.read(), theirs.read(), "tests/fixtures/omx_panel/look.json drifted from omx-panel tools/look.json")
+
 
 # ---- The look table
 
@@ -465,6 +584,24 @@ class LookTable(unittest.TestCase):
         with self.assertRaises(self.look.LookShort) as cm:
             self.look.tokens(config, short)
         self.assertIn("--legend", str(cm.exception))
+
+    def test_a_base_without_tokens_is_refused_by_name(self):
+        config = types.SimpleNamespace(**{k: v for k, v in config_under(VINTAGE).items() if k.startswith("color_")})
+        with self.assertRaises(self.look.LookShort) as cm:
+            self.look.tokens(config, {"theme": "dark"})
+        self.assertIn("tokens", str(cm.exception))
+
+    def test_look_for_reads_the_base_once_and_a_refusal_is_repeated_by_name(self):
+        tools = tools_dir_with(self.base)
+        vintage = types.SimpleNamespace(**{k: v for k, v in config_under(VINTAGE).items() if k.startswith("color_") or k == "ui_look"})
+        first = self.look.look_for(vintage, tools)
+        shutil.rmtree(tools)
+        self.assertEqual(self.look.look_for(vintage, tools), first)
+        short = tools_dir_with({**self.base, "tokens": {k: v for k, v in self.base["tokens"].items() if k != "--accent"}})
+        for _ in range(2):
+            with self.assertRaises(self.look.LookShort) as cm:
+                self.look.look_for(vintage, short)
+            self.assertIn("--accent", str(cm.exception))
 
     def test_look_for_is_none_under_stock_and_the_table_under_vintage(self):
         tools = tools_dir_with(self.base)
