@@ -202,12 +202,14 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         return True
 
     def paint(self, view):
-        """The draw on the canvas: only the rows it changed are converted and blitted."""
+        """The draw on the canvas: only what it changed is converted and blitted, the renderer's own rectangles when it
+        gives them (omx-panel#78), else the rows that differ from the draw before."""
         w, h = self.width, self.height
         if self.panel_image is None:
             self.panel_image = panel_view.PanelImage(zynthian_gui_config.color_bg, self.widget_canvas)
         self.panel_image.background = zynthian_gui_config.color_bg
-        self.panel_image.show(view.draw(w, h), w, h)
+        pixels, dirty = view.draw(w, h)
+        self.panel_image.show(pixels, w, h, dirty)
 
     def drawn_input(self, kind, e=None, **kw):
         """An event to the renderer; the controls it moved are set, and `more` opens the surface's menu."""

@@ -173,7 +173,7 @@ class Drawn(unittest.TestCase):
     W, H = 480, 300
 
     def draw(self, v):
-        return v.draw(self.W, self.H)
+        return v.draw(self.W, self.H)[0]
 
     def differs(self, a, b):
         """The rows where two drawings differ."""

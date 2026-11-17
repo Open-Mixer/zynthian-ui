@@ -131,7 +131,7 @@ class OnThePi(plugin_hostd_case):
                         view.set_meter(i, v, 0.0)
                 name_ok = "".join(c if c.isalnum() else "-" for c in name)[:40]
                 stem = "".join(c if c.isalnum() else "-" for c in engine.name)[:30]
-                png(os.path.join(OUT, f"{n:02d}-{stem}-{page:02d}-{name_ok}.png"), view.draw(W, H), W, H)
+                png(os.path.join(OUT, f"{n:02d}-{stem}-{page:02d}-{name_ok}.png"), view.draw(W, H)[0], W, H)
                 if page >= int(os.environ.get("PAGES", "3")):
                     break
 
