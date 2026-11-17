@@ -41,6 +41,14 @@ class startup_imports(unittest.TestCase):
         outcome = self.run_with_import_raising(OSError("cannot load libzyncore.so"))
         self.assertEqual((len(outcome.skipped), len(outcome.errors)), (0, 1), "a library that is there and will not load is a red, never a skip")
 
+    def test_an_extension_that_is_there_and_fails_to_load_fails_the_test(self):
+        outcome = self.run_with_import_raising(ImportError("libzyncore.so: undefined symbol: foo"))
+        self.assertEqual((len(outcome.skipped), len(outcome.errors)), (0, 1), "an ImportError from the loader is a red, never a skip")
+
+    def test_a_module_that_is_absent_skips(self):
+        outcome = self.run_with_import_raising(ModuleNotFoundError("No module named 'tkinter'"))
+        self.assertEqual((len(outcome.skipped), len(outcome.errors)), (1, 0))
+
     def test_a_host_with_no_zynthian_tree_skips(self):
         outcome = self.run_with_import_raising(FileNotFoundError("/zynthian/config"))
         self.assertEqual((len(outcome.skipped), len(outcome.errors)), (1, 0))
