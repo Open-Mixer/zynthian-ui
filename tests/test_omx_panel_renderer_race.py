@@ -9,12 +9,14 @@
 # read an empty message, took the renderer as stopped and killed it (SIGKILL), and every controller was drawn stock for
 # the rest of the session.
 #
-# Three things are held here, each over the real files:
+# Four things are held here, each over the real files:
 # - the connection: two threads driving zyngine/zynthian_omx_panel_view.py's own View over a real renderer process
 #   (`--serve`, as the UI starts it), each taking its own answer, the renderer still running. The library the process
 #   loads is a stub built here from C (the race is in the client, not in what the library draws);
 # - the owner: the drawn controller and the panel widget give the renderer's calls to Tk's thread when a page change
 #   reaches them from another one, so a view is never closed under a draw;
+# - the renderer's files: a closed view's shared memory is let go by the renderer's process, so a long walk does not
+#   end in `Too many open files` and stock controllers;
 # - the look after a stop: the renderer is started again for the next page, the controllers are drawn in the look
 #   again, and a renderer that stops every time is given up after STOPS_IN_A_ROW starts, said by name.
 
@@ -208,6 +210,41 @@ class TheRendererIsStartedAgain(StubRenderer):
             for _ in range(limit - 1):
                 self.assertIsNotNone(self.stop_one())
             self.draw_one()
+
+
+class TheRendererLetsGoOfAClosedView(StubRenderer):
+    """Each view draws into shared memory of its own, which the renderer's process attaches. Kept after the view
+    closed, a walk of some 200 pages on the Pi (five views a page) took the process to its limit of open files: the
+    next view was refused (`Too many open files`) and the controllers were drawn stock."""
+
+    def files(self):
+        return len(os.listdir(f"/proc/{self.view._the_host.process.pid}/fd"))
+
+    def setUp(self):
+        super().setUp()
+        if not os.path.isdir("/proc/self/fd"):
+            self.skipTest("no /proc to count the renderer's open files in")
+
+    def page(self, w=W, h=H):
+        v = self.view.View(self.layout)
+        v.set_surface(w, h)
+        v.draw(w, h)
+        v.close()
+
+    def test_a_closed_views_memory_is_let_go(self):
+        self.page()
+        before = self.files()
+        for _ in range(40):
+            self.page()
+        self.assertEqual(self.files(), before, "the renderer's process holds a file per view it drew")
+
+    def test_a_view_that_grows_lets_go_of_the_smaller_memory(self):
+        v = self.view.View(self.layout)
+        v.draw(W, H)
+        before = self.files()
+        for k in range(2, 12):
+            v.draw(W * k, H)
+        self.assertEqual(self.files(), before, "the renderer's process holds a file per size a view was drawn at")
 
 
 # ---- The drawn controller: the look after a stop, and whose thread calls the renderer
