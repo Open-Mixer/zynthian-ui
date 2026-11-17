@@ -184,10 +184,13 @@ class TheRendererIsStartedAgain(StubRenderer):
         return process
 
     def draw_one(self):
+        """A view on the quiet library, drawn. Its process is ended after, so the next view starts one that loads the
+        library it is given (a process loads its library once)."""
         self.library(self.quiet)
         v = self.view.View(self.layout)
         self.assertEqual(len(v.draw(W, H)), W * H * 4)
-        return v.host.process
+        self.assertIsNone(v.host.process.poll(), "the renderer drew and is running")
+        self.end()
 
     def test_a_renderer_that_stops_every_time_is_given_up_and_said_by_name(self):
         limit = getattr(self.view, "STOPS_IN_A_ROW", None)
@@ -204,7 +207,7 @@ class TheRendererIsStartedAgain(StubRenderer):
         for _ in range(3):
             for _ in range(limit - 1):
                 self.assertIsNotNone(self.stop_one())
-            self.assertIsNone(self.draw_one().poll(), "the renderer drew and is running")
+            self.draw_one()
 
 
 # ---- The drawn controller: the look after a stop, and whose thread calls the renderer
@@ -290,7 +293,8 @@ class TheLookAfterAStop(ControllerHarness):
         self.assertEqual(ctrl.of("image"), [])
 
     def test_a_renderer_that_is_not_installed_stays_stock_on_the_next_page(self):
-        look_widgets.FakeView.refuse = self.panel_view.RendererAbsent("omx-panel's renderer (libomx-panel-render.so.0) is not installed")
+        absent = self.panel_view.RendererAbsent("omx-panel's renderer (libomx-panel-render.so.0) is not installed")
+        look_widgets.FakeView.refuse = absent
         with self.assertLogs(level="WARNING"):
             ctrl = self.controller(look_widgets.Zctrl())
         look_widgets.FakeView.refuse = None

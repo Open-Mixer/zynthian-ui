@@ -115,12 +115,42 @@ The renderer refuses a look short of any role, so the host must value every role
 - The plugin panel (`zynthian_widget_omx_panel`) opens its view with the same look under
   `vintage`; under `stock` it passes none and draws as it does now.
 
-## When the renderer is absent
+## When the renderer is absent, or stops
 
 `vintage` with no renderer (`RendererAbsent`: not installed, or it refused the description), or with
 a look the table cannot value (`LookShort`), draws the stock widget and logs the reason once, as the
 plugin panel falls back to strips. A renderer that stops (`RendererStopped`) is said once too: the
-image and the frame go, the stock items come back, until the controller is built again.
+image and the frame go and the stock items come back on the page it stopped on. The next page
+(`config`) is drawn in the look again: its view starts the renderer again (zynthian-ui#79). The plot
+task never does, so a renderer is started at the operator's pace, not every 32 ms. A renderer
+started `STOPS_IN_A_ROW` (3) times with no draw between is not started again in the session, said
+once by name: every later page is stock (the panel's strips), at no cost of a process per page.
+
+## One call at a time, from Tk's thread
+
+The UI talks to the renderer's process over one connection, and two threads reach it: the plot task
+(Tk's thread, every 32 ms) and a page change (the CUIA thread). zynthian-ui#79: on the Pi their
+requests and answers were mixed while omx-eq8's pages were walked. One thread unpickled the middle
+of the other's answer (`invalid load key, '\x00'`), the other read an empty message, took the
+renderer as stopped and killed it after the 2 s it waits for a process to end (`SIGKILL`); nothing
+was wrong with the renderer. Two things hold it now:
+
+- the connection carries one call and its answer at a time (`_Host.turn`), whatever thread calls,
+  the collector freeing a view included; one thread starts the renderer (`_starting`);
+- a view's calls are Tk's thread's (`in_owner_thread`). The drawn controller's `draw` and
+  `place_marker` and the plugin panel's `build`, asked from another thread, are given to Tk's thread
+  with `after_idle`: one draw per controller however many times a page change asks, and the panel's
+  build by the plot task's next refresh if that comes first. So the plot task never draws a view a
+  page change is closing (the renderer would refuse the call, and the controller would be stock for
+  the session). No lock is held across a Tk call: a Tk call from another thread waits for Tk's
+  thread, which would be waiting for the lock.
+
+Held by `tests/test_omx_panel_renderer_race.py` (11): two threads over the real `View` and a real
+renderer process (a stub library built from C) each get their own answers and the renderer runs
+on; a page change, a blank slot and an encoder's move from another thread make no renderer call in
+that thread, and Tk's thread draws them; the panel's build likewise, once; after a stop the next
+page is drawn in the look and the plot task opens no view; an absent renderer is not asked again;
+a renderer that stops at every start is started 3 times, and a draw between starts the count again.
 
 ## Held to
 
@@ -133,7 +163,8 @@ view is a stand-in that records the description, the look and the readings and d
   not imported, the canvas holds upstream's five items and no image, and the stock file's class
   names no look, no renderer and no PIL, the module's one tail `if` being the whole change;
 - the drawn controller under `vintage`: the overridden set is exactly `show`, `on_size`,
-  `plot_value`, `set_title`, `_set_color_graph`, `zynpot_abs`; the description per widget kind
+  `plot_value`, `set_title`, `_set_color_graph`, `zynpot_abs`, and `config` (where a page begins:
+  a renderer that stopped is asked again); the description per widget kind
   (knob, selector, switch, display) and the reading each gets; a new value drawn once and an
   unchanged one not at all; the frame on selection, none unselected, `color_ctrl_bg_off` readonly;
   the image equal to the renderer's RGBA composited over `color_panel_bg`, pixel for pixel, the

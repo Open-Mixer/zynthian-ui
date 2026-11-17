@@ -60,6 +60,7 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         self.touch = self.slots = None
         self.polling = False
         self.drawn = None  # the renderer's view of the screen's part of the panel, see build_drawn
+        self.build_due = False  # a build asked from another thread waits for Tk's
         self.stopped = None  # how the renderer stopped: the panel is strips until it is opened again
         self.drawn_page = None
         self.drawn_state = None
@@ -75,6 +76,13 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         return [z for z in self.zyngui_control.zcontrollers if not getattr(z, "not_on_gui", False)]
 
     def build(self):
+        if not panel_view.in_owner_thread():
+            # the page change's thread (CUIA): the view is closed and opened by Tk's thread, which draws it
+            # (zynthian-ui#79); by the first of its idle time and the plot task's next refresh
+            self.build_due = True
+            self.after_idle(self.build_if_due)
+            return
+        self.build_due = False
         if self.build_drawn():
             return
         try:
@@ -88,6 +96,10 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
             if not self.polling:
                 self.polling = True
                 self.after(15, self.poll_touch)
+
+    def build_if_due(self):
+        if self.build_due:
+            self.build()
 
     def poll_touch(self):
         if self.slots and self.touch.poll(self.slots):
@@ -294,6 +306,7 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         self.build()
 
     def refresh_gui(self):
+        self.build_if_due()
         if self.drawn:
             try:
                 if self.refresh_drawn():

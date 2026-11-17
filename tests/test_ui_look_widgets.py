@@ -378,13 +378,14 @@ class DrawnController(unittest.TestCase):
         ctrl.on_size(None)
         return ctrl
 
-    def test_it_is_a_subclass_of_the_stock_widget_overriding_only_what_paints(self):
+    def test_it_is_a_subclass_of_the_stock_widget_overriding_only_what_paints_and_where_a_page_begins(self):
         self.assertEqual(self.cls.__name__, "zynthian_gui_controller_drawn")
         stock = self.cls.__mro__[1]
         self.assertEqual(stock.__name__, "zynthian_gui_controller")
         own = {k for k, v in vars(self.cls).items() if callable(v) and not k.startswith("__")}
         overridden = own & set(vars(stock))
-        self.assertEqual(overridden, {"show", "on_size", "plot_value", "set_title", "_set_color_graph", "zynpot_abs"})
+        # config: a new page, where a renderer that stopped is asked again (zynthian-ui#79); the rest paints
+        self.assertEqual(overridden, {"config", "show", "on_size", "plot_value", "set_title", "_set_color_graph", "zynpot_abs"})
 
     def test_a_numeric_controller_is_a_knob_with_its_value(self):
         ctrl = self.controller(Zctrl(value=0.25))
