@@ -92,7 +92,9 @@ jobs:
         run: |
           apt-get install -y -qq --no-install-recommends git ca-certificates build-essential pkgconf libcjson-dev \
             libomx-contract-dev libomxdsp-dev binutils
-          SHA=1b04102ce1388a658b658ca1ac3775d91aa4e0c0
+          # omx-panel main at the group model (omx-panel#63): the cut tests/fixtures/plugin_hostd records; moves to the release
+          # that carries it (#71)
+          SHA=85a44385acfc352f5188f84c52a33ada66421814
           git clone -q https://github.com/Open-Mixer/omx-panel /tmp/omx-panel
           git -C /tmp/omx-panel checkout -q "$SHA"
           test -f /tmp/omx-panel/schema/gestures.json
