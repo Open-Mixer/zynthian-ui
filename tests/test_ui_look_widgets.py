@@ -44,6 +44,7 @@ DRAWN = os.path.join(ROOT, "zyngui", "zynthian_gui_controller_drawn.py")
 LOOK = os.path.join(ROOT, "zyngine", "zynthian_ui_look.py")
 VIEW = os.path.join(ROOT, "zyngine", "zynthian_omx_panel_view.py")
 LOOK_BASE = os.path.join(HERE, "fixtures", "omx_panel", "look.json")  # omx-panel tools/look.json, as the package installs it
+CI = os.environ.get("CI") == "true"  # where a skip is a test that ran nothing: refused
 
 # The looks as zynthian-sys declares them (config/ui-looks/*.sh): the ZYNTHIAN_UI_COLOR_* each sets
 STOCK = {"ZYNTHIAN_UI_COLOR_BG": "#000000", "ZYNTHIAN_UI_COLOR_TX": "#ffffff", "ZYNTHIAN_UI_COLOR_TX_OFF": "#e0e0e0",
@@ -244,7 +245,7 @@ def load_controller(environ, tools_dir=None):
     view.View = FakeView
     FakeView.module = view
     if tools_dir:
-        view.TOOLS_DIR = tools_dir
+        view.tools_dir = lambda: tools_dir  # the test's directory, whatever $ZYNTHIAN_OMX_PANEL_TOOLS says on this desk or in CI
     modules = {"tkinter": tk, "tkinter.font": tkfont, "zyngui": gui, "zyngui.zynthian_gui_config": config, "zyngine": engine,
                "zyngine.zynthian_position_law": law, "zyngine.zynthian_omx_panel_view": view, "zyncoder": zyncoder,
                "zyncoder.zyncore": zyncore}
@@ -327,6 +328,16 @@ class StockIsUpstream(unittest.TestCase):
 
 
 # ---- The drawn controller
+
+class WhatCIMustHave(unittest.TestCase):
+    @unittest.skipUnless(CI, "a desk may lack PIL: the drawn tests skip and say so")
+    def test_ci_has_pil_so_the_drawn_controller_tests_run(self):
+        self.assertIsNotNone(Image, "CI has no PIL (python3-pil): every drawn-controller test skipped and ran nothing")
+
+    @unittest.skipUnless(CI, "a desk may lack omx-panel's tools: the drift check skips and says so")
+    def test_ci_names_omx_panels_tools_so_the_fixture_is_held(self):
+        self.assertTrue(os.environ.get("ZYNTHIAN_OMX_PANEL_TOOLS"), "CI names no $ZYNTHIAN_OMX_PANEL_TOOLS: the fixture drift check ran nothing")
+
 
 @unittest.skipUnless(Image, "no PIL")
 class DrawnController(unittest.TestCase):
@@ -481,6 +492,21 @@ class DrawnController(unittest.TestCase):
             self.assertEqual(ctrl.items[ctrl.graph]["state"], "normal")
             self.assertEqual(ctrl.of("image"), [])
 
+    def test_a_refused_look_is_refused_from_the_cache_once_the_base_is_gone(self):
+        """One read and one warning for a refused look: the second controller meets the cached refusal, never a missing
+        file read as 'no look' and a view in the renderer's own look."""
+        base = json.load(open(LOOK_BASE))
+        self.reload({**base, "tokens": {k: v for k, v in base["tokens"].items() if k != "--legend"}})
+        with self.assertLogs(level="WARNING") as log:
+            a = self.controller(Zctrl())
+            shutil.rmtree(self.tools)
+            b = self.controller(Zctrl(symbol="res", short_name="Res"))
+        self.assertEqual(len(log.output), 1, log.output)
+        self.assertIn("--legend", log.output[0])
+        self.assertEqual(FakeView.opened, [])
+        for ctrl in (a, b):
+            self.assertEqual(ctrl.items[ctrl.graph]["state"], "normal")
+
     def test_a_look_without_tokens_is_refused_by_name_and_draws_stock(self):
         self.reload({"theme": "dark"})
         with self.assertLogs(level="WARNING") as log:
@@ -558,7 +584,10 @@ class PanelOverAShortLook(unittest.TestCase):
 class LookBaseFixture(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("ZYNTHIAN_OMX_PANEL_TOOLS"), "no omx-panel tools directory ($ZYNTHIAN_OMX_PANEL_TOOLS, CI builds one)")
     def test_the_fixture_is_the_renderers_look_json_byte_for_byte(self):
-        with open(LOOK_BASE, "rb") as ours, open(os.path.join(os.environ["ZYNTHIAN_OMX_PANEL_TOOLS"], "look.json"), "rb") as theirs:
+        theirs = os.path.join(os.environ["ZYNTHIAN_OMX_PANEL_TOOLS"], "look.json")
+        if not os.path.exists(theirs):
+            self.fail(f"$ZYNTHIAN_OMX_PANEL_TOOLS names {os.environ['ZYNTHIAN_OMX_PANEL_TOOLS']}, which holds no look.json")
+        with open(LOOK_BASE, "rb") as ours, open(theirs, "rb") as theirs:
             self.assertEqual(ours.read(), theirs.read(), "tests/fixtures/omx_panel/look.json drifted from omx-panel tools/look.json")
 
 
