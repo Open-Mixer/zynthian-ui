@@ -50,7 +50,7 @@ class startup_imports(unittest.TestCase):
             sys.path.insert(0, ROOT)
         try:
             from zyngui import zynthian_gui_engine, zynthian_gui_chain_options
-        except (ImportError, OSError) as e:  # no tkinter or zyncoder, or no /zynthian tree to read
+        except (ImportError, FileNotFoundError) as e:  # no tkinter or zyncoder, or no /zynthian tree to read; a library that will not load is an OSError and fails
             self.skipTest(f"not a Zynthian, so it cannot run in CI (it needs the Zynthian's tkinter, zyncoder and /zynthian tree) and runs on the Pi: {e}")
         for screen in (zynthian_gui_engine, zynthian_gui_chain_options):
             self.assertTrue(hasattr(screen.plugin_hostd, "estimate"), screen.__name__)
