@@ -1,0 +1,33 @@
+{
+  "$comment": "GENERATED — DO NOT EDIT BY HAND. The look the MOD GUI wears (tools/modgui-gen.mjs) and the renderer reads: every colour role of schema/look-roles.json at its one default, and the font. Regenerate: `node tools/look.mjs`, then commit the result.",
+  "theme": "dark",
+  "accent": "cyan",
+  "finish": "aluminium",
+  "style": "modern",
+  "tokens": {
+    "--surface": "#15191e",
+    "--surface-2": "#1c2127",
+    "--surface-3": "#242b33",
+    "--glass": "#0d1115",
+    "--border": "#2a323b",
+    "--border-strong": "#3a444f",
+    "--ink": "#eaf0f4",
+    "--ink-dim": "#8a97a3",
+    "--ink-faint": "#5a6571",
+    "--legend": "#e9dfc6",
+    "--accent": "#28c8e6",
+    "--meter-green": "#34d17b",
+    "--meter-amber": "#f2b632",
+    "--meter-red": "#ff4d45",
+    "--eq-delta-boost": "#e0a84a",
+    "--eq-delta-cut": "#4f95c9",
+    "--state-engaged": "#f2b03a",
+    "--state-reduction": "#ef5a3f",
+    "--state-bypass": "#7f8389",
+    "--origin-fbs": "#ff7ad0",
+    "--origin-hrp": "#f5d76e",
+    "--origin-room-mode": "#4a86f0",
+    "--font-ui": "\"Inter\", \"Helvetica Neue\", system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif",
+    "--font-file": "fonts/Inter-Regular.ttf"
+  }
+}
