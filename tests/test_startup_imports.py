@@ -7,6 +7,8 @@
 # python3 and pytest and none of that (the zyncoder directory of this repository is a submodule that is not checked
 # out there), so it cannot run in CI: it skips with the reason, and runs on the Pi with `python3 -m pytest
 # tests/test_startup_imports.py`.
+# A module that is absent (ModuleNotFoundError) or a missing /zynthian tree skips; a library that is present and fails
+# to load (any other ImportError, an OSError) fails, on the Pi too.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
@@ -58,7 +60,7 @@ class startup_imports(unittest.TestCase):
             sys.path.insert(0, ROOT)
         try:
             from zyngui import zynthian_gui_engine, zynthian_gui_chain_options
-        except (ImportError, FileNotFoundError) as e:  # no tkinter or zyncoder, or no /zynthian tree to read; a library that will not load is an OSError and fails
+        except (ModuleNotFoundError, FileNotFoundError) as e:  # a module this host lacks, or no /zynthian tree; any other ImportError or OSError is a present library that will not load, and fails
             self.skipTest(f"not a Zynthian, so it cannot run in CI (it needs the Zynthian's tkinter, zyncoder and /zynthian tree) and runs on the Pi: {e}")
         for screen in (zynthian_gui_engine, zynthian_gui_chain_options):
             self.assertTrue(hasattr(screen.plugin_hostd, "estimate"), screen.__name__)
