@@ -124,7 +124,7 @@ image and the frame go, the stock items come back, until the controller is built
 
 ## Held to
 
-`tests/test_ui_look_widgets.py` (42), with real PIL (the Pi has it; CI installs it); the renderer's
+`tests/test_ui_look_widgets.py` (36, the drift check among them skipped where no omx-panel tools directory is named), with real PIL (the Pi has it; CI installs it); the renderer's
 view is a stand-in that records the description, the look and the readings and draws a PIL frame:
 
 - the switch: `ui_look` from the environment; unset and `stock` read `stock`; a word that is no
