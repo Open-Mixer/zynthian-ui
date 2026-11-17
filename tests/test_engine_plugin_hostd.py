@@ -1046,6 +1046,55 @@ class test_pages(plugin_hostd_case):
         self.assertEqual(dict(self.screens(proc))["Band 2"], ["freq2", None, "q2", "width2"], "the others keep their slots")
         self.assertEqual([z.symbol if z else None for z in proc.get_ctrl_screen("Band 2")], ["freq2", None, "q2", "width2"])
 
+    # ---- a repeated group (omx-panel's group model, docs/group-model.md P1): a screen never cuts inside a band ----
+
+    def band_plugin(self, name):
+        """A plugin whose descriptor repeats a group per band, with omx-panel main's cut recorded beside it (omx-eq8:
+        omx-plugins 0.19.3 through omx-panel's corpus; calf-mbc: omx-panel's Calf-multiband-compressor-shaped test
+        descriptor, four bands of six). Returns the processor and its screens as [(name, [control name or None])]."""
+        path = os.path.join(FIXTURES, f"{name}.descriptor.json")
+        self.serve(descriptors={"urn:test:big": path})
+        proc = self.add(self.chain(), "PH/Big")
+        with open(path) as f:
+            names = {str(c["id"]): c["name"] for c in json.load(f)["controls"]}
+        return proc, [(n, [names[k] if k else None for k in keys]) for n, keys in self.screens(proc)]
+
+    @staticmethod
+    def bands_on(screen):
+        """The bands a screen's controls belong to, by the band number in their names ("Band 3 Gain" -> "3")."""
+        return {m.group(1) for c in screen if c for m in [re.match(r"Band (\d+) ", c)] if m}
+
+    def test_omx_eq8_shows_eight_band_screens_each_opening_with_the_bands_on_off(self):
+        proc, screens = self.band_plugin("omx-eq8")
+        got = [(n, [s[0] if s else None for s in rows]) for n, rows in proc.engine.pages()]
+        self.assertEqual(got, self.recorded("omx-eq8", 4), "the engine adds, reorders and drops nothing")
+        heads = [(n, k) for n, k in screens if re.fullmatch(r"Bands: Band \d", n)]
+        self.assertEqual([n for n, _ in heads], [f"Bands: Band {i}" for i in range(1, 9)], "eight band screens")
+        for n, k in heads:
+            i = n[-1]
+            self.assertEqual(k, [f"Band {i} On", f"Band {i} Frequency", f"Band {i} Gain", f"Band {i} Q"], n)
+        for n, k in screens:
+            self.assertLessEqual(len(self.bands_on(k)), 1, f"{n} is cut across two bands: {k}")
+        # the fifth control of a band, its type, follows on the band's own continuation, never on the next band's screen
+        for i in range(1, 9):
+            self.assertEqual(dict(screens)[f"Bands: Band {i} 2"], [f"Band {i} Type", None, None, None])
+        self.assertEqual(screens[0][0], "Easy")
+        self.assertEqual(screens[-1], ("Bands: LPF", ["LPF Frequency", "LPF Slope", None, None]), "the edges are the model's")
+
+    def test_a_calf_multiband_shaped_plugin_never_shows_a_screen_across_two_bands(self):
+        proc, screens = self.band_plugin("calf-mbc")
+        got = [(n, [s[0] if s else None for s in rows]) for n, rows in proc.engine.pages()]
+        self.assertEqual(got, self.recorded("calf-mbc", 4), "the engine adds, reorders and drops nothing")
+        for n, k in screens:
+            self.assertLessEqual(len(self.bands_on(k)), 1, f"{n} is cut across two bands: {k}")
+        # a band of six is two screens of its own, opening with its bypass; band 1's first four are the Easy page's
+        for i in (2, 3, 4):
+            self.assertEqual(dict(screens)[f"Band: Band {i}"], [f"Band {i} Bypass", f"Band {i} Threshold", f"Band {i} Ratio", f"Band {i} Attack"])
+            self.assertEqual(dict(screens)[f"Band: Band {i} 2"], [f"Band {i} Release", f"Band {i} Makeup", None, None])
+        self.assertEqual(screens[0], ("Easy", ["Band 1 Bypass", "Band 1 Threshold", "Band 1 Ratio", "Band 1 Attack"]))
+        self.assertEqual(screens[1], ("Band: Band 1", ["Band 1 Release", "Band 1 Makeup", None, None]))
+        self.assertEqual([n for n, _ in screens], ["Easy", "Band: Band 1"] + [f"Band: Band {i}{s}" for i in (2, 3, 4) for s in ("", " 2")])
+
     REMOTE = "clap:/usr/lib/clap/test.clap#org.test.remote"
 
     def remote(self, pages=True):

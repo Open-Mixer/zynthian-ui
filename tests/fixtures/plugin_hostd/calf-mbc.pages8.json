@@ -1,0 +1,77 @@
+[
+  {
+    "section": null,
+    "sectionName": "Easy",
+    "pageName": "Easy",
+    "ids": [
+      "b1_bypass",
+      "b1_thresh",
+      "b1_ratio",
+      "b1_attack",
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  {
+    "section": 0,
+    "sectionName": "Band",
+    "pageName": "Band: Band 1",
+    "ids": [
+      "b1_release",
+      "b1_makeup",
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  {
+    "section": 0,
+    "sectionName": "Band",
+    "pageName": "Band: Band 2",
+    "ids": [
+      "b2_bypass",
+      "b2_thresh",
+      "b2_ratio",
+      "b2_attack",
+      "b2_release",
+      "b2_makeup",
+      null,
+      null
+    ]
+  },
+  {
+    "section": 0,
+    "sectionName": "Band",
+    "pageName": "Band: Band 3",
+    "ids": [
+      "b3_bypass",
+      "b3_thresh",
+      "b3_ratio",
+      "b3_attack",
+      "b3_release",
+      "b3_makeup",
+      null,
+      null
+    ]
+  },
+  {
+    "section": 0,
+    "sectionName": "Band",
+    "pageName": "Band: Band 4",
+    "ids": [
+      "b4_bypass",
+      "b4_thresh",
+      "b4_ratio",
+      "b4_attack",
+      "b4_release",
+      "b4_makeup",
+      null,
+      null
+    ]
+  }
+]

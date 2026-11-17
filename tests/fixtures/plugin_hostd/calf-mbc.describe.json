@@ -1,0 +1,657 @@
+{
+  "description": {
+    "family": "none",
+    "fingerprint": "93ccdb281439807bde6098ce5679a545f39ac89772c44da7c368d2f036c52c29",
+    "easy": [
+      "b1_bypass",
+      "b1_thresh",
+      "b1_ratio",
+      "b1_attack"
+    ],
+    "params": [
+      {
+        "kind": "number",
+        "symbol": "b1_bypass",
+        "name": "Band 1 Bypass",
+        "unit": "none",
+        "scale": "stepped",
+        "step": 1,
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "kind": "number",
+        "symbol": "b1_thresh",
+        "name": "Band 1 Threshold",
+        "unit": "db",
+        "scale": "linear",
+        "step": 0,
+        "min": -60,
+        "max": 0,
+        "default": -18
+      },
+      {
+        "kind": "number",
+        "symbol": "b1_ratio",
+        "name": "Band 1 Ratio",
+        "unit": "none",
+        "scale": "linear",
+        "step": 0,
+        "min": 1,
+        "max": 20,
+        "default": 4
+      },
+      {
+        "kind": "number",
+        "symbol": "b1_attack",
+        "name": "Band 1 Attack",
+        "unit": "ms",
+        "scale": "linear",
+        "step": 0,
+        "min": 0.1,
+        "max": 100,
+        "default": 10
+      },
+      {
+        "kind": "number",
+        "symbol": "b1_release",
+        "name": "Band 1 Release",
+        "unit": "ms",
+        "scale": "linear",
+        "step": 0,
+        "min": 5,
+        "max": 1000,
+        "default": 120
+      },
+      {
+        "kind": "number",
+        "symbol": "b1_makeup",
+        "name": "Band 1 Makeup",
+        "unit": "db",
+        "scale": "linear",
+        "step": 0,
+        "min": 0,
+        "max": 24,
+        "default": 0
+      },
+      {
+        "kind": "number",
+        "symbol": "b2_bypass",
+        "name": "Band 2 Bypass",
+        "unit": "none",
+        "scale": "stepped",
+        "step": 1,
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "kind": "number",
+        "symbol": "b2_thresh",
+        "name": "Band 2 Threshold",
+        "unit": "db",
+        "scale": "linear",
+        "step": 0,
+        "min": -60,
+        "max": 0,
+        "default": -18
+      },
+      {
+        "kind": "number",
+        "symbol": "b2_ratio",
+        "name": "Band 2 Ratio",
+        "unit": "none",
+        "scale": "linear",
+        "step": 0,
+        "min": 1,
+        "max": 20,
+        "default": 4
+      },
+      {
+        "kind": "number",
+        "symbol": "b2_attack",
+        "name": "Band 2 Attack",
+        "unit": "ms",
+        "scale": "linear",
+        "step": 0,
+        "min": 0.1,
+        "max": 100,
+        "default": 10
+      },
+      {
+        "kind": "number",
+        "symbol": "b2_release",
+        "name": "Band 2 Release",
+        "unit": "ms",
+        "scale": "linear",
+        "step": 0,
+        "min": 5,
+        "max": 1000,
+        "default": 120
+      },
+      {
+        "kind": "number",
+        "symbol": "b2_makeup",
+        "name": "Band 2 Makeup",
+        "unit": "db",
+        "scale": "linear",
+        "step": 0,
+        "min": 0,
+        "max": 24,
+        "default": 0
+      },
+      {
+        "kind": "number",
+        "symbol": "b3_bypass",
+        "name": "Band 3 Bypass",
+        "unit": "none",
+        "scale": "stepped",
+        "step": 1,
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "kind": "number",
+        "symbol": "b3_thresh",
+        "name": "Band 3 Threshold",
+        "unit": "db",
+        "scale": "linear",
+        "step": 0,
+        "min": -60,
+        "max": 0,
+        "default": -18
+      },
+      {
+        "kind": "number",
+        "symbol": "b3_ratio",
+        "name": "Band 3 Ratio",
+        "unit": "none",
+        "scale": "linear",
+        "step": 0,
+        "min": 1,
+        "max": 20,
+        "default": 4
+      },
+      {
+        "kind": "number",
+        "symbol": "b3_attack",
+        "name": "Band 3 Attack",
+        "unit": "ms",
+        "scale": "linear",
+        "step": 0,
+        "min": 0.1,
+        "max": 100,
+        "default": 10
+      },
+      {
+        "kind": "number",
+        "symbol": "b3_release",
+        "name": "Band 3 Release",
+        "unit": "ms",
+        "scale": "linear",
+        "step": 0,
+        "min": 5,
+        "max": 1000,
+        "default": 120
+      },
+      {
+        "kind": "number",
+        "symbol": "b3_makeup",
+        "name": "Band 3 Makeup",
+        "unit": "db",
+        "scale": "linear",
+        "step": 0,
+        "min": 0,
+        "max": 24,
+        "default": 0
+      },
+      {
+        "kind": "number",
+        "symbol": "b4_bypass",
+        "name": "Band 4 Bypass",
+        "unit": "none",
+        "scale": "stepped",
+        "step": 1,
+        "min": 0,
+        "max": 1,
+        "default": 0
+      },
+      {
+        "kind": "number",
+        "symbol": "b4_thresh",
+        "name": "Band 4 Threshold",
+        "unit": "db",
+        "scale": "linear",
+        "step": 0,
+        "min": -60,
+        "max": 0,
+        "default": -18
+      },
+      {
+        "kind": "number",
+        "symbol": "b4_ratio",
+        "name": "Band 4 Ratio",
+        "unit": "none",
+        "scale": "linear",
+        "step": 0,
+        "min": 1,
+        "max": 20,
+        "default": 4
+      },
+      {
+        "kind": "number",
+        "symbol": "b4_attack",
+        "name": "Band 4 Attack",
+        "unit": "ms",
+        "scale": "linear",
+        "step": 0,
+        "min": 0.1,
+        "max": 100,
+        "default": 10
+      },
+      {
+        "kind": "number",
+        "symbol": "b4_release",
+        "name": "Band 4 Release",
+        "unit": "ms",
+        "scale": "linear",
+        "step": 0,
+        "min": 5,
+        "max": 1000,
+        "default": 120
+      },
+      {
+        "kind": "number",
+        "symbol": "b4_makeup",
+        "name": "Band 4 Makeup",
+        "unit": "db",
+        "scale": "linear",
+        "step": 0,
+        "min": 0,
+        "max": 24,
+        "default": 0
+      }
+    ],
+    "sections": [
+      {
+        "key": "band_1",
+        "labelKey": "",
+        "label": "Band",
+        "matrix": {
+          "orientation": "rows",
+          "title": "Band",
+          "heads": [
+            {
+              "label": "Band 1",
+              "on": {
+                "symbol": "b1_bypass",
+                "sense": "off"
+              },
+              "edge": null
+            },
+            {
+              "label": "Band 2",
+              "on": {
+                "symbol": "b2_bypass",
+                "sense": "off"
+              },
+              "edge": null
+            },
+            {
+              "label": "Band 3",
+              "on": {
+                "symbol": "b3_bypass",
+                "sense": "off"
+              },
+              "edge": null
+            },
+            {
+              "label": "Band 4",
+              "on": {
+                "symbol": "b4_bypass",
+                "sense": "off"
+              },
+              "edge": null
+            }
+          ],
+          "rows": [
+            {
+              "label": "Threshold"
+            },
+            {
+              "label": "Ratio"
+            },
+            {
+              "label": "Attack"
+            },
+            {
+              "label": "Release"
+            },
+            {
+              "label": "Makeup"
+            },
+            {
+              "label": "On",
+              "head": true
+            }
+          ],
+          "cells": [
+            [
+              "b1_thresh",
+              "b2_thresh",
+              "b3_thresh",
+              "b4_thresh"
+            ],
+            [
+              "b1_ratio",
+              "b2_ratio",
+              "b3_ratio",
+              "b4_ratio"
+            ],
+            [
+              "b1_attack",
+              "b2_attack",
+              "b3_attack",
+              "b4_attack"
+            ],
+            [
+              "b1_release",
+              "b2_release",
+              "b3_release",
+              "b4_release"
+            ],
+            [
+              "b1_makeup",
+              "b2_makeup",
+              "b3_makeup",
+              "b4_makeup"
+            ],
+            [
+              "b1_bypass",
+              "b2_bypass",
+              "b3_bypass",
+              "b4_bypass"
+            ]
+          ]
+        }
+      }
+    ],
+    "controls": [
+      {
+        "symbol": "b1_bypass",
+        "section": "band_1",
+        "widget": "switch",
+        "labelKey": "",
+        "label": "Band 1 Bypass",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b1_thresh",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 1 Threshold",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b1_ratio",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 1 Ratio",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b1_attack",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 1 Attack",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b1_release",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 1 Release",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b1_makeup",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 1 Makeup",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b2_bypass",
+        "section": "band_1",
+        "widget": "switch",
+        "labelKey": "",
+        "label": "Band 2 Bypass",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b2_thresh",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 2 Threshold",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b2_ratio",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 2 Ratio",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b2_attack",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 2 Attack",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b2_release",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 2 Release",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b2_makeup",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 2 Makeup",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b3_bypass",
+        "section": "band_1",
+        "widget": "switch",
+        "labelKey": "",
+        "label": "Band 3 Bypass",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b3_thresh",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 3 Threshold",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b3_ratio",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 3 Ratio",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b3_attack",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 3 Attack",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b3_release",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 3 Release",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b3_makeup",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 3 Makeup",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b4_bypass",
+        "section": "band_1",
+        "widget": "switch",
+        "labelKey": "",
+        "label": "Band 4 Bypass",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b4_thresh",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 4 Threshold",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b4_ratio",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 4 Ratio",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b4_attack",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 4 Attack",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b4_release",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 4 Release",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "b4_makeup",
+        "section": "band_1",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Band 4 Makeup",
+        "visibleWhen": null
+      }
+    ],
+    "meters": [],
+    "roles": [],
+    "displays": [],
+    "pages": [
+      {
+        "section": null,
+        "sectionName": "Easy",
+        "pageName": "Easy",
+        "ids": [
+          "b1_bypass",
+          "b1_thresh",
+          "b1_ratio",
+          "b1_attack",
+          null,
+          null,
+          null,
+          null
+        ]
+      },
+      {
+        "section": 0,
+        "sectionName": "Band",
+        "pageName": "Band: Band 1",
+        "ids": [
+          "b1_release",
+          "b1_makeup",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      },
+      {
+        "section": 0,
+        "sectionName": "Band",
+        "pageName": "Band: Band 2",
+        "ids": [
+          "b2_bypass",
+          "b2_thresh",
+          "b2_ratio",
+          "b2_attack",
+          "b2_release",
+          "b2_makeup",
+          null,
+          null
+        ]
+      },
+      {
+        "section": 0,
+        "sectionName": "Band",
+        "pageName": "Band: Band 3",
+        "ids": [
+          "b3_bypass",
+          "b3_thresh",
+          "b3_ratio",
+          "b3_attack",
+          "b3_release",
+          "b3_makeup",
+          null,
+          null
+        ]
+      },
+      {
+        "section": 0,
+        "sectionName": "Band",
+        "pageName": "Band: Band 4",
+        "ids": [
+          "b4_bypass",
+          "b4_thresh",
+          "b4_ratio",
+          "b4_attack",
+          "b4_release",
+          "b4_makeup",
+          null,
+          null
+        ]
+      }
+    ]
+  },
+  "refusals": []
+}
