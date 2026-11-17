@@ -460,6 +460,22 @@ class LookTable(unittest.TestCase):
         self.assertIsNone(self.look.look_for(vintage, os.path.join(tempfile.gettempdir(), "no-such-tools-dir")))
 
 
+# ---- The plugin panel wears the same look
+
+class PanelWearsTheLook(unittest.TestCase):
+    def test_the_panel_widget_opens_its_view_with_the_uis_look(self):
+        """zynthian_widget_omx_panel's one View(...) call carries look=look_for(zynthian_gui_config, tools_dir()): the
+        same table the drawn controller uses (its harness is tests/test_omx_panel_renderer_crash.py's, not repeated)."""
+        tree = ast.parse(open(os.path.join(ROOT, "zyngui", "zynthian_widget_omx_panel.py")).read())
+        calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "View"]
+        self.assertEqual(len(calls), 1)
+        look = next((k.value for k in calls[0].keywords if k.arg == "look"), None)
+        self.assertIsNotNone(look, "the panel's view is opened in the renderer's own look, not the UI's")
+        self.assertIsInstance(look, ast.Call)
+        self.assertEqual(ast.unparse(look.func), "ui_look.look_for")
+        self.assertEqual([ast.unparse(a) for a in look.args], ["zynthian_gui_config", "panel_view.tools_dir()"])
+
+
 # ---- The look's way to the renderer
 
 class LookDir(unittest.TestCase):
