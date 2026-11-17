@@ -4,10 +4,32 @@
     "sectionName": "Easy",
     "pageName": "Easy",
     "ids": [
+      8,
+      13,
+      23,
+      28
+    ]
+  },
+  {
+    "section": null,
+    "sectionName": "Easy",
+    "pageName": "Easy 2",
+    "ids": [
+      38,
+      43,
+      null,
+      null
+    ]
+  },
+  {
+    "section": 0,
+    "sectionName": "Bands",
+    "pageName": "Bands: HPF",
+    "ids": [
       0,
       1,
       2,
-      3
+      null
     ]
   },
   {
@@ -17,19 +39,8 @@
     "ids": [
       10,
       7,
-      8,
-      9
-    ]
-  },
-  {
-    "section": 0,
-    "sectionName": "Bands",
-    "pageName": "Bands: Band 1 2",
-    "ids": [
-      6,
-      null,
-      null,
-      null
+      9,
+      6
     ]
   },
   {
@@ -39,19 +50,8 @@
     "ids": [
       15,
       12,
-      13,
-      14
-    ]
-  },
-  {
-    "section": 0,
-    "sectionName": "Bands",
-    "pageName": "Bands: Band 2 2",
-    "ids": [
-      11,
-      null,
-      null,
-      null
+      14,
+      11
     ]
   },
   {
@@ -83,19 +83,8 @@
     "ids": [
       25,
       22,
-      23,
-      24
-    ]
-  },
-  {
-    "section": 0,
-    "sectionName": "Bands",
-    "pageName": "Bands: Band 4 2",
-    "ids": [
-      21,
-      null,
-      null,
-      null
+      24,
+      21
     ]
   },
   {
@@ -105,19 +94,8 @@
     "ids": [
       30,
       27,
-      28,
-      29
-    ]
-  },
-  {
-    "section": 0,
-    "sectionName": "Bands",
-    "pageName": "Bands: Band 5 2",
-    "ids": [
-      26,
-      null,
-      null,
-      null
+      29,
+      26
     ]
   },
   {
@@ -149,19 +127,8 @@
     "ids": [
       40,
       37,
-      38,
-      39
-    ]
-  },
-  {
-    "section": 0,
-    "sectionName": "Bands",
-    "pageName": "Bands: Band 7 2",
-    "ids": [
-      36,
-      null,
-      null,
-      null
+      39,
+      36
     ]
   },
   {
@@ -171,19 +138,8 @@
     "ids": [
       45,
       42,
-      43,
-      44
-    ]
-  },
-  {
-    "section": 0,
-    "sectionName": "Bands",
-    "pageName": "Bands: Band 8 2",
-    "ids": [
-      41,
-      null,
-      null,
-      null
+      44,
+      41
     ]
   },
   {
@@ -191,9 +147,9 @@
     "sectionName": "Bands",
     "pageName": "Bands: LPF",
     "ids": [
+      3,
       4,
       5,
-      null,
       null
     ]
   }

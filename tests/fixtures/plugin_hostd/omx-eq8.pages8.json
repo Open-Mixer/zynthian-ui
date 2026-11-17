@@ -4,10 +4,25 @@
     "sectionName": "Easy",
     "pageName": "Easy",
     "ids": [
+      8,
+      13,
+      23,
+      28,
+      38,
+      43,
+      null,
+      null
+    ]
+  },
+  {
+    "section": 0,
+    "sectionName": "Bands",
+    "pageName": "Bands: HPF",
+    "ids": [
       0,
       1,
       2,
-      3,
+      null,
       null,
       null,
       null,
@@ -21,9 +36,9 @@
     "ids": [
       10,
       7,
-      8,
       9,
       6,
+      null,
       null,
       null,
       null
@@ -36,9 +51,9 @@
     "ids": [
       15,
       12,
-      13,
       14,
       11,
+      null,
       null,
       null,
       null
@@ -66,9 +81,9 @@
     "ids": [
       25,
       22,
-      23,
       24,
       21,
+      null,
       null,
       null,
       null
@@ -81,9 +96,9 @@
     "ids": [
       30,
       27,
-      28,
       29,
       26,
+      null,
       null,
       null,
       null
@@ -111,9 +126,9 @@
     "ids": [
       40,
       37,
-      38,
       39,
       36,
+      null,
       null,
       null,
       null
@@ -126,9 +141,9 @@
     "ids": [
       45,
       42,
-      43,
       44,
       41,
+      null,
       null,
       null,
       null
@@ -139,9 +154,9 @@
     "sectionName": "Bands",
     "pageName": "Bands: LPF",
     "ids": [
+      3,
       4,
       5,
-      null,
       null,
       null,
       null,

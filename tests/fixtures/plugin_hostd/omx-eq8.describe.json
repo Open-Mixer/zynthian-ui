@@ -1,12 +1,14 @@
 {
   "description": {
-    "family": "none",
-    "fingerprint": "411e9496ed70360e9ca928f8e19b63c8030dac91dacc68644bf6fc79ff90203b",
+    "family": "eq",
+    "fingerprint": "9b6d5217400d05f54ff36f860ea40c9b8e98c9a1ce45bdf87d0f445117d5ba7a",
     "easy": [
-      "hpf_on",
-      "hpf_freq",
-      "hpf_slope",
-      "lpf_on"
+      "b1_gain",
+      "b2_gain",
+      "b4_gain",
+      "b5_gain",
+      "b7_gain",
+      "b8_gain"
     ],
     "params": [
       {
@@ -1154,18 +1156,381 @@
       }
     ],
     "meters": [],
-    "roles": [],
-    "displays": [],
+    "roles": [
+      {
+        "role": "hpf_freq",
+        "index": 0,
+        "symbol": "hpf_freq",
+        "unit": "hz"
+      },
+      {
+        "role": "lpf_freq",
+        "index": 0,
+        "symbol": "lpf_freq",
+        "unit": "hz"
+      },
+      {
+        "role": "band_freq",
+        "index": 0,
+        "symbol": "b1_freq",
+        "unit": "hz"
+      },
+      {
+        "role": "band_gain",
+        "index": 0,
+        "symbol": "b1_gain",
+        "unit": "db"
+      },
+      {
+        "role": "band_q",
+        "index": 0,
+        "symbol": "b1_q",
+        "unit": "none"
+      },
+      {
+        "role": "band_freq",
+        "index": 1,
+        "symbol": "b2_freq",
+        "unit": "hz"
+      },
+      {
+        "role": "band_gain",
+        "index": 1,
+        "symbol": "b2_gain",
+        "unit": "db"
+      },
+      {
+        "role": "band_q",
+        "index": 1,
+        "symbol": "b2_q",
+        "unit": "none"
+      },
+      {
+        "role": "band_freq",
+        "index": 2,
+        "symbol": "b3_freq",
+        "unit": "hz"
+      },
+      {
+        "role": "band_gain",
+        "index": 2,
+        "symbol": "b3_gain",
+        "unit": "db"
+      },
+      {
+        "role": "band_q",
+        "index": 2,
+        "symbol": "b3_q",
+        "unit": "none"
+      },
+      {
+        "role": "band_freq",
+        "index": 3,
+        "symbol": "b4_freq",
+        "unit": "hz"
+      },
+      {
+        "role": "band_gain",
+        "index": 3,
+        "symbol": "b4_gain",
+        "unit": "db"
+      },
+      {
+        "role": "band_q",
+        "index": 3,
+        "symbol": "b4_q",
+        "unit": "none"
+      },
+      {
+        "role": "band_freq",
+        "index": 4,
+        "symbol": "b5_freq",
+        "unit": "hz"
+      },
+      {
+        "role": "band_gain",
+        "index": 4,
+        "symbol": "b5_gain",
+        "unit": "db"
+      },
+      {
+        "role": "band_q",
+        "index": 4,
+        "symbol": "b5_q",
+        "unit": "none"
+      },
+      {
+        "role": "band_freq",
+        "index": 5,
+        "symbol": "b6_freq",
+        "unit": "hz"
+      },
+      {
+        "role": "band_gain",
+        "index": 5,
+        "symbol": "b6_gain",
+        "unit": "db"
+      },
+      {
+        "role": "band_q",
+        "index": 5,
+        "symbol": "b6_q",
+        "unit": "none"
+      },
+      {
+        "role": "band_freq",
+        "index": 6,
+        "symbol": "b7_freq",
+        "unit": "hz"
+      },
+      {
+        "role": "band_gain",
+        "index": 6,
+        "symbol": "b7_gain",
+        "unit": "db"
+      },
+      {
+        "role": "band_q",
+        "index": 6,
+        "symbol": "b7_q",
+        "unit": "none"
+      },
+      {
+        "role": "band_freq",
+        "index": 7,
+        "symbol": "b8_freq",
+        "unit": "hz"
+      },
+      {
+        "role": "band_gain",
+        "index": 7,
+        "symbol": "b8_gain",
+        "unit": "db"
+      },
+      {
+        "role": "band_q",
+        "index": 7,
+        "symbol": "b8_q",
+        "unit": "none"
+      },
+      {
+        "role": "band_on",
+        "index": 0,
+        "symbol": "b1_on",
+        "unit": "none",
+        "inferred": true
+      },
+      {
+        "role": "band_type",
+        "index": 0,
+        "symbol": "b1_type",
+        "unit": "none",
+        "shapes": [
+          "bell",
+          "lowshelf",
+          "highshelf",
+          "notch",
+          "-",
+          "-"
+        ],
+        "inferred": true
+      },
+      {
+        "role": "band_on",
+        "index": 1,
+        "symbol": "b2_on",
+        "unit": "none",
+        "inferred": true
+      },
+      {
+        "role": "band_type",
+        "index": 1,
+        "symbol": "b2_type",
+        "unit": "none",
+        "shapes": [
+          "bell",
+          "lowshelf",
+          "highshelf",
+          "notch",
+          "-",
+          "-"
+        ],
+        "inferred": true
+      },
+      {
+        "role": "band_on",
+        "index": 2,
+        "symbol": "b3_on",
+        "unit": "none",
+        "inferred": true
+      },
+      {
+        "role": "band_type",
+        "index": 2,
+        "symbol": "b3_type",
+        "unit": "none",
+        "shapes": [
+          "bell",
+          "lowshelf",
+          "highshelf",
+          "notch",
+          "-",
+          "-"
+        ],
+        "inferred": true
+      },
+      {
+        "role": "band_on",
+        "index": 3,
+        "symbol": "b4_on",
+        "unit": "none",
+        "inferred": true
+      },
+      {
+        "role": "band_type",
+        "index": 3,
+        "symbol": "b4_type",
+        "unit": "none",
+        "shapes": [
+          "bell",
+          "lowshelf",
+          "highshelf",
+          "notch",
+          "-",
+          "-"
+        ],
+        "inferred": true
+      },
+      {
+        "role": "band_on",
+        "index": 4,
+        "symbol": "b5_on",
+        "unit": "none",
+        "inferred": true
+      },
+      {
+        "role": "band_type",
+        "index": 4,
+        "symbol": "b5_type",
+        "unit": "none",
+        "shapes": [
+          "bell",
+          "lowshelf",
+          "highshelf",
+          "notch",
+          "-",
+          "-"
+        ],
+        "inferred": true
+      },
+      {
+        "role": "band_on",
+        "index": 5,
+        "symbol": "b6_on",
+        "unit": "none",
+        "inferred": true
+      },
+      {
+        "role": "band_type",
+        "index": 5,
+        "symbol": "b6_type",
+        "unit": "none",
+        "shapes": [
+          "bell",
+          "lowshelf",
+          "highshelf",
+          "notch",
+          "-",
+          "-"
+        ],
+        "inferred": true
+      },
+      {
+        "role": "band_on",
+        "index": 6,
+        "symbol": "b7_on",
+        "unit": "none",
+        "inferred": true
+      },
+      {
+        "role": "band_type",
+        "index": 6,
+        "symbol": "b7_type",
+        "unit": "none",
+        "shapes": [
+          "bell",
+          "lowshelf",
+          "highshelf",
+          "notch",
+          "-",
+          "-"
+        ],
+        "inferred": true
+      },
+      {
+        "role": "band_on",
+        "index": 7,
+        "symbol": "b8_on",
+        "unit": "none",
+        "inferred": true
+      },
+      {
+        "role": "band_type",
+        "index": 7,
+        "symbol": "b8_type",
+        "unit": "none",
+        "shapes": [
+          "bell",
+          "lowshelf",
+          "highshelf",
+          "notch",
+          "-",
+          "-"
+        ],
+        "inferred": true
+      }
+    ],
+    "displays": [
+      {
+        "kind": "eq_response",
+        "section": "bands.band_1",
+        "source": "family",
+        "meterIds": [
+          null,
+          null
+        ],
+        "curveIndex": null,
+        "floor": null,
+        "labelKey": "",
+        "label": "Bands / Band 1",
+        "basis": "modelled"
+      }
+    ],
     "pages": [
       {
         "section": null,
         "sectionName": "Easy",
         "pageName": "Easy",
         "ids": [
+          8,
+          13,
+          23,
+          28,
+          38,
+          43,
+          null,
+          null
+        ]
+      },
+      {
+        "section": 0,
+        "sectionName": "Bands",
+        "pageName": "Bands: HPF",
+        "ids": [
           0,
           1,
           2,
-          3,
+          null,
           null,
           null,
           null,
@@ -1179,9 +1544,9 @@
         "ids": [
           10,
           7,
-          8,
           9,
           6,
+          null,
           null,
           null,
           null
@@ -1194,9 +1559,9 @@
         "ids": [
           15,
           12,
-          13,
           14,
           11,
+          null,
           null,
           null,
           null
@@ -1224,9 +1589,9 @@
         "ids": [
           25,
           22,
-          23,
           24,
           21,
+          null,
           null,
           null,
           null
@@ -1239,9 +1604,9 @@
         "ids": [
           30,
           27,
-          28,
           29,
           26,
+          null,
           null,
           null,
           null
@@ -1269,9 +1634,9 @@
         "ids": [
           40,
           37,
-          38,
           39,
           36,
+          null,
           null,
           null,
           null
@@ -1284,9 +1649,9 @@
         "ids": [
           45,
           42,
-          43,
           44,
           41,
+          null,
           null,
           null,
           null
@@ -1297,9 +1662,9 @@
         "sectionName": "Bands",
         "pageName": "Bands: LPF",
         "ids": [
+          3,
           4,
           5,
-          null,
           null,
           null,
           null,

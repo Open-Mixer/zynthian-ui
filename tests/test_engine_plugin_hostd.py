@@ -972,8 +972,16 @@ class test_plugin_window(plugin_hostd_case):
 
 class test_pages(plugin_hostd_case):
 
-    def big(self):
-        return self.serve(descriptors={"urn:test:big": os.path.join(FIXTURES, "big.descriptor.json")})
+    def fixture(self, name):
+        """The daemon serves the fixture descriptor `name` as urn:test:big, omx-panel main's cut recorded beside it: big; eq;
+        omx-eq8 (omx-plugins 0.19.3's descriptor, through omx-panel's corpus); calf-mbc (omx-panel's
+        Calf-multiband-compressor-shaped test descriptor, four bands of six)."""
+        return self.serve(descriptors={"urn:test:big": os.path.join(FIXTURES, f"{name}.descriptor.json")})
+
+    def plugin(self, name):
+        """A processor of the fixture descriptor `name`."""
+        self.fixture(name)
+        return self.add(self.chain(), "PH/Big")
 
     def recorded(self, name, width):
         """What the real omx-panel printed for the descriptor: [(page name, [symbol or None])] as the engine names them."""
@@ -986,8 +994,7 @@ class test_pages(plugin_hostd_case):
     def test_the_screens_are_omx_panels_pages_of_four_as_they_come(self):
         runs = os.path.join(self.tmp, "omx-panel.log")
         os.environ["OMX_PANEL_STUB_LOG"] = runs
-        self.big()
-        proc = self.add(self.chain(), "PH/Big")
+        proc = self.plugin("big")
         want = self.recorded("big", 4)
         # the meters `gr` and `out` are read-only: their slots stay, blank
         self.assertEqual(self.screens(proc), [("Easy", ["p0", "p1", "p2", "p3"]), ("Main: Freq 4 - Freq 7", ["p4", "p5", "p6", "p7"]),
@@ -1010,12 +1017,8 @@ class test_pages(plugin_hostd_case):
         with open(runs) as f:
             self.assertEqual(len(f.readlines()), 2 * len(first), "a changed descriptor is cut again")
 
-    def eq(self, width=None):
-        self.serve(descriptors={"urn:test:big": os.path.join(FIXTURES, "eq.descriptor.json")})
-        return self.add(self.chain(), "PH/Big")
-
     def test_the_same_controls_in_the_same_order_as_omx_panels_own_cut(self):
-        proc = self.eq()
+        proc = self.plugin("eq")
         want = self.recorded("eq", 4)
         got = [(n, [s[0] if s else None for s in rows]) for n, rows in proc.engine.pages()]
         self.assertEqual(got, want, "the engine adds, reorders and drops nothing")
@@ -1025,7 +1028,7 @@ class test_pages(plugin_hostd_case):
         self.assertEqual(got[1], ("Band 1", ["q1", "width1", None, None]))
 
     def test_the_surface_names_its_width_and_the_cut_follows(self):
-        proc = self.eq()
+        proc = self.plugin("eq")
         self.assertEqual([(n, [s[0] if s else None for s in rows]) for n, rows in proc.engine.pages(8)], self.recorded("eq", 8))
         self.assertEqual(self.screens(proc)[0][0], "Easy")
         self.assertEqual({len(k) for _, k in self.screens(proc)}, {ph.SURFACE_WIDTH})
@@ -1048,16 +1051,16 @@ class test_pages(plugin_hostd_case):
 
     # ---- a repeated group (omx-panel's group model, docs/group-model.md P1): a screen never cuts inside a band ----
 
-    def band_plugin(self, name):
-        """A plugin whose descriptor repeats a group per band, with omx-panel main's cut recorded beside it (omx-eq8:
-        omx-plugins 0.19.3 through omx-panel's corpus; calf-mbc: omx-panel's Calf-multiband-compressor-shaped test
-        descriptor, four bands of six). Returns the processor and its screens as [(name, [control name or None])]."""
-        path = os.path.join(FIXTURES, f"{name}.descriptor.json")
-        self.serve(descriptors={"urn:test:big": path})
-        proc = self.add(self.chain(), "PH/Big")
-        with open(path) as f:
+    def named_screens(self, name, proc):
+        """The processor's screens as [(screen name, [the control's descriptor name or None])]."""
+        with open(os.path.join(FIXTURES, f"{name}.descriptor.json")) as f:
             names = {str(c["id"]): c["name"] for c in json.load(f)["controls"]}
-        return proc, [(n, [names[k] if k else None for k in keys]) for n, keys in self.screens(proc)]
+        return [(n, [names[k] if k else None for k in keys]) for n, keys in self.screens(proc)]
+
+    def family(self, name):
+        """The family omx-panel's recorded description gives the plugin."""
+        with open(os.path.join(FIXTURES, f"{name}.describe.json")) as f:
+            return json.load(f)["description"]["family"]
 
     @staticmethod
     def bands_on(screen):
@@ -1065,24 +1068,32 @@ class test_pages(plugin_hostd_case):
         return {m.group(1) for c in screen if c for m in [re.match(r"Band (\d+) ", c)] if m}
 
     def test_omx_eq8_shows_eight_band_screens_each_opening_with_the_bands_on_off(self):
-        proc, screens = self.band_plugin("omx-eq8")
+        self.assertEqual(self.family("omx-eq8"), "eq", "the channel's omx-plugins role meanings make it an EQ")
+        proc = self.plugin("omx-eq8")
+        screens = self.named_screens("omx-eq8", proc)
         got = [(n, [s[0] if s else None for s in rows]) for n, rows in proc.engine.pages()]
         self.assertEqual(got, self.recorded("omx-eq8", 4), "the engine adds, reorders and drops nothing")
         heads = [(n, k) for n, k in screens if re.fullmatch(r"Bands: Band \d", n)]
         self.assertEqual([n for n, _ in heads], [f"Bands: Band {i}" for i in range(1, 9)], "eight band screens")
+        easy = {c for n, k in screens if n.startswith("Easy") for c in k if c}
         for n, k in heads:
             i = n[-1]
-            self.assertEqual(k, [f"Band {i} On", f"Band {i} Frequency", f"Band {i} Gain", f"Band {i} Q"], n)
+            self.assertEqual(k[:2], [f"Band {i} On", f"Band {i} Frequency"], n)
+            # the band's other controls follow on its screen and its own continuation, less those the Easy pages took
+            own = [c for _, k in screens if self.bands_on(k) == {i} for c in k if c]
+            self.assertEqual(set(own), {f"Band {i} {w}" for w in ("On", "Frequency", "Gain", "Q", "Type")} - easy, n)
         for n, k in screens:
-            self.assertLessEqual(len(self.bands_on(k)), 1, f"{n} is cut across two bands: {k}")
-        # the fifth control of a band, its type, follows on the band's own continuation, never on the next band's screen
-        for i in range(1, 9):
-            self.assertEqual(dict(screens)[f"Bands: Band {i} 2"], [f"Band {i} Type", None, None, None])
-        self.assertEqual(screens[0][0], "Easy")
-        self.assertEqual(screens[-1], ("Bands: LPF", ["LPF Frequency", "LPF Slope", None, None]), "the edges are the model's")
+            if not n.startswith("Easy"):  # the Easy pages are omx-panel's picks over the whole plugin, one gain per band
+                self.assertLessEqual(len(self.bands_on(k)), 1, f"{n} is cut across two bands: {k}")
+        self.assertTrue(all(c.endswith(" Gain") for c in easy), f"the Easy pages hold gains: {easy}")
+        bands = [n for n, _ in screens if n.startswith("Bands: ")]
+        self.assertEqual((bands[0], bands[-1]), ("Bands: HPF", "Bands: LPF"), "the edges are the model's: HPF first, LPF last")
+        self.assertEqual(dict(screens)["Bands: LPF"], ["LPF On", "LPF Frequency", "LPF Slope", None])
 
     def test_a_calf_multiband_shaped_plugin_never_shows_a_screen_across_two_bands(self):
-        proc, screens = self.band_plugin("calf-mbc")
+        self.assertEqual(self.family("calf-mbc"), "none", "no family: the bands are the group model's, not an EQ's")
+        proc = self.plugin("calf-mbc")
+        screens = self.named_screens("calf-mbc", proc)
         got = [(n, [s[0] if s else None for s in rows]) for n, rows in proc.engine.pages()]
         self.assertEqual(got, self.recorded("calf-mbc", 4), "the engine adds, reorders and drops nothing")
         for n, k in screens:
@@ -1144,7 +1155,7 @@ class test_pages(plugin_hostd_case):
 
     def test_without_omx_panel_there_are_no_pages_and_it_is_said_once(self):
         os.unlink(os.path.join(self.bin, "omx-panel"))
-        self.big()
+        self.fixture("big")
         with self.assertLogs(level=logging.WARNING) as logs:
             proc = self.add(self.chain(), "PH/Big")
             self.add(self.chain(2), "PH/Big")
