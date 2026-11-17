@@ -101,12 +101,15 @@ gets a cell (4 red under that sabotage).
 Pi, from this repository's checkout:
 
 ```
-DISPLAY=:0 XAUTHORITY=/home/pi/.Xauthority ZYNTHIAN_OMX_PANEL_TOOLS=/usr/share/omx-panel/tools DRAG_S=30 W=1024 H=416 \
+DISPLAY=:0 XAUTHORITY=<the X authority file of the Pi's UI user> ZYNTHIAN_OMX_PANEL_TOOLS=/usr/share/omx-panel/tools DRAG_S=30 W=1024 H=416 \
   python3 tools/pi/blit_per_frame_on_the_pi.py
 ```
 
 and once more with `ORDER=in-process-first`. Green is `"red": false` on every line: a p99 frame at or under 16.7 ms. The
 lines go below with their commit. Until they are taken, #59 stays open: the budget is not claimed from this desk.
+The script's `pixels blitted` is the area of the boxes PanelImage copied per frame (the older lines' `rows blitted`
+summed box heights). The no-entry branch of `draw_into` and the `WithoutTheEntry` tests go once that omx-panel release is
+this repository's floor: the full draw is then no path of its own.
 
 ## The measured lines (#59)
 
