@@ -1046,11 +1046,11 @@ class test_pages(plugin_hostd_case):
         self.assertEqual(dict(self.screens(proc))["Band 2"], ["freq2", None, "q2", "width2"], "the others keep their slots")
         self.assertEqual([z.symbol if z else None for z in proc.get_ctrl_screen("Band 2")], ["freq2", None, "q2", "width2"])
 
-    def test_an_authored_controls_label_and_widget_are_read_under_the_symbol_the_description_serves(self):
+    def test_an_authored_controls_label_is_read_under_the_symbol_the_description_serves(self):
         """omx-panel serves a control under the name a session keys it by (the contract's `symbol`: an authored CLAP
-        plugin's own, else the id in decimal), and the engine reads the description's control, its label and widget, under
-        that very name: no key of the engine's own. The authored fixture labels its controls apart from their names and
-        carries a gain-reduction meter."""
+        plugin's own, else the id in decimal), and the engine reads the description's control, its label, under that very
+        name: no key of the engine's own. The authored fixture labels its controls apart from their names and carries a
+        gain-reduction meter (blank by the descriptor's readonly; the served widget is auto, so it proves nothing here)."""
         self.serve(descriptors={"urn:test:big": os.path.join(FIXTURES, "authored.descriptor.json")})
         proc = self.add(self.chain(), "PH/Big")
         self.assertEqual(self.screens(proc), [("Easy", ["1", "2", "3", "4"]), ("Output", ["6", "7", None, None])],

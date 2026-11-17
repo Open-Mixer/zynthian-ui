@@ -316,8 +316,10 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
 
 
 def engine_key(symbol):
-    """The layout's name of a plugin-hostd controller: a CLAP parameter's number is p<number>, an LV2 port keeps its
-    symbol (zynthian_engine_plugin_hostd.symbol_of)."""
+    """The layout's own key of a plugin-hostd controller (omx-panel's keyOf, what `describe --layout` names a control by):
+    a CLAP parameter's number is p<number>, an LV2 port keeps its symbol. A CLAP plugin whose descriptor states a symbol
+    is keyed by that symbol in the layout, which this cannot know from the controller alone: the layout's `param` is the
+    join for it (#47)."""
     return f"p{symbol}" if symbol.isdigit() else symbol
 
 
