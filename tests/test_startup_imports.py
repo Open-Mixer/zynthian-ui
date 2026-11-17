@@ -15,12 +15,35 @@ import os
 import ast
 import sys
 import glob
+import types
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class startup_imports(unittest.TestCase):
+
+    def run_with_import_raising(self, error):
+        """The engine-screen test, with the zyngui import raising `error`: how it ends."""
+        fake = types.ModuleType("zyngui")
+        fake.__path__ = []
+
+        def fail(name):
+            raise error
+        fake.__getattr__ = fail
+        outcome = unittest.TestResult()
+        with mock.patch.dict(sys.modules, {"zyngui": fake}):
+            startup_imports("test_the_engine_screen_resolves_the_estimate_function_and_the_chain_options_the_daemon").run(outcome)
+        return outcome
+
+    def test_a_native_library_that_fails_to_load_fails_the_test(self):
+        outcome = self.run_with_import_raising(OSError("cannot load libzyncore.so"))
+        self.assertEqual((len(outcome.skipped), len(outcome.errors)), (0, 1), "a library that is there and will not load is a red, never a skip")
+
+    def test_a_host_with_no_zynthian_tree_skips(self):
+        outcome = self.run_with_import_raising(FileNotFoundError("/zynthian/config"))
+        self.assertEqual((len(outcome.skipped), len(outcome.errors)), (1, 0))
 
     def test_the_engine_screen_resolves_the_estimate_function_and_the_chain_options_the_daemon(self):
         if ROOT not in sys.path:
