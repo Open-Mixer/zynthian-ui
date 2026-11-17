@@ -15,9 +15,16 @@
 # view is opened in is the UI's palette over the renderer's own (zynthian_ui_look).
 #
 # drawn_controller(base) makes the class over the stock one, overriding only what paints: show, on_size, plot_value,
-# set_title, _set_color_graph and zynpot_abs (the marker's place). The zynpot, the touch gestures, the value's
-# formatting and travel, the MIDI bind text are the stock widget's code, inherited. Without the renderer, or with a
-# look the table cannot value, the stock widget is drawn and the reason said once.
+# set_title, _set_color_graph and zynpot_abs (the marker's place), and config, where a page begins. The zynpot, the
+# touch gestures, the value's formatting and travel, the MIDI bind text are the stock widget's code, inherited.
+# Without the renderer, or with a look the table cannot value, the stock widget is drawn and the reason said once. A
+# renderer that stopped is another matter (zynthian-ui#79): the stock widget is drawn on the page it stopped on, and
+# the next page (config) is drawn in the look again, the renderer started again by its view
+# (zynthian_omx_panel_view, which gives up a renderer that stops at every start).
+#
+# The renderer's calls are Tk's thread's: a page change or an encoder's move that comes from another thread (the CUIA
+# thread) gives its draw to Tk's thread (after_idle), one draw however many times it asks, so the plot task never
+# draws a view the page change is closing.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 #
@@ -70,9 +77,16 @@ def drawn_controller(base):
             self.frame_item = None
             self.frame_color = None
             self.stock = False  # True once the renderer refused or stopped: the stock items draw
+            self.stopped = False  # the stock items draw because the renderer stopped: until the next page
+            self.draw_due = False  # a draw asked from another thread waits for Tk's
             super().__init__(*args, **kwargs)
 
         # ---- what paints, over the stock widget's own computations
+
+        def config(self, zctrl):
+            if self.stopped:  # a new page: the renderer that stopped is started again by the view draw() opens
+                self.stock = self.stopped = False
+            super().config(zctrl)
 
         def show(self):
             super().show()
@@ -100,28 +114,38 @@ def drawn_controller(base):
         def zynpot_abs(self, val):
             super().zynpot_abs(val)
             if self.zctrl and self.pickup and self.view and not self.stock and self.graph_type == self.GUI_CTRL_ARC:
-                self.place_marker(val)
+                if panel_view.in_owner_thread():
+                    self.place_marker(val)
+                else:
+                    self.after_idle(self.place_marker, val)
 
         # ---- the renderer
 
         def draw(self):
-            if self.zctrl is None and not self.stock:
+            if not panel_view.in_owner_thread():
+                if not self.draw_due:
+                    self.draw_due = True
+                    self.after_idle(self.draw)
+                return
+            self.draw_due = False
+            z = self.zctrl  # read once: a page change in another thread may set the next one under this draw
+            if z is None and not self.stock:
                 self.blank()
-            if self.hidden or not self.shown or self.zctrl is None or self.stock:
+            if self.hidden or not self.shown or z is None or self.stock:
                 return
             w, h = self.winfo_width(), self.winfo_height()
             if w < 2 or h < 2:
                 return
-            kind = widget_kind(self.zctrl, self.selector_counter)
-            key = (kind, self.zctrl.symbol, self.title, w, h)
+            kind = widget_kind(z, self.selector_counter)
+            key = (kind, z.symbol, self.title, w, h)
             if self.view is None or self.view_key != key:
-                if not self.open_view(kind, key, w, h):
+                if not self.open_view(z, kind, key, w, h):
                     return
             state = (self.value_plot, self.value_print, self.frame_color)
             if state != self.drawn_state or self.image is None:
                 self.drawn_state = state
                 try:
-                    self.give_reading(kind)
+                    self.give_reading(z, kind)
                     pixels = self.view.draw(w, h)
                 except panel_view.RendererAbsent as e:
                     self.fall_back(e)
@@ -131,18 +155,17 @@ def drawn_controller(base):
                 self.itemconfig(item, state=tkinter.HIDDEN)
             self.frame()
 
-        def open_view(self, kind, key, w, h):
+        def open_view(self, z, kind, key, w, h):
             if self.view:
                 self.view.close()
                 self.view = None
             self.drawn_state = None
             try:
                 look = ui_look.look_for(zynthian_gui_config, panel_view.tools_dir())
-                view = panel_view.View(description(self.zctrl.symbol, self.title, kind), look=look)
+                view = panel_view.View(description(z.symbol, self.title, kind), look=look)
                 view.set_title("", "")
                 view.set_surface(w, h)
-                if kind == "knob" and not self.zctrl.ticks:
-                    z = self.zctrl
+                if kind == "knob" and not z.ticks:
                     view.set_travel(0, z.value_min, z.value_max, z.value_default, (z.position_law or {}).get("step", 0.0),
                                     bool(z.is_logarithmic), bool(z.is_integer))
             except (panel_view.RendererAbsent, ui_look.LookShort) as e:
@@ -154,7 +177,13 @@ def drawn_controller(base):
         def place_marker(self, val):
             """Upstream's pickup marker (graph_pickup, an arc) on the renderer's knob: its target rect is the knob's
             bounding square; the encoder's place over the knob's travel, from the top. None: no knob, no marker."""
-            rect = self.view.target_rect(0)
+            if not self.view or self.stock:  # the page changed before Tk's thread came to it
+                return
+            try:
+                rect = self.view.target_rect(0)
+            except panel_view.RendererAbsent as e:
+                self.fall_back(e)
+                return
             if not rect:
                 self.itemconfig(self.graph_pickup, state=tkinter.HIDDEN)
                 return
@@ -165,9 +194,8 @@ def drawn_controller(base):
             self.itemconfig(self.graph_pickup, start=90 + KNOB_DEG / 2 - KNOB_DEG * val - MARKER_DEG / 2, extent=MARKER_DEG,
                             width=max(2, int(r * 0.1)), outline=zynthian_gui_config.color_ctrl_tx_off)
 
-        def give_reading(self, kind):
+        def give_reading(self, z, kind):
             """The stock widget's own reading (calculate_plot_values) as the renderer takes it."""
-            z = self.zctrl
             if kind == "selector":
                 self.view.set_choice(0, z.get_value2index(), len(z.ticks), self.value_print)
             elif kind == "display":
@@ -227,6 +255,7 @@ def drawn_controller(base):
         def fall_back(self, why):
             """The renderer refused or stopped, or the look cannot be valued: the stock items draw, said once."""
             self.stock = True
+            self.stopped = isinstance(why, panel_view.RendererStopped)
             if self.view:
                 try:
                     self.view.close()
