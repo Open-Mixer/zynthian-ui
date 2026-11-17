@@ -163,6 +163,7 @@ class FakeView:
     readings it was given, and a PIL frame for every draw."""
     opened = []
     refuse = None
+    stop_at_draw = False
 
     def __init__(self, layout, tools_dir=None, look=None):
         if FakeView.refuse:
@@ -181,6 +182,8 @@ class FakeView:
     def close(self): self.closed = True
 
     def draw(self, w, h, scale=1.0):
+        if FakeView.stop_at_draw:
+            raise FakeView.module.RendererStopped("omx-panel's renderer stopped (SIGSEGV); the panel is drawn again when it is opened again")
         self.draws.append((w, h))
         return frame(w, h)
 
@@ -201,7 +204,7 @@ def shown(w, h, bg):
 def load_controller(environ, tools_dir=None):
     """zyngui.zynthian_gui_controller as zynthian_gui.py imports it, with zynthian_gui_config carrying <environ>'s look;
     the renderer's View is FakeView. Returns (the class the module exports, the config, sys.modules as loaded)."""
-    FakeView.opened, FakeView.refuse = [], None
+    FakeView.opened, FakeView.refuse, FakeView.stop_at_draw = [], None, False
     values = config_under(environ)
     zyngui = mock.MagicMock()
     zyngui.chain_manager.get_midi_learn_from_zctrl.return_value = None
@@ -423,6 +426,21 @@ class DrawnController(unittest.TestCase):
             self.assertEqual(ctrl.items[ctrl.graph]["state"], "normal")
             self.assertEqual(ctrl.of("image"), [])
         self.assertEqual(self.images, [])
+
+    def test_a_renderer_that_stops_after_a_draw_gives_the_stock_items_back(self):
+        ctrl = self.controller(Zctrl(value=0.25))
+        self.assertEqual(ctrl.items[ctrl.graph]["state"], "hidden")
+        FakeView.stop_at_draw = True
+        ctrl.zctrl.value = 0.75
+        ctrl.calculate_plot_values()
+        with self.assertLogs(level="WARNING") as log:
+            ctrl.plot_value()
+        self.assertEqual(len([m for m in log.output if "stopped" in m]), 1, log.output)
+        self.assertEqual(ctrl.items[ctrl.graph]["state"], "normal")
+        self.assertEqual(ctrl.items[ctrl.value_text]["state"], "normal")
+        self.assertEqual(ctrl.of("image"), [])
+        self.assertEqual([o for o in ctrl.of("rectangle") if o["state"] == "normal"], [])
+        self.assertTrue(FakeView.opened[-1].closed)
 
 
 # ---- The look table
