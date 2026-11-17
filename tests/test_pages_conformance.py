@@ -27,7 +27,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 FIXTURES = os.path.join(HERE, "fixtures", "plugin_hostd")
 ENGINE = os.path.join("zyngine", "zynthian_engine_plugin_hostd.py")
-NAMES = ("big", "synth", "eq")
+# omx-eq8 (omx-plugins 0.19.3's descriptor, through omx-panel's corpus) and calf-mbc (omx-panel's Calf-multiband-compressor-
+# shaped test descriptor) are recorded from omx-panel main 85a44385, the group model (omx-panel#63), not yet released: the
+# omx-panel the Pi installs moves to the release that carries it. v0.13.0 prints the same cut for big, synth and eq, and
+# another for these two (a band cut inside: 'Bands / Band 1' [6, 7, 9, 10], its gain on the Easy page, its on/off last).
+NAMES = ("big", "synth", "eq", "omx-eq8", "calf-mbc")
 
 
 class RecordedCutIsTheRealCut(unittest.TestCase):
