@@ -105,6 +105,8 @@ def drawn_controller(base):
         # ---- the renderer
 
         def draw(self):
+            if self.zctrl is None and not self.stock:
+                self.blank()
             if self.hidden or not self.shown or self.zctrl is None or self.stock:
                 return
             w, h = self.winfo_width(), self.winfo_height()
@@ -205,6 +207,22 @@ def drawn_controller(base):
                 self.itemconfig(self.frame_item, outline=self.frame_color, state=tkinter.NORMAL)
             else:
                 self.itemconfig(self.frame_item, state=tkinter.HIDDEN)
+
+        def blank(self):
+            """A blank slot (no controller): the last controller's face, frame and view go; the stock widget hides
+            its own items."""
+            if self.view:
+                try:
+                    self.view.close()
+                except panel_view.RendererAbsent:
+                    pass
+                self.view = self.view_key = None
+            if self.image_item is not None:
+                self.delete(self.image_item)
+                self.image_item = None
+            if self.frame_item is not None:
+                self.itemconfig(self.frame_item, state=tkinter.HIDDEN)
+            self.image = self.drawn_state = None
 
         def fall_back(self, why):
             """The renderer refused or stopped, or the look cannot be valued: the stock items draw, said once."""
