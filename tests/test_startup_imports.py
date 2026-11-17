@@ -2,7 +2,11 @@
 #
 # The engine screen imports the way zynthian_main.py does, with the real zyngine package: a name that
 # the package exports for a class and a module alike must resolve to the module where a function is used.
-# Needs the Zynthian's native libraries (tkinter, zyncore, ...); without them it is skipped.
+# Needs a Zynthian: tkinter and PIL.ImageTk, the zyncoder and zynlibs native libraries on JACK, and the tree under
+# /zynthian (config, wiring profiles) that zynthian_gui_config reads at import. The CI container is Debian with
+# python3 and pytest and none of that (the zyncoder directory of this repository is a submodule that is not checked
+# out there), so it cannot run in CI: it skips with the reason, and runs on the Pi with `python3 -m pytest
+# tests/test_startup_imports.py`.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
@@ -23,8 +27,8 @@ class startup_imports(unittest.TestCase):
             sys.path.insert(0, ROOT)
         try:
             from zyngui import zynthian_gui_engine, zynthian_gui_chain_options
-        except ImportError as e:
-            self.skipTest(f"not a Zynthian: {e}")
+        except (ImportError, OSError) as e:  # no tkinter or zyncoder, or no /zynthian tree to read
+            self.skipTest(f"not a Zynthian, so it cannot run in CI (it needs the Zynthian's tkinter, zyncoder and /zynthian tree) and runs on the Pi: {e}")
         for screen in (zynthian_gui_engine, zynthian_gui_chain_options):
             self.assertTrue(hasattr(screen.plugin_hostd, "estimate"), screen.__name__)
             self.assertTrue(hasattr(screen.plugin_hostd, "daemon"), screen.__name__)
