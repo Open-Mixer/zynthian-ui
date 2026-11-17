@@ -65,7 +65,7 @@ def drag(view_class, what, name, symbol, root, canvas):
     t0 = time.monotonic()
     view.input(pv.EVENT_DOWN, t0 * 1000.0, cx, cy)
     parts = {"input": [], "draw": [], "blit": [], "canvas": [], "frame": []}
-    rows = []
+    blitted = []  # the pixels blitted per frame: the area of the boxes PanelImage copied
     n = 0
     while time.monotonic() - t0 < SECONDS:
         n += 1
@@ -79,7 +79,7 @@ def drag(view_class, what, name, symbol, root, canvas):
         b = time.monotonic()
         rgba, dirty = view.draw(W, H)
         c = time.monotonic()
-        rows.append(sum(box[3] for box in screen.show(rgba, W, H, dirty)))
+        blitted.append(sum(box[2] * box[3] for box in screen.show(rgba, W, H, dirty)))
         d = time.monotonic()
         root.update()
         e = time.monotonic()
@@ -91,7 +91,7 @@ def drag(view_class, what, name, symbol, root, canvas):
     result = {"drag": what, "plugin": name, "control": symbol, "size": f"{W}x{H}", "frames": n,
               "fps": round(n / elapsed, 1)}
     result.update({k: quantiles(v) for k, v in parts.items()})
-    result["rows blitted"] = quantiles(rows)
+    result["pixels blitted"] = quantiles(blitted)
     result["red"] = result["frame"]["p99"] > FRAME_MS
     return result
 
