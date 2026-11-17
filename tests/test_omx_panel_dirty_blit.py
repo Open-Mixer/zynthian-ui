@@ -126,7 +126,7 @@ class OnePath(unittest.TestCase):
         """One path to the screen: the widget paints and the Pi measurement times the same PanelImage, so a figure is the
         widget's."""
         root = os.path.join(HERE, "..")
-        for path in ("zyngui/zynthian_widget_omx_panel.py", "tests/pi/blit_per_frame_on_the_pi.py"):
+        for path in ("zyngui/zynthian_widget_omx_panel.py", "tools/pi/blit_per_frame_on_the_pi.py"):
             with self.subTest(path=path):
                 with open(os.path.join(root, path)) as f:
                     source = f.read()
