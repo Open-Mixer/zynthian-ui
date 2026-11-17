@@ -29,9 +29,9 @@ omx-eq8 panel are the same knob, from the same tokens.
   canvas items the widget creates and configures are the ones upstream creates and configures.
 - The drawn class lives in its own module, `zyngui/zynthian_gui_controller_drawn.py`, as a subclass
   made by `drawn_controller(base)`. It overrides only what paints: `show`, `on_size`, `plot_value`,
-  `set_title`, `_set_color_graph`. Everything else, the zynpot, the touch gestures, the value
-  formatting, `calculate_plot_values` (the position law included), the MIDI bind text, is upstream's
-  code, inherited, unchanged.
+  `set_title`, `_set_color_graph`, and `zynpot_abs` for the pickup marker's place. Everything else,
+  the zynpot, the touch gestures, the value formatting, `calculate_plot_values` (the position law
+  included), the MIDI bind text, is upstream's code, inherited, unchanged.
 - Upstream compatibility: the fork's path to a PR upstream stays clear. The stock file carries a
   three-line tail and nothing else of this; the drawn widget and the look table are new files.
 
@@ -53,6 +53,8 @@ paints a plugin's page. The widget's size is the surface; the renderer scales it
 | the value | the renderer's value text, `--ink` on the face | with every `plot_value` |
 | the selection (`set_hl`, the arc in `color_hl`) | a 2 px frame around the face in `color_hl`, a canvas rectangle | `_set_color_graph` |
 | readonly / disabled (the arc in `color_ctrl_bg_off`) | the same frame in `color_ctrl_bg_off` | `set_color_readonly`, `enable(False)` |
+| the MIDI-bind text (`midi_bind`: the CC, `??#??`, X, Y, in `color_ml`/`color_hl`/`color_alt2`) | upstream's own canvas text, left showing and raised above the image: operator state, drawn by the host | `plot_midi_bind`, unchanged |
+| the pickup marker (`graph_pickup`: the encoder's place while it has not caught the value) | upstream's own arc, moved onto the renderer's knob: its `target_rect` is the knob's bounding square; the marker is 12 degrees of a circle 2 px outside the rim, the encoder's fraction over the knob's 270 degree travel from the top, in `color_ctrl_tx_off`; a control with no knob (selector, switch, display) shows none; a graph type other than the arc keeps upstream's marker as it is | `zynpot_abs` |
 | `hidden=True` | nothing, as upstream: no canvas exists | |
 
 Selection and finish are a host's chrome, not a colour role (omx-panel `schema/look-roles.json`:
@@ -101,6 +103,11 @@ The renderer refuses a look short of any role, so the host must value every role
   `--state-bypass`, the EQ delta pair and the origin marks have no Zynthian colour: they keep the
   base's value, the console's dark theme. The font stays the renderer's (`--font-file`,
   Inter, the family the vintage preset sets as `ZYNTHIAN_UI_FONT_FAMILY`).
+- The table is read once per look and tools directory (`look_for` keeps the document, or the
+  refusal) so forty controllers do not read forty files. A `look.json` without `tokens`, or short of a
+  role the table names, is `LookShort`, named by the role (or "no tokens"); the drawn controller and
+  the plugin panel treat it as they treat an absent renderer: stock items (the panel's strips), the
+  reason said once, and no view is ever opened in the renderer's own look.
 - The host's look reaches the renderer as a data directory of its own: a temporary directory with
   the host's `look.json`, and the renderer's `look/geometry.json`, `fonts/` and `gestures.json`
   linked from the tools directory, given to `omx_panel_view_create_from_files` and removed once the
@@ -110,29 +117,43 @@ The renderer refuses a look short of any role, so the host must value every role
 
 ## When the renderer is absent
 
-`vintage` with no renderer (`RendererAbsent`: not installed, or it refused the description) draws
-the stock widget and logs the reason once, as the plugin panel falls back to strips. A renderer
-that stops (`RendererStopped`) is said once too; the controller draws stock until it is built
-again.
+`vintage` with no renderer (`RendererAbsent`: not installed, or it refused the description), or with
+a look the table cannot value (`LookShort`), draws the stock widget and logs the reason once, as the
+plugin panel falls back to strips. A renderer that stops (`RendererStopped`) is said once too: the
+image and the frame go, the stock items come back, until the controller is built again.
 
 ## Held to
 
-`tests/test_ui_look_widgets.py`, with real PIL (the Pi has it; CI installs it):
+`tests/test_ui_look_widgets.py` (42), with real PIL (the Pi has it; CI installs it); the renderer's
+view is a stand-in that records the description, the look and the readings and draws a PIL frame:
 
 - the switch: `ui_look` from the environment; unset and `stock` read `stock`; a word that is no
   look is refused by name and reads `stock`;
 - stock is upstream: under `stock` the exported class is the file's own class, the drawn module is
-  not imported, and the stock file names no look, no renderer and no PIL;
-- the drawn controller under `vintage`: the description per widget kind (knob, selector, switch,
-  display), the values and labels given to the view, the frame on selection, the look given to the
-  view carrying the preset's colours at their roles, and the image on the canvas equal to the
-  renderer's RGBA composited over `color_panel_bg` (PIL, pixel for pixel);
-- the look table: every role of the base is present, the palette's roles carry the config's
-  colours, the others the base's; a base short of a role the table names is refused by name;
-- the renderer's fallback: `RendererAbsent` draws stock and says so once.
+  not imported, the canvas holds upstream's five items and no image, and the stock file's class
+  names no look, no renderer and no PIL, the module's one tail `if` being the whole change;
+- the drawn controller under `vintage`: the overridden set is exactly `show`, `on_size`,
+  `plot_value`, `set_title`, `_set_color_graph`, `zynpot_abs`; the description per widget kind
+  (knob, selector, switch, display) and the reading each gets; a new value drawn once and an
+  unchanged one not at all; the frame on selection, none unselected, `color_ctrl_bg_off` readonly;
+  the image equal to the renderer's RGBA composited over `color_panel_bg`, pixel for pixel, the
+  graph, label and value hidden; the MIDI-bind text left showing above the image; the pickup
+  marker on the knob's target rect at the encoder's angle, gone when the pickup ends, none on a
+  control without a knob; a hidden controller draws nothing;
+- the look given to the view: every role of the renderer's base, the preset's colours at their
+  roles, the others the base's; read once for every controller (the base file gone, the second
+  controller still gets it);
+- refusals: the renderer absent, a renderer that stops after a draw, a look short of a role, a look
+  without tokens: stock items back, no view opened, said once; the same for the plugin panel
+  (loaded through `tests/omx_panel_widget_stub.py`, the harness the renderer-crash test shares);
+- the look table on its own: roles, a short base refused by name, no tokens refused by name, the
+  cache and a cached refusal, `look_for` None under stock and without a tools directory;
+- the look's way to the renderer: the look dir carries the host's look and the renderer's geometry,
+  font and gestures byte for byte; `View` passes the look (or none) to the renderer's process;
+- the fixture `tests/fixtures/omx_panel/look.json` is omx-panel's `tools/look.json` byte for byte
+  where `$ZYNTHIAN_OMX_PANEL_TOOLS` names one (CI builds omx-panel at the commit `tests.yml` pins).
 
-Where the renderer is built (CI, the Pi), `tests/test_omx_panel_view.py`'s pattern draws a knob
-through the real library and reads the accent at the pointer.
+Where the renderer is built (CI, the Pi), the pixels themselves are zynthian-ui#74.
 
 ## Owed
 
@@ -143,5 +164,7 @@ through the real library and reads the accent at the pointer.
 - zynthian-sys: `config/ui-looks/openmixer-vintage.sh` exports `ZYNTHIAN_UI_LOOK=vintage` and
   `stock.sh` exports `ZYNTHIAN_UI_LOOK=stock` (the pin recomputes; `tests/ui-looks-check.sh` grows
   the key).
-- omx-panel: the knob's metal and relief, and a face without a head for a one-control panel (the
-  controller's cell carries the renderer's head today, empty).
+- omx-panel#93: the knob's metal and relief, the console's finish, drawn by the renderer.
+- omx-panel#94: a face without a head for a one-control description (the controller's cell carries
+  the renderer's head today, empty).
+- zynthian-ui#74: the vintage controller through the real renderer, a pixel proof in CI and on the Pi.
