@@ -8,7 +8,7 @@
 #
 #   ZYNTHIAN_OMX_PANEL_RENDER=.../libomx-panel-render.so.0 ZYNTHIAN_OMX_PANEL_TOOLS=.../tools PHD_PORT=17556 \
 #   OUT=/tmp/drawn PHD_URIS="clap:/usr/lib/clap/omx-comp.clap#org.openmixer.comp urn:openmixer:eq8" \
-#   python3 -m pytest -s tests/pi/drawn_panel_on_the_pi.py
+#   python3 -m pytest -s tools/pi/drawn_panel_on_the_pi.py
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
@@ -19,7 +19,7 @@ import sys
 import time
 import unittest
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "tests")  # the tests these reuse
 sys.path.insert(0, HERE)
 from test_engine_plugin_hostd import plugin_hostd_case, ph, clap_plugin, clap_scan  # noqa: E402
 from zyngine import zynthian_omx_panel_view as pv  # noqa: E402

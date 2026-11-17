@@ -5,7 +5,7 @@
 # caller started), a Panel of its controllers is driven by scripted gestures, and the value is read back from the daemon.
 #
 #   ZYNTHIAN_OMX_GESTURES=gestures.json ZYNTHIAN_OMX_SCALE_VECTORS=scale-vectors.json PHD_PORT=17555 \
-#   PHD_URI=http://lsp-plug.in/plugins/lv2/compressor_mono python3 tests/pi/panel_gestures_on_the_pi.py
+#   PHD_URI=http://lsp-plug.in/plugins/lv2/compressor_mono python3 tools/pi/panel_gestures_on_the_pi.py
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
@@ -15,7 +15,7 @@ import sys
 import time
 import unittest
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "tests")  # the tests these reuse
 sys.path.insert(0, HERE)
 from test_engine_plugin_hostd import plugin_hostd_case, ROOT, ph  # noqa: E402
 from zyngine import zynthian_panel_gestures as pg  # noqa: E402

@@ -13,6 +13,7 @@ import sys
 import json
 import time
 import types
+import shlex
 import shutil
 import signal
 import socket
@@ -25,6 +26,7 @@ import plugin_hostd_protocol
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 FIXTURES = os.path.join(HERE, "fixtures", "plugin_hostd")
+RUN_PATH = os.environ.get("PATH", os.defpath)  # before any test narrows it
 FAKE = os.path.join(HERE, "fake_plugin_hostd.py")
 START_STUB = os.path.join(FIXTURES, "plugin-hostd-start")  # zynthian-sys's sbin/plugin-hostd-start.sh
 sys.path[:0] = [HERE, ROOT]
@@ -1323,8 +1325,11 @@ class test_compare(plugin_hostd_case):
     def test_the_real_command_answers_the_engine(self):
         fake, proc = self.easy_plugin(easy=None)
         os.unlink(os.path.join(self.bin, "omx-panel"))
+        # the tests' PATH holds python3 only: the command's program is found on the PATH the run started with
+        real = shlex.split(os.environ["OMX_PANEL_REAL"])
+        real[0] = shutil.which(real[0], path=RUN_PATH) or real[0]
         with open(os.path.join(self.bin, "omx-panel"), "w") as f:
-            f.write(f'#!/bin/sh\nexec {os.environ["OMX_PANEL_REAL"]} "$@"\n')
+            f.write(f'#!/bin/sh\nexec {shlex.join(real)} "$@"\n')
         os.chmod(os.path.join(self.bin, "omx-panel"), 0o755)
         engine = proc.engine
         proc.controllers_dict["p1"].set_value(25.0)
