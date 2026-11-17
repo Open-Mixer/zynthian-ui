@@ -18,7 +18,9 @@ import ctypes
 import importlib.util
 import os
 import socket
+import sys
 import threading
+import types
 import unittest
 from multiprocessing import connection
 from unittest import mock
@@ -266,6 +268,53 @@ class InTheRenderersProcess(unittest.TestCase):
         self.assertEqual(len(set(self.lib.addresses)), 1, "one buffer between draws: the shared memory")
         self.assertEqual(r.blits, [(0, 0, W, H), CELL])
         self.assertEqual(r.screen.tobytes(), shown(frame(W, H, 0.75)).tobytes())
+
+    def test_the_renderer_draws_into_the_shared_memory_itself_not_a_buffer_copied_into_it(self):
+        """The buffer the renderer gets lies in the UI's shared memory mapping (/proc/self/maps names the segment under
+        /dev/shm), never a buffer of the renderer's own copied into it after the draw."""
+        self.view.draw(W, H)
+        address = self.lib.addresses[-1]
+        name = self.view.memory.name
+        with open("/proc/self/maps") as f:
+            maps = [line.split(maxsplit=5) for line in f]
+        holding = [m[5].strip() for m in maps if int(m[0].split("-")[0], 16) <= address < int(m[0].split("-")[1], 16) and len(m) > 5]
+        self.assertEqual(len(holding), 1, f"the mapping holding {address:#x}")
+        self.assertTrue(holding[0].endswith("/" + name.lstrip("/")), f"{holding[0]} is the shared memory {name}")
+
+
+@unittest.skipUnless(Image, "no PIL")
+class TheWidget(unittest.TestCase):
+    """zyngui's panel widget hands the renderer's rects to PanelImage: a paint over a view that answers rects blits them."""
+
+    def test_the_widgets_paint_hands_the_rects_to_the_blit(self):
+        sys.path.insert(0, HERE)
+        import test_omx_panel_renderer_crash as harness
+        case = harness.WidgetOverAStoppedRenderer("test_the_next_open_draws_again")
+        case.setUp()
+        try:
+            panel_view = case.modules["zyngine.zynthian_omx_panel_view"]
+            shows = []
+
+            class Recorded(panel_view.PanelImage):
+                def show(self, pixels, width, height, dirty=None):
+                    shows.append(dirty)
+                    return super().show(pixels, width, height, dirty)
+
+                def _new(self, image):
+                    pass
+
+                def _put(self, image, x, y):
+                    pass
+
+            harness.FakeView.crash = False
+            rects = [(7, 3, 20, 10)]
+            with mock.patch.object(panel_view, "PanelImage", Recorded), \
+                    mock.patch.object(harness.FakeView, "draw", lambda self, w, h: (bytes(w * h * 4), rects)):
+                case.w.set_processor(case.proc)
+                case.w.refresh_gui()
+            self.assertEqual(shows, [rects], "the paint hands the view's rects to the blit")
+        finally:
+            case.doCleanups()
 
 
 if __name__ == "__main__":
