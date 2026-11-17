@@ -11,9 +11,8 @@ omx-contract (`scalePosition` / `scaleValue`, FreeMixer/omx-contract#207), not b
 - It governs every position-to-value mapping of such a controller: drawing, nudge and MIDI CC
   (absolute and relative alike), so a CC sweep lands where the knob draws.
 - What stays upstream's: every other engine (jalv and the rest), CC mapping included. A controller without `position_law` takes exactly the code path upstream has.
-- Held to: `data/scale-vectors.json` from the omx-contract-data package
-  (`/usr/share/omx-contract/scale-vectors.json`, or `ZYNTHIAN_OMX_SCALE_VECTORS`), both
-  directions within one ulp, in `tests/test_position_law.py`. The tests fail if the file is absent.
+- Held to: `data/scale-vectors.json`, both directions within one ulp, by omx-contract's own tests of its
+  reader; `tests/test_position_law.py` holds the fork's use of it (the controllers and the engine's wiring).
 - End: the divergence ends when upstream adopts the law for its controllers. The twin, the
   `position_law` option and the branches then go.
 - Proven on a Pi (2026-11-07, scratch directory, removed after): this tree's tests pass there against the

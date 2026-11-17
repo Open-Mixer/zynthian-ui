@@ -1,15 +1,13 @@
 # -*- coding: utf-8 -*-
 #
 # The position law of a plugin-hostd controller: omx-contract's Python reader (omx_contract.scale, from
-# python3-omx-contract), which the fork calls and does not restate. The reader the fork finds is held here to the
-# golden vectors omx-contract-data installs (/usr/share/omx-contract/scale-vectors.json, or
-# ZYNTHIAN_OMX_SCALE_VECTORS). Without either the tests FAIL: there is no copy of them in this tree.
+# python3-omx-contract), which the fork calls and does not restate. The reader is held to omx-contract's golden
+# vectors by omx-contract's own tests; here is the fork's use of it: the controllers and the engine's wiring.
 # Every other engine's controller keeps upstream's is_logarithmic law, and the tests say so by value.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-import json
 import math
 import os
 import sys
@@ -57,57 +55,6 @@ def _import_gui_controller():
 
 
 gui_mod = _import_gui_controller()
-
-ULP = 2.220446049250313e-16
-
-
-def close(a, b):
-    """within one ulp, relative"""
-    return a == b or abs(a - b) <= ULP * max(abs(a), abs(b), 1e-300)
-
-
-VECTORS_PATH = os.environ.get("ZYNTHIAN_OMX_SCALE_VECTORS", "/usr/share/omx-contract/scale-vectors.json")
-
-
-def vectors():
-    # fails loudly, never skips: the installed vectors are the oracle
-    try:
-        with open(VECTORS_PATH) as f:
-            return json.load(f)
-    except OSError as e:
-        raise AssertionError(
-            f"the installed scale vectors are absent ({VECTORS_PATH}): install omx-contract-data "
-            f"or set ZYNTHIAN_OMX_SCALE_VECTORS ({e})")
-
-
-class TwinAgainstVectors(unittest.TestCase):
-    def test_vectors_are_installed_and_complete(self):
-        v = vectors()
-        self.assertEqual(sorted(v["laws"]), ["linear", "log", "map", "stepped"])
-        for name, d in v["laws"].items():
-            self.assertGreaterEqual(len(d["rows"]), 6, name)
-
-    def test_position_and_value_both_directions_within_one_ulp(self):
-        n = 0
-        for name, d in vectors()["laws"].items():
-            for row in d["rows"]:
-                with self.subTest(law=name, value=row["value"]):
-                    self.assertTrue(close(law.scale_position(d["travel"], row["value"]), row["p"]),
-                                    (law.scale_position(d["travel"], row["value"]), row["p"]))
-                    want = row.get("valueAtP", row["value"])
-                    self.assertTrue(close(law.scale_value(d["travel"], row["p"]), want),
-                                    (law.scale_value(d["travel"], row["p"]), want))
-                    n += 1
-        self.assertGreaterEqual(n, 24)
-
-    def test_one_khz_on_twenty_hz_to_twenty_khz_is_0_5663(self):
-        p = law.scale_position({"scale": "log", "min": 20, "max": 20000}, 1000)
-        self.assertEqual(round(p, 4), 0.5663)
-        self.assertNotEqual(round(p, 4), 0.5)
-
-    def test_log_over_a_floor_that_is_not_positive_is_linear(self):
-        self.assertEqual(law.scale_position({"scale": "log", "min": 0, "max": 10}, 5), 0.5)
-
 
 def zctrl(**opts):
     base = {"value_min": 20.0, "value_max": 20000.0, "value": 1000.0, "is_integer": False}

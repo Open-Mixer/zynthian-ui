@@ -68,8 +68,6 @@ jobs:
           v=$(dpkg-query -W -f '${Version}' omx-contract-data)
           dpkg --compare-versions "$v" ge 3.14.0 && dpkg --compare-versions "$v" lt 4 \
             || { echo "::error::omx-contract-data $v is not >= 3.14.0 and < 4"; exit 1; }
-          # the vectors the position law is held to
-          test -f /usr/share/omx-contract/scale-vectors.json
 
       - name: Fetch plugin-db's Python reader and its golden answers
         run: |
