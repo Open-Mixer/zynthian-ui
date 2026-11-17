@@ -10,11 +10,14 @@
 # painted over the panel colour as one canvas image. A numeric controller is the renderer's knob, a list of values its
 # selector, a two-value list its switch, a path or a selector counter its glass display; the label and the value are
 # the renderer's; the selection is a frame in the colour the stock arc would take (a host's chrome, not a colour role).
-# The look the view is opened in is the UI's palette over the renderer's own (zynthian_ui_look).
+# The operator's state stays the stock widget's items, above the image: the MIDI-bind text as upstream draws it, and
+# the pickup marker, moved onto the renderer's knob (its target rect) over the knob's 270 degree travel. The look the
+# view is opened in is the UI's palette over the renderer's own (zynthian_ui_look).
 #
 # drawn_controller(base) makes the class over the stock one, overriding only what paints: show, on_size, plot_value,
-# set_title and _set_color_graph. The zynpot, the touch gestures, the value's formatting and travel, the MIDI bind text
-# are the stock widget's code, inherited. Without the renderer the stock widget is drawn and the reason said once.
+# set_title, _set_color_graph and zynpot_abs (the marker's place). The zynpot, the touch gestures, the value's
+# formatting and travel, the MIDI bind text are the stock widget's code, inherited. Without the renderer, or with a
+# look the table cannot value, the stock widget is drawn and the reason said once.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 #
@@ -31,6 +34,9 @@ from zyngine import zynthian_ui_look as ui_look
 from zyngui import zynthian_gui_config
 
 FRAME_PX = 2
+MARKER_PX = 2  # the pickup marker's distance from the knob's rim
+MARKER_DEG = 12  # the marker's width, upstream's
+KNOB_DEG = 270  # the renderer's knob travel (view.c draw_knob: -135 to +135 degrees)
 SECTION_KEY = "controller"
 
 
@@ -53,9 +59,7 @@ def drawn_controller(base):
     """The look's controller class over the stock <base> (zynthian_gui_controller)."""
 
     class zynthian_gui_controller_drawn(base):
-        said = False  # the renderer's absence, said once for every controller
-        look = None  # the look document, read once per class from the renderer's tools directory
-        look_read = False
+        said = False  # the renderer's absence, or a look the table cannot value: said once for every controller
 
         def __init__(self, *args, **kwargs):
             self.view = None
@@ -93,6 +97,11 @@ def drawn_controller(base):
             self.frame_color = None if color == zynthian_gui_config.color_ctrl_bg_on else color
             self.draw()
 
+        def zynpot_abs(self, val):
+            super().zynpot_abs(val)
+            if self.zctrl and self.pickup and self.view and not self.stock and self.graph_type == self.GUI_CTRL_ARC:
+                self.place_marker(val)
+
         # ---- the renderer
 
         def draw(self):
@@ -116,7 +125,8 @@ def drawn_controller(base):
                     self.fall_back(e)
                     return
                 self.paint(pixels, w, h)
-            self.itemconfig('gui', state=tkinter.HIDDEN)
+            for item in (self.graph, self.label_title, self.value_text):  # the renderer draws these; the MIDI bind stays
+                self.itemconfig(item, state=tkinter.HIDDEN)
             self.frame()
 
         def open_view(self, kind, key, w, h):
@@ -124,23 +134,34 @@ def drawn_controller(base):
                 self.view.close()
                 self.view = None
             self.drawn_state = None
-            cls = type(self)
-            if not cls.look_read:
-                cls.look_read = True
-                cls.look = ui_look.look_for(zynthian_gui_config, panel_view.tools_dir())
             try:
-                view = panel_view.View(description(self.zctrl.symbol, self.title, kind), look=cls.look)
+                look = ui_look.look_for(zynthian_gui_config, panel_view.tools_dir())
+                view = panel_view.View(description(self.zctrl.symbol, self.title, kind), look=look)
                 view.set_title("", "")
                 view.set_surface(w, h)
                 if kind == "knob" and not self.zctrl.ticks:
                     z = self.zctrl
                     view.set_travel(0, z.value_min, z.value_max, z.value_default, (z.position_law or {}).get("step", 0.0),
                                     bool(z.is_logarithmic), bool(z.is_integer))
-            except panel_view.RendererAbsent as e:
+            except (panel_view.RendererAbsent, ui_look.LookShort) as e:
                 self.fall_back(e)
                 return False
             self.view, self.view_key = view, key
             return True
+
+        def place_marker(self, val):
+            """Upstream's pickup marker (graph_pickup, an arc) on the renderer's knob: its target rect is the knob's
+            bounding square; the encoder's place over the knob's travel, from the top. None: no knob, no marker."""
+            rect = self.view.target_rect(0)
+            if not rect:
+                self.itemconfig(self.graph_pickup, state=tkinter.HIDDEN)
+                return
+            (x, y, w, h), _ = rect
+            cx, cy, r = x + w / 2, y + h / 2, h / 2
+            self.coords(self.graph_pickup, cx - r - MARKER_PX, cy - r - MARKER_PX, cx + r + MARKER_PX, cy + r + MARKER_PX)
+            # Tk's arc angles run counter-clockwise from 3 o'clock; the knob's from 12 o'clock, clockwise
+            self.itemconfig(self.graph_pickup, start=90 + KNOB_DEG / 2 - KNOB_DEG * val - MARKER_DEG / 2, extent=MARKER_DEG,
+                            width=max(2, int(r * 0.1)), outline=zynthian_gui_config.color_ctrl_tx_off)
 
         def give_reading(self, kind):
             """The stock widget's own reading (calculate_plot_values) as the renderer takes it."""
@@ -163,6 +184,8 @@ def drawn_controller(base):
             self.photo = self.photo_of(image)
             if self.image_item is None:
                 self.image_item = self.create_image(0, 0, anchor=tkinter.NW, image=self.photo)
+                self.tag_raise(self.midi_bind)  # the operator's state, above the face
+                self.tag_raise(self.graph_pickup)
             else:
                 self.itemconfig(self.image_item, image=self.photo)
 
@@ -184,7 +207,7 @@ def drawn_controller(base):
                 self.itemconfig(self.frame_item, state=tkinter.HIDDEN)
 
         def fall_back(self, why):
-            """The renderer refused or stopped: the stock items draw, said once."""
+            """The renderer refused or stopped, or the look cannot be valued: the stock items draw, said once."""
             self.stock = True
             if self.view:
                 try:

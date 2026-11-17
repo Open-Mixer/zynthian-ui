@@ -34,12 +34,18 @@ STOCK = "stock"
 
 
 class LookShort(Exception):
-    """The renderer's look names no role the table values: the renderer and this table disagree, said by the role."""
+    """The renderer's look is not one this table can value (no tokens, or no role the table names): said by name; the
+    caller draws stock and says it once."""
+
+
+_cache = {}  # (ui_look, tools_dir) -> the look document, or the LookShort it raised: the base is read once
 
 
 def tokens(colors, base):
     """The look document for the renderer: <base> (its look.json, parsed) with the palette's roles valued from
-    <colors> (zynthian_gui_config, or anything with its color_* attributes)."""
+    <colors> (zynthian_gui_config, or anything with its color_* attributes). LookShort names what the base lacks."""
+    if not isinstance(base, dict) or not isinstance(base.get("tokens"), dict):
+        raise LookShort("the renderer's look has no tokens: not a look.json")
     tok = dict(base["tokens"])
     for role, name in ROLES:
         if role not in tok:
@@ -52,11 +58,20 @@ def look_for(config, tools_dir):
     """The look a view is opened with under <config>'s ui_look: None under stock (the renderer's own look), else the
     palette over the renderer's look.json in <tools_dir>; None too when that file is not there (the renderer is
     absent, and says so itself when the view is opened)."""
-    if getattr(config, "ui_look", STOCK) == STOCK:
+    look = getattr(config, "ui_look", STOCK)
+    if look == STOCK:
         return None
-    try:
-        with open(os.path.join(tools_dir, "look.json")) as f:
-            base = json.load(f)
-    except (OSError, ValueError):
-        return None
-    return tokens(config, base)
+    key = (look, tools_dir)
+    if key not in _cache:
+        try:
+            with open(os.path.join(tools_dir, "look.json")) as f:
+                base = json.load(f)
+        except (OSError, ValueError):
+            return None
+        try:
+            _cache[key] = tokens(config, base)
+        except LookShort as e:
+            _cache[key] = e
+    if isinstance(_cache[key], LookShort):
+        raise _cache[key]
+    return _cache[key]

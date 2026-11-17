@@ -521,7 +521,7 @@ class DrawnController(unittest.TestCase):
 
     def test_the_pickup_marker_has_no_place_on_a_control_without_a_knob(self):
         FakeView.rect = None
-        ctrl = self.controller(Zctrl(is_path=True, value="/a/b.wav"))
+        ctrl = self.controller(Zctrl(ticks=[0, 1, 2, 3], labels=["Sine", "Saw", "Square", "Noise"], value=2))
         ctrl.pickup = True
         ctrl.zynpot_abs(0.5)
         self.assertEqual(ctrl.items[ctrl.graph_pickup]["state"], "hidden")
@@ -545,8 +545,8 @@ class PanelOverAShortLook(unittest.TestCase):
             w.width, w.height = 120, 60
             w.zyngui_control = types.SimpleNamespace(zcontrollers=[], show_menu=lambda: None)
             engine = types.SimpleNamespace(drawn=({"controls": []},), name="omx eq8", zctrls={}, curve=lambda d: [], meter=lambda s: None)
-            w.set_processor(types.SimpleNamespace(engine=engine))
             with self.assertLogs(level="WARNING") as log:
+                w.set_processor(types.SimpleNamespace(engine=engine))  # builds: the first refusal
                 self.assertFalse(w.build_drawn())
                 self.assertFalse(w.build_drawn())
         self.assertEqual(len([m for m in log.output if "--legend" in m]), 1, log.output)
@@ -626,9 +626,9 @@ class PanelWearsTheLook(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         look = next((k.value for k in calls[0].keywords if k.arg == "look"), None)
         self.assertIsNotNone(look, "the panel's view is opened in the renderer's own look, not the UI's")
-        self.assertIsInstance(look, ast.Call)
-        self.assertEqual(ast.unparse(look.func), "ui_look.look_for")
-        self.assertEqual([ast.unparse(a) for a in look.args], ["zynthian_gui_config", "panel_view.tools_dir()"])
+        build = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "build_drawn")
+        assigned = {ast.unparse(a.targets[0]): ast.unparse(a.value) for a in ast.walk(build) if isinstance(a, ast.Assign) and len(a.targets) == 1}
+        self.assertEqual(assigned.get(ast.unparse(look)), "ui_look.look_for(zynthian_gui_config, panel_view.tools_dir())")
 
 
 # ---- The look's way to the renderer

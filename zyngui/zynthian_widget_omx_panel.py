@@ -134,11 +134,12 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         keys = self.page_keys()
         part, self.display_map = panel_view.screen_part(drawn[0], set(keys))
         try:
-            view = panel_view.View(part, look=ui_look.look_for(zynthian_gui_config, panel_view.tools_dir()))
+            look = ui_look.look_for(zynthian_gui_config, panel_view.tools_dir())
+            view = panel_view.View(part, look=look)
         except panel_view.RendererStopped as e:
             self.renderer_stopped(e)
             return False
-        except panel_view.RendererAbsent as e:
+        except (panel_view.RendererAbsent, ui_look.LookShort) as e:
             if not getattr(zynthian_widget_omx_panel, "said", False):
                 zynthian_widget_omx_panel.said = True
                 logging.warning("%s: the panel is drawn as strips", e)
