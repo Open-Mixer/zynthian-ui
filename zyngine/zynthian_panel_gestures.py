@@ -668,7 +668,8 @@ def widget_of(zctrl):
 
 class Panel:
     """The rows of a page. A row is a horizontal strip of the canvas, `margin` px in from each side, whose drawn length is
-    the travel of its drag; a press belongs to the row it lands in, and the motion and the release follow that row."""
+    the travel of its drag; a press belongs to the row it lands in, and the motion and the release follow that row.
+    A blank slot of the page (None) keeps its place and has no row: the others stay in their own slots."""
 
     def __init__(self, zctrls, width, height, margin, table=None, on_word=None, seconds=None):
         self.table = table or load_table()
@@ -677,6 +678,8 @@ class Panel:
         self.pressed = None
         n = max(1, len(zctrls))
         for i, zctrl in enumerate(zctrls):
+            if zctrl is None:  # a blank slot
+                continue
             travel = Travel.of(zctrl, self.table["thresholds"])
             q = (seconds or {}).get(zctrl.symbol)  # the controller that is this row's Q: the row is then a handle
             self.rows.append((zctrl, Gestures(

@@ -153,6 +153,7 @@ class BlankSlotPage(unittest.TestCase):
         screen.parent = None
         screen.configure_processors = lambda curproc: setattr(screen, "processors", [self.proc])
         screen.zgui_controllers = [GuiController() for _ in range(4)]
+        screen.swipe_update = lambda: None  # the selector's, a stand-in here
         screen.index = 0
         screen.fill_list()
         self.screen = screen
@@ -163,7 +164,8 @@ class BlankSlotPage(unittest.TestCase):
         self.screen.index = next(i for i, row in enumerate(self.screen.list_data) if row[0] is not None and row[2] == page)
         self.screen.set_controller_screen()
         self.screen.plot_zctrls(force=True)
-        return self.screen.widgets["zynthian_widget_omx_panel"]
+        (widget,) = self.screen.widgets.values()
+        return widget
 
     def slots(self):
         return [g.zctrl and g.zctrl.symbol for g in self.screen.zgui_controllers]

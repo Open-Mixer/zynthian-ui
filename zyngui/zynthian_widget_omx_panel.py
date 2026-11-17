@@ -70,6 +70,7 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
             logging.info("no multi-touch for the panel's pinch: %s", e)
 
     def zctrls(self):
+        """The page's slots, in order: a controller, or None for a slot the page leaves blank."""
         return [z for z in self.zyngui_control.zcontrollers if not getattr(z, "not_on_gui", False)]
 
     def build(self):
@@ -117,6 +118,8 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         engine = self.processor.engine if self.processor else None
         keys = {}
         for z in self.zctrls():
+            if z is None:  # a blank slot
+                continue
             sym = str(z.symbol)
             keys[engine_key(sym)] = z
         return keys
