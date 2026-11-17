@@ -113,8 +113,9 @@ class FakeView:
     """The renderer's view: the part of the panel it was opened with, and what it was given."""
     opened = []
 
-    def __init__(self, part):
+    def __init__(self, part, look=None):
         self.symbols, self.meters, self.values, self.drew = list(part["keys"]), [], {}, 0
+        self.look = look  # the UI look the widget opens the view with (#70)
         FakeView.opened.append(self)
 
     def set_title(self, *a): pass
