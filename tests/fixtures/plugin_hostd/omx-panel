@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # A stand-in for `omx-panel describe --descriptor <file> [--pages --per-page N | --layout] [--remote <file>]` and `compare`:
-# it replays what the real omx-panel (main after its pages PR) printed for the descriptors of this directory, kept
+# it replays what the real omx-panel (the commit .github/workflows/tests.yml builds, under the channel's contract set) printed for the descriptors of this directory, kept
 # beside them as <name>.describe.json (no --pages) and <name>.pages<N>.json (--pages --per-page N); OMX_PANEL_REAL
 # (test_engine_plugin_hostd) runs the real command and compares it with these files, so they cannot drift. A width or a
 # descriptor with no record gets a plain cut (sections by group, Easy first). With --remote the Easy pages come first, then
