@@ -622,8 +622,8 @@ _curve_words = {}  # contract directory => (display kinds, role words)
 def curve_words(root=None):
     """(the display kinds drawn from a curve, the role words a curve is bound by) as omx-dsp declares them:
     CURVE_DISPLAYS and CURVE_ROLES of the curve.json its contract package installs, in the wire's spelling (snake
-    case, the description's own words). A role of the description that is none of these (attack, release, mix) draws
-    nothing and is not bound. Two empty tuples when the declaration cannot be read: no display is a curve then."""
+    case, the description's own words). A role of the description that is none of these (attack, release) is not
+    bound; one the family's curve does not read (a compressor's mix) is bound and draws nothing. Two empty tuples when the declaration cannot be read: no display is a curve then."""
     root = root or (os.environ.get("OMX_CONTRACT_PATH") or CONTRACT_PATH).split(":")[0]
     if root not in _curve_words:
         def wire(ids):
