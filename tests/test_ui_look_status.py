@@ -89,8 +89,10 @@ class StatusScreen(unittest.TestCase):
         self.assertIn("zynthian_gui_config.ui_look", self.src, "and only under a look: stock draws upstream's gradient")
 
     def test_stock_gradient_is_still_upstreams(self):
-        for piece in ("cr = 0", "cg = 204", "cr = int((cpu_load - 50) * 204 / 25)", "cg = int((100 - cpu_load) * 204 / 25)"):
-            self.assertIn(piece, self.src)
+        # each line of upstream's gradient, as often as upstream writes it (0xCC is 204): an edit of any one is seen
+        for piece, times in (("cr = 0", 1), ("cg = 204", 2), ("cr = 204", 1), ("cr = int((cpu_load - 50) * 204 / 25)", 1),
+                             ("cg = int((100 - cpu_load) * 204 / 25)", 1), ("if cpu_load < 50", 1), ("elif cpu_load < 75", 1)):
+            self.assertEqual(self.src.count(piece), times, piece)
 
     def test_the_module_imports_the_look(self):
         imported = [ast.unparse(n) for n in self.tree.body if isinstance(n, (ast.Import, ast.ImportFrom))]
