@@ -559,6 +559,14 @@ color_grid_tx = os.environ.get('ZYNTHIAN_UI_COLOR_GRID_TX', "#ffffff")
 color_grid_tx_off = os.environ.get('ZYNTHIAN_UI_COLOR_GRID_TX_OFF', "#aaaaaa")
 color_grid_sel = os.environ.get('ZYNTHIAN_UI_COLOR_GRID_SEL', "yellow")
 
+# How the controller widgets are drawn (docs/ui-look-drawn-widgets.md): `stock` is upstream Zynthian's drawing;
+# `vintage` draws them through omx-panel's renderer, in the colours above. A word that names no look is said and
+# draws stock, so the UI starts whatever the config says.
+ui_look = os.environ.get('ZYNTHIAN_UI_LOOK', "stock")
+if ui_look not in ("stock", "vintage"):
+    logging.warning("ZYNTHIAN_UI_LOOK='%s' names no look (stock, vintage): the controllers are drawn stock", ui_look)
+    ui_look = "stock"
+
 # ------------------------------------------------------------------------------
 # Font Family
 # ------------------------------------------------------------------------------
