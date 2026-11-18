@@ -74,10 +74,14 @@ class ScreenPart(unittest.TestCase):
 
 class CurveBinding(unittest.TestCase):
 
-    def test_a_dynamics_curve_is_bound_by_its_gain_computer_roles_only(self):
+    def test_a_dynamics_curve_is_bound_by_the_roles_omx_dsp_names_only(self):
+        # CURVE_ROLES is one set for every family (0.32.4 added the drive's and the time family's, mix among them): a
+        # term the family's curve does not read is no term of it, so the compressor's mix is bound and draws nothing
         line = view.curve_bind_line(7, 0, fixture("omx-comp")["description"])
         self.assertEqual(line, "curve_bind 7 0 transfer_curve dynamics threshold=thresholdDb:db ratio=ratio:ratio "
-                               "knee=kneeDb:db makeup=makeupDb:db")
+                               "knee=kneeDb:db makeup=makeupDb:db mix=mixPct:pc")
+        self.assertNotIn("attack", line)
+        self.assertNotIn("release", line)
 
     def test_an_eq_curve_indexes_its_bands(self):
         line = view.curve_bind_line(3, 0, fixture("omx-eq8")["description"]).split()
