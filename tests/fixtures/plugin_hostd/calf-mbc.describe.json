@@ -596,12 +596,12 @@
         "sectionName": "Band",
         "pageName": "Band: Band 1",
         "ids": [
+          null,
+          null,
+          null,
+          null,
           "b1_release",
           "b1_makeup",
-          null,
-          null,
-          null,
-          null,
           null,
           null
         ]

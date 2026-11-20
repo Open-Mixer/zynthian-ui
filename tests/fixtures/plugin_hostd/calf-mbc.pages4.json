@@ -15,6 +15,17 @@
     "sectionName": "Band",
     "pageName": "Band: Band 1",
     "ids": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  {
+    "section": 0,
+    "sectionName": "Band",
+    "pageName": "Band: Band 1 2",
+    "ids": [
       "b1_release",
       "b1_makeup",
       null,

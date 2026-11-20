@@ -39,8 +39,19 @@
     "ids": [
       10,
       7,
-      9,
-      6
+      null,
+      9
+    ]
+  },
+  {
+    "section": 0,
+    "sectionName": "Bands",
+    "pageName": "Bands: Band 1 2",
+    "ids": [
+      6,
+      null,
+      null,
+      null
     ]
   },
   {
@@ -50,8 +61,19 @@
     "ids": [
       15,
       12,
-      14,
-      11
+      null,
+      14
+    ]
+  },
+  {
+    "section": 0,
+    "sectionName": "Bands",
+    "pageName": "Bands: Band 2 2",
+    "ids": [
+      11,
+      null,
+      null,
+      null
     ]
   },
   {
@@ -83,8 +105,19 @@
     "ids": [
       25,
       22,
-      24,
-      21
+      null,
+      24
+    ]
+  },
+  {
+    "section": 0,
+    "sectionName": "Bands",
+    "pageName": "Bands: Band 4 2",
+    "ids": [
+      21,
+      null,
+      null,
+      null
     ]
   },
   {
@@ -94,8 +127,19 @@
     "ids": [
       30,
       27,
-      29,
-      26
+      null,
+      29
+    ]
+  },
+  {
+    "section": 0,
+    "sectionName": "Bands",
+    "pageName": "Bands: Band 5 2",
+    "ids": [
+      26,
+      null,
+      null,
+      null
     ]
   },
   {
@@ -127,8 +171,19 @@
     "ids": [
       40,
       37,
-      39,
-      36
+      null,
+      39
+    ]
+  },
+  {
+    "section": 0,
+    "sectionName": "Bands",
+    "pageName": "Bands: Band 7 2",
+    "ids": [
+      36,
+      null,
+      null,
+      null
     ]
   },
   {
@@ -138,8 +193,19 @@
     "ids": [
       45,
       42,
-      44,
-      41
+      null,
+      44
+    ]
+  },
+  {
+    "section": 0,
+    "sectionName": "Bands",
+    "pageName": "Bands: Band 8 2",
+    "ids": [
+      41,
+      null,
+      null,
+      null
     ]
   },
   {
