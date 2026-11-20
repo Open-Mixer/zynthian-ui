@@ -6,9 +6,9 @@ is a colour preset: `config/ui-looks/openmixer-vintage.sh` sets the sixteen `ZYN
 the font and the main menu grid's six tokens from the console's `tokens.css`, generated, pinned,
 never retyped. This note is level 2: `ZYNTHIAN_UI_LOOK` chooses how the stock controller widget is
 DRAWN. `stock` is upstream Zynthian's drawing, untouched; `vintage` draws every stock controller
-through omx-panel's renderer, the one library every OpenMixer surface draws a panel with
+through omx-panel's renderer, omx-panel's own native toolkit (the web UI and the MOD GUI draw their own controls)
 (`libomx-panel-render.so.0`, already behind `zyngine/zynthian_omx_panel_view.py` for the plugin
-panels on the Pi). One drawing everywhere: the controller of a synth's page and a knob of an
+panels on the Pi). One drawing on this screen: the controller of a synth's page and a knob of an
 omx-eq8 panel are the same knob, from the same tokens.
 
 ## The switch
@@ -62,7 +62,7 @@ Selection and finish are a host's chrome, not a colour role (omx-panel `schema/l
 the host, in the colour the stock arc would take. The metal of a knob (the console's `--knob-face`,
 `--knob-edge`, the finish blocks of `tokens.css`) is the renderer's to draw: today (omx-panel
 0.14, `renderer/src/view.c` `draw_knob`) it draws rim, body and pointer from the roles; a relief
-or a glass highlight is one drawing in omx-panel for every surface, never a second one here.
+or a glass highlight is omx-panel's own drawing for its renderer (no other client reads it), never a second one here.
 
 The stock screen's four controllers are four Tk widgets placed by Zynthian's layout
 (`zynthian_gui_base`, `ZYNTHIAN_UI_GRAPHIC_LAYOUT`); that placement is not touched, so the
