@@ -1,21 +1,23 @@
 {
-  "$comment": "GENERATED — DO NOT EDIT BY HAND. The look the MOD GUI wears (tools/modgui-gen.mjs) and the renderer reads: every colour role of schema/look-roles.json at its one default, and the font. Regenerate: `node tools/look.mjs`, then commit the result.",
+  "$comment": "GENERATED — DO NOT EDIT BY HAND. The one public source of the vintage tokens: every colour role of schema/look-roles.json at its one default, and the font. The MOD GUI wears it (tools/modgui-gen.mjs), the renderer reads it, the Zynthian UI maps its colours from it and the console's tokens.css is held to it. Regenerate: `node tools/look.mjs`, then commit the result.",
   "theme": "dark",
-  "accent": "cyan",
+  "accent": "orange",
   "finish": "aluminium",
-  "style": "modern",
+  "style": "vintage",
   "tokens": {
     "--surface": "#15191e",
     "--surface-2": "#1c2127",
     "--surface-3": "#242b33",
-    "--glass": "#0d1115",
+    "--glass": "#05070a",
     "--border": "#2a323b",
     "--border-strong": "#3a444f",
     "--ink": "#eaf0f4",
     "--ink-dim": "#8a97a3",
     "--ink-faint": "#5a6571",
     "--legend": "#e9dfc6",
-    "--accent": "#28c8e6",
+    "--accent": "#e8732c",
+    "--knob-pointer": "#f4efe2",
+    "--curve-stroke": "#e8732c",
     "--meter-green": "#34d17b",
     "--meter-amber": "#f2b632",
     "--meter-red": "#ff4d45",
@@ -29,5 +31,1004 @@
     "--origin-room-mode": "#4a86f0",
     "--font-ui": "\"Inter\", \"Helvetica Neue\", system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif",
     "--font-file": "fonts/Inter-Regular.ttf"
+  },
+  "setting": {
+    "name": "modgui-look",
+    "values": [
+      "vintage",
+      "console",
+      "3d"
+    ],
+    "default": "vintage",
+    "env": "OMX_MODGUI_LOOK",
+    "flag": "--look"
+  },
+  "tierSetting": {
+    "name": "modgui-tier",
+    "values": [
+      "easy",
+      "advanced"
+    ],
+    "default": "advanced",
+    "env": "OMX_MODGUI_TIER",
+    "flag": "--tier"
+  },
+  "console": {
+    "commit": "67b4d542aaf661c9d01e78f578024cf8103393b8",
+    "defaultFinish": "aluminium",
+    "tokens": {
+      "--glass": "#05070a",
+      "--glass-grid": "rgba(233,223,198,.10)",
+      "--legend": "#e9dfc6",
+      "--accent": "#e8732c",
+      "--shade": "#000",
+      "--shadow-1": "0 1px 2px rgba(0,0,0,.5)",
+      "--shadow-2": "0 4px 14px rgba(0,0,0,.55)",
+      "--inset-track": "inset 0 0 0 1px rgba(0,0,0,.6), inset 0 2px 6px rgba(0,0,0,.55)",
+      "--knob-pointer": "#f4efe2",
+      "--fader-cap-line": "#f0e8d6",
+      "--cap-legend": "#e6dcc4",
+      "--ink-light": "#11171d",
+      "--ink-dim-light": "#3a3b3c"
+    },
+    "finish": {
+      "aluminium": {
+        "--knob-face": "#7d848b",
+        "--knob-edge": "#a9b0b7",
+        "--knob-cap-hi": "#b9c0c6",
+        "--knob-knurl": "#5d646b",
+        "--fader-cap": "#c9ced3",
+        "--fader-cap-ridge": "#9ea4aa",
+        "--fader-cap-groove": "#1a1d20",
+        "--btn-face": "#3b4046",
+        "--toggle-face": "#a9b0b7",
+        "--screw": "#9aa1a8"
+      },
+      "graphite": {
+        "--knob-face": "#4a4f55",
+        "--knob-edge": "#6b7178",
+        "--knob-cap-hi": "#6e747b",
+        "--knob-knurl": "#33373c",
+        "--fader-cap": "#5a6067",
+        "--fader-cap-ridge": "#3e4348",
+        "--fader-cap-groove": "#121315",
+        "--btn-face": "#2b2f33",
+        "--toggle-face": "#6b7178",
+        "--screw": "#6b7178"
+      },
+      "black": {
+        "--knob-face": "#1c1d1f",
+        "--knob-edge": "#3a3c40",
+        "--knob-cap-hi": "#3a3c40",
+        "--knob-knurl": "#0e0f10",
+        "--fader-cap": "#2a2c2f",
+        "--fader-cap-ridge": "#161718",
+        "--fader-cap-groove": "#050506",
+        "--btn-face": "#18191b",
+        "--toggle-face": "#3a3c40",
+        "--screw": "#3a3c40"
+      }
+    }
+  },
+  "drawings": {
+    "knob-vintage": {
+      "comment": "The vintage knob, ONE drawing and the only copy: the console's Encoder cap (a radial cap-hi to face gradient, a rim in the edge colour, a knurled edge, a carved pointer between a shaded and a lit groove wall) and its silkscreened tick ring, in the console's own metal. Every colour is a placeholder of the look: {--role}, {console:--x} and {finish:--x} (the console's pin, the look's finish), never retyped; {angle} is the frame's, from -135 to +135 degrees. tools/svg-knob.mjs paints it for the film strips and the face, the renderer for a window: shapes in paint order, each under the rotations listed outermost first.",
+      "viewBox": 48,
+      "gradients": {
+        "cap": {
+          "kind": "radialGradient",
+          "attrs": {
+            "cx": 0.35,
+            "cy": 0.3,
+            "r": 0.8
+          },
+          "stops": [
+            {
+              "offset": 0,
+              "color": "{finish:--knob-cap-hi}"
+            },
+            {
+              "offset": 1,
+              "color": "{finish:--knob-face}"
+            }
+          ]
+        }
+      },
+      "shapes": [
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 0.8,
+            "x2": 24,
+            "y2": 3.4,
+            "stroke": "{console:--legend}",
+            "stroke-opacity": 0.7,
+            "stroke-width": 0.9
+          },
+          "rotate": [
+            {
+              "angle": -135,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 0.8,
+            "x2": 24,
+            "y2": 3.4,
+            "stroke": "{console:--legend}",
+            "stroke-opacity": 0.7,
+            "stroke-width": 0.9
+          },
+          "rotate": [
+            {
+              "angle": -108,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 0.8,
+            "x2": 24,
+            "y2": 3.4,
+            "stroke": "{console:--legend}",
+            "stroke-opacity": 0.7,
+            "stroke-width": 0.9
+          },
+          "rotate": [
+            {
+              "angle": -81,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 0.8,
+            "x2": 24,
+            "y2": 3.4,
+            "stroke": "{console:--legend}",
+            "stroke-opacity": 0.7,
+            "stroke-width": 0.9
+          },
+          "rotate": [
+            {
+              "angle": -54,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 0.8,
+            "x2": 24,
+            "y2": 3.4,
+            "stroke": "{console:--legend}",
+            "stroke-opacity": 0.7,
+            "stroke-width": 0.9
+          },
+          "rotate": [
+            {
+              "angle": -27,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 0.8,
+            "x2": 24,
+            "y2": 3.4,
+            "stroke": "{console:--legend}",
+            "stroke-opacity": 0.7,
+            "stroke-width": 0.9
+          },
+          "rotate": [
+            {
+              "angle": 0,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 0.8,
+            "x2": 24,
+            "y2": 3.4,
+            "stroke": "{console:--legend}",
+            "stroke-opacity": 0.7,
+            "stroke-width": 0.9
+          },
+          "rotate": [
+            {
+              "angle": 27,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 0.8,
+            "x2": 24,
+            "y2": 3.4,
+            "stroke": "{console:--legend}",
+            "stroke-opacity": 0.7,
+            "stroke-width": 0.9
+          },
+          "rotate": [
+            {
+              "angle": 54,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 0.8,
+            "x2": 24,
+            "y2": 3.4,
+            "stroke": "{console:--legend}",
+            "stroke-opacity": 0.7,
+            "stroke-width": 0.9
+          },
+          "rotate": [
+            {
+              "angle": 81,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 0.8,
+            "x2": 24,
+            "y2": 3.4,
+            "stroke": "{console:--legend}",
+            "stroke-opacity": 0.7,
+            "stroke-width": 0.9
+          },
+          "rotate": [
+            {
+              "angle": 108,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 0.8,
+            "x2": 24,
+            "y2": 3.4,
+            "stroke": "{console:--legend}",
+            "stroke-opacity": 0.7,
+            "stroke-width": 0.9
+          },
+          "rotate": [
+            {
+              "angle": 135,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": 24,
+            "cy": 25,
+            "r": 19.6,
+            "fill": "{console:--shade}",
+            "fill-opacity": 0.5
+          },
+          "rotate": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": 24,
+            "cy": 24,
+            "r": 19.4,
+            "fill": "{finish:--knob-edge}"
+          },
+          "rotate": []
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": 24,
+            "cy": 24,
+            "r": 17.6,
+            "fill": "{finish:--knob-knurl}"
+          },
+          "rotate": []
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 0,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 15,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 30,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 45,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 60,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 75,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 90,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 105,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 120,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 135,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 150,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 165,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 180,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 195,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 210,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 225,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 240,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 255,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 270,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 285,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 300,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 315,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 330,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 4.9,
+            "x2": 24,
+            "y2": 6.5,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-width": 0.7
+          },
+          "rotate": [
+            {
+              "angle": 345,
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "circle",
+          "attrs": {
+            "cx": 24,
+            "cy": 24,
+            "r": 16.9,
+            "fill": "url(#cap)"
+          },
+          "rotate": []
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 22.7,
+            "y1": 9,
+            "x2": 22.7,
+            "y2": 19,
+            "stroke": "{finish:--knob-knurl}",
+            "stroke-opacity": 0.8,
+            "stroke-width": 1.2
+          },
+          "rotate": [
+            {
+              "angle": "{angle}",
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 25.3,
+            "y1": 9,
+            "x2": 25.3,
+            "y2": 19,
+            "stroke": "{finish:--knob-cap-hi}",
+            "stroke-opacity": 0.6,
+            "stroke-width": 1.2
+          },
+          "rotate": [
+            {
+              "angle": "{angle}",
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        },
+        {
+          "tag": "line",
+          "attrs": {
+            "x1": 24,
+            "y1": 9,
+            "x2": 24,
+            "y2": 19,
+            "stroke": "{console:--knob-pointer}",
+            "stroke-width": 2.4
+          },
+          "rotate": [
+            {
+              "angle": "{angle}",
+              "cx": 24,
+              "cy": 24
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "looks": {
+    "vintage": {
+      "--enclosure": "#e9dfc7",
+      "--body-bg": "radial-gradient(140% 90% at 30% 0%, #f6efdd, {--enclosure} 55%, #cfc2a3)",
+      "--body-shadow": "inset 0 2px 0 rgba(255,255,255,0.6), inset 0 -3px 0 rgba(90,70,40,0.25), 0 16px 26px rgba(0,0,0,0.6)",
+      "--head-bg": "linear-gradient(180deg, #2c2924, #1b1916)",
+      "--section-bg": "none",
+      "--section-shadow": "0 1px 2px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,0.5)",
+      "--key-bg": "#3b4046",
+      "--key-shadow": "inset 0 1px 0 #b9c0c6, 0 1px 2px rgba(0,0,0,.5)",
+      "--key-pressed-bg": "#e8732c",
+      "--key-held-bg": "#05070a",
+      "--key-pressed-shadow": "inset 0 1px 3px rgba(0,0,0,0.6)",
+      "--led-off": "radial-gradient(circle at 35% 30%, #6b4a44, #2a1512)",
+      "--led-on-bg": "radial-gradient(circle at 35% 30%, #ffd2c8 0, #e8442d 45%, #7a160b)",
+      "--led-on-shadow": "0 0 9px 2px rgba(232,68,45,0.6), 0 0 0 2px #1c1a16",
+      "--led-left": "-20px",
+      "--screen-bg": "linear-gradient(rgba(233,223,198,.10) 1px, transparent 1px) 0 0 / 100% 12px, linear-gradient(90deg, rgba(233,223,198,.10) 1px, transparent 1px) 0 0 / 12px 100%, #05070a",
+      "--screen-shadow": "inset 0 0 0 1px rgba(0,0,0,.6), inset 0 2px 6px rgba(0,0,0,.55), 0 1px 0 rgba(255,255,255,0.12)",
+      "--bypass-bg": "radial-gradient(circle at 40% 30%, #b9c0c6, #7d848b 60%, #5d646b)",
+      "--bypass-shadow": "0 1px 2px rgba(0,0,0,.5), 0 0 0 2px #a9b0b7, inset 0 -2px 3px rgba(0,0,0,0.35)",
+      "--knob": "knob-vintage",
+      "--t-brand": "#e6dcc4",
+      "--t-label": "#f3ead4",
+      "--t-section": "#3a3b3c",
+      "--t-control": "#11171d",
+      "--t-value": "#11171d",
+      "--t-key": "#e6dcc4",
+      "--t-list-sel": "{--accent}",
+      "--t-screen": "#e9dfc6",
+      "--t-screen-dim": "#e9dfc6",
+      "--curve-line": "#e8732c",
+      "--head-inset": "5px 10px",
+      "--head-rule": "none",
+      "--screws": "radial-gradient(circle at 40% 35%, #b9c0c6, #9aa1a8)",
+      "--body-radius": "14",
+      "--label-font": "Gelasio, Georgia, \"Times New Roman\", serif",
+      "--control-caps": "uppercase",
+      "--scribble-bg": "#05070a",
+      "--scribble-ink": "#e8732c",
+      "--scribble-glow": "0 0 6px 1px #e8732c",
+      "--scribble-shadow": "inset 0 0 0 1px rgba(0,0,0,.6), inset 0 2px 6px rgba(0,0,0,.55), 0 1px 0 rgba(255,255,255,0.55)",
+      "--screws-shadow": "0 1px 2px rgba(0,0,0,.5)",
+      "--screws-slot": "#000",
+      "--finish": "aluminium",
+      "--fader": "fader-vintage.svg",
+      "--switch-track": "#05070a",
+      "--switch-thumb": "#a9b0b7",
+      "--switch-shadow": "inset 0 0 0 1px rgba(0,0,0,.6), inset 0 2px 6px rgba(0,0,0,.55)",
+      "--vu-bezel": "3px solid #05070a",
+      "--accent-bar-glow": "none"
+    },
+    "console": {
+      "--enclosure": "{--surface}",
+      "--body-bg": "{--surface}",
+      "--body-shadow": "inset 0 0 0 1px {--border-strong}",
+      "--head-bg": "none",
+      "--section-bg": "{--surface-2}",
+      "--section-shadow": "none",
+      "--key-bg": "{--surface-3}",
+      "--key-shadow": "none",
+      "--key-pressed-bg": "{--accent}",
+      "--key-held-bg": "none",
+      "--key-pressed-shadow": "none",
+      "--led-off": "{--surface-3}",
+      "--led-on-bg": "{--accent}",
+      "--led-on-shadow": "none",
+      "--led-left": "none",
+      "--screen-bg": "{--surface-3}",
+      "--screen-shadow": "none",
+      "--bypass-bg": "none",
+      "--bypass-shadow": "none",
+      "--knob": "flat",
+      "--t-brand": "{--ink-dim}",
+      "--t-label": "{--ink}",
+      "--t-section": "{--ink-dim}",
+      "--t-control": "{--ink-dim}",
+      "--t-value": "{--ink}",
+      "--t-key": "{--ink}",
+      "--t-list-sel": "{--accent}",
+      "--t-screen": "{--ink}",
+      "--t-screen-dim": "{--ink-dim}",
+      "--curve-line": "{--curve-stroke}",
+      "--head-inset": "none",
+      "--head-rule": "{--accent}",
+      "--screws": "none",
+      "--body-radius": "none",
+      "--label-font": "none",
+      "--control-caps": "none",
+      "--scribble-bg": "#0f1317",
+      "--scribble-ink": "{--accent}",
+      "--scribble-glow": "none",
+      "--scribble-shadow": "inset 0 0 0 1px {--border-strong}",
+      "--screws-shadow": "none",
+      "--screws-slot": "none",
+      "--finish": "none",
+      "--fader": "flat",
+      "--switch-track": "{--surface-3}",
+      "--switch-thumb": "{--ink-dim}",
+      "--switch-shadow": "none",
+      "--vu-bezel": "1px solid {--border-strong}",
+      "--accent-bar-glow": "none"
+    },
+    "3d": {
+      "--enclosure": "{--surface}",
+      "--body-bg": "linear-gradient(180deg, {--surface} 0%, {--glass} 100%)",
+      "--body-shadow": "inset 0 1px 0 rgba(255,255,255,0.14), inset 0 0 0 1px {--border-strong}, inset 0 -2px 0 rgba(0,0,0,0.45), 0 8px 18px rgba(0,0,0,0.55)",
+      "--head-bg": "none",
+      "--section-bg": "linear-gradient(180deg, {--surface-2} 0%, {--surface} 100%)",
+      "--section-shadow": "0 2px 0 {--glass}, 0 4px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.10)",
+      "--key-bg": "linear-gradient(180deg, {--surface-3} 0%, {--surface-2} 100%)",
+      "--key-shadow": "0 2px 0 {--glass}, 0 3px 5px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.12)",
+      "--key-pressed-bg": "{--accent}",
+      "--key-held-bg": "{--surface-2}",
+      "--key-pressed-shadow": "inset 0 2px 4px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.08)",
+      "--led-off": "{--glass}",
+      "--led-on-bg": "{--accent}",
+      "--led-on-shadow": "0 0 8px 2px {--accent}",
+      "--led-left": "none",
+      "--screen-bg": "linear-gradient(180deg, {--glass} 0%, {--surface-3} 100%)",
+      "--screen-shadow": "inset 0 3px 6px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.06)",
+      "--bypass-bg": "linear-gradient(180deg, {--surface-3} 0%, {--surface-2} 100%)",
+      "--bypass-shadow": "0 2px 0 {--glass}, 0 3px 5px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.12)",
+      "--knob": "knob-3d.svg",
+      "--t-brand": "{--ink-dim}",
+      "--t-label": "{--ink}",
+      "--t-section": "{--ink-dim}",
+      "--t-control": "{--ink-dim}",
+      "--t-value": "{--ink}",
+      "--t-key": "{--ink}",
+      "--t-list-sel": "{--accent}",
+      "--t-screen": "{--ink}",
+      "--t-screen-dim": "{--ink-dim}",
+      "--curve-line": "{--curve-stroke}",
+      "--head-inset": "none",
+      "--head-rule": "{--accent}",
+      "--screws": "none",
+      "--body-radius": "none",
+      "--label-font": "none",
+      "--control-caps": "none",
+      "--scribble-bg": "linear-gradient(180deg, #0a0d10, #12171b)",
+      "--scribble-ink": "#7ee8f7",
+      "--scribble-glow": "0 0 4px rgba(40,200,230,0.6)",
+      "--scribble-shadow": "inset 0 2px 3px rgba(0,0,0,0.85), 0 1px 0 rgba(255,255,255,0.06)",
+      "--screws-shadow": "none",
+      "--screws-slot": "none",
+      "--finish": "none",
+      "--fader": "flat",
+      "--switch-track": "linear-gradient(180deg, {--surface-3} 0%, {--surface-2} 100%)",
+      "--switch-thumb": "{--ink-dim}",
+      "--switch-shadow": "0 2px 0 {--glass}, 0 3px 5px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.12)",
+      "--vu-bezel": "1px solid {--border-strong}",
+      "--accent-bar-glow": "0 2px 10px 0 {--accent}"
+    }
   }
 }
