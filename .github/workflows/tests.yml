@@ -63,11 +63,11 @@ jobs:
           dpkg-query -W plugin-hostd omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract python3-plugin-hostd-protocol \
             python3-omx-contract
           # the owners' sentences are read from the vocabularies omx-contract-data's contract directory holds, in the
-          # layout it has from 3.14.0 on (#6), and the catalogs of plugin-hostd-protocol-contract: a floor and the
-          # next major
+          # layout it has from 3.14.0 on (#6), and the catalogs of plugin-hostd-protocol-contract: a floor only (%7's
+          # ruling: no ceiling on our own packages)
           v=$(dpkg-query -W -f '${Version}' omx-contract-data)
-          dpkg --compare-versions "$v" ge 3.14.0 && dpkg --compare-versions "$v" lt 4 \
-            || { echo "::error::omx-contract-data $v is not >= 3.14.0 and < 4"; exit 1; }
+          dpkg --compare-versions "$v" ge 3.14.0 \
+            || { echo "::error::omx-contract-data $v is not >= 3.14.0"; exit 1; }
 
       - name: Fetch plugin-db's Python reader and its golden answers
         run: |
