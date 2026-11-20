@@ -1069,9 +1069,10 @@ def panel_args(panel):
     return ["--panel", panel] if panel else []
 
 
-def symbol_of(param):
-    """omx-panel's name for a parameter id: a CLAP parameter's number is p<number>, an LV2 port keeps its symbol."""
-    return param if isinstance(param, str) else f"p{param}"
+def served_symbol(control):
+    """The name omx-panel's description serves a descriptor control under (the contract's `symbol`, the stable name a session
+    keys the control by): the control's own symbol when it has one, else its id in decimal, the word param_set takes."""
+    return control.get("symbol") or str(control["id"])
 
 
 def declared_family(panel):
@@ -1588,13 +1589,13 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
         or empty. Nothing here builds, merges, reorders or cuts a page."""
         width = width or SURFACE_WIDTH
         path = self.descriptor_path()
-        dcontrols, ids = {}, {}
+        dcontrols, served = {}, {}
         if path:
             try:
                 with open(path) as f:
                     for c in json.load(f).get("controls", []):
                         dcontrols[str(c["id"])] = c
-                        ids[symbol_of(c["id"])] = str(c["id"])
+                        served[str(c["id"])] = served_symbol(c)
             except (OSError, ValueError, KeyError) as e:
                 logging.error(f"Can't read descriptor {path} => {e}")
         cut = panel_layout(path, width, self.remote_ids(dcontrols), self.own_panel()) if path else None
@@ -1605,7 +1606,7 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
             slots = []
             for pid in page["ids"]:
                 key = None if pid is None else str(pid)
-                dc, lc = dcontrols.get(key, {}), cut[1].get(symbol_of(pid), {}) if pid is not None else {}
+                dc, lc = dcontrols.get(key, {}), cut[1].get(served.get(key), {}) if key is not None else {}
                 if key is None or lc.get("widget") in ("meter", "display") or dc.get("readonly"):
                     slots.append(None)  # the slot stays, blank
                 else:

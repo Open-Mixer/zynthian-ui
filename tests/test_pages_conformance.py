@@ -32,7 +32,7 @@ ENGINE = os.path.join("zyngine", "zynthian_engine_plugin_hostd.py")
 # builds, under the contract set the workflow installs from the channel (omx-contract-data 3.18.1, plugin-hostd-contract
 # 0.20.7, omx-plugins-contract 0.19.3, whose role meanings make omx-eq8 an EQ; omx-dsp-contract 0.32.3, omx-clap-core-contract
 # 0.32.5, plugin-db-contract 0.4.4, plugin-hostd-protocol-contract 0.5.9). The pin moves to the release that carries #63 (#71).
-NAMES = ("big", "synth", "eq", "omx-eq8", "calf-mbc")
+NAMES = ("big", "synth", "eq", "authored", "omx-eq8", "calf-mbc")
 
 
 class RecordedCutIsTheRealCut(unittest.TestCase):
@@ -77,6 +77,7 @@ ARMS = {
         ('        result = []\n        for page in cut[0]:', '        result, seen = [], set()\n        for page in cut[0]:'),
         ('                    slots.append((key, lc.get("label") or dc.get("name"), None, dc))',
          '                    slots.append(None if key in seen else (key, lc.get("label") or dc.get("name"), None, dc))\n                    seen.add(key)')],
+    "a key of the engine's own for the served symbol": [('return control.get("symbol") or str(control["id"])', 'return f"p{control[\'id\']}"')],
     "a hidden slot compressed out of the screen": [('self._ctrl_screens.append([name, [slot[0] if slot and slot[0] in zctrl_dict else None for slot in rows]])',
                                                    'self._ctrl_screens.append([name, [slot[0] for slot in rows if slot and slot[0] in zctrl_dict]])')],
 }

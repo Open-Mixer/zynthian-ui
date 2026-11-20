@@ -1106,6 +1106,19 @@ class test_pages(plugin_hostd_case):
         self.assertEqual(screens[1], ("Band: Band 1", ["Band 1 Release", "Band 1 Makeup", None, None]))
         self.assertEqual([n for n, _ in screens], ["Easy", "Band: Band 1"] + [f"Band: Band {i}{s}" for i in (2, 3, 4) for s in ("", " 2")])
 
+    def test_an_authored_controls_label_is_read_under_the_symbol_the_description_serves(self):
+        """omx-panel serves a control under the name a session keys it by (the contract's `symbol`: an authored CLAP
+        plugin's own, else the id in decimal), and the engine reads the description's control, its label, under that very
+        name: no key of the engine's own. The authored fixture labels its controls apart from their names and carries a
+        gain-reduction meter (blank by the descriptor's readonly; the served widget is auto, so it proves nothing here)."""
+        self.serve(descriptors={"urn:test:big": os.path.join(FIXTURES, "authored.descriptor.json")})
+        proc = self.add(self.chain(), "PH/Big")
+        self.assertEqual(self.screens(proc), [("Easy", ["1", "2", "3", "4"]), ("Output", ["6", "7", None, None])],
+                         "the controls keep the id param_set takes; the meter's page holds nothing a screen shows")
+        self.assertEqual([proc.controllers_dict[k].name for k in ("1", "2", "3", "4", "6", "7")],
+                         ["Thr dB", "Rat", "Att ms", "Rel ms", "Mk dB", "On"], "the served labels, not the descriptor's names")
+        self.assertNotIn("5", proc.controllers_dict, "the gain-reduction meter is no control")
+
     REMOTE = "clap:/usr/lib/clap/test.clap#org.test.remote"
 
     def remote(self, pages=True):

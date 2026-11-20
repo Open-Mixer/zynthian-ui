@@ -621,7 +621,9 @@ class zynthian_gui_control(zynthian_gui_selector):
         if self.zgui_controllers:
             self.swipe_update()
             for zgui_ctrl in self.zgui_controllers:
-                if zgui_ctrl.zctrl and zgui_ctrl.zctrl.is_dirty or force:
+                if zgui_ctrl.zctrl is None:  # a blank slot
+                    continue
+                if zgui_ctrl.zctrl.is_dirty or force:
                     zgui_ctrl.calculate_plot_values()
                     zgui_ctrl.plot_value()
                     zgui_ctrl.zctrl.is_dirty = False

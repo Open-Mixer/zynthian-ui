@@ -31,6 +31,7 @@ from zyngine import zynthian_omx_panel_view as panel_view
 from zyngine import zynthian_panel_gestures as gestures
 from zyngine import zynthian_position_law as position_law
 from zyngine import zynthian_touch_layer as touch
+from zyngine import zynthian_ui_look as ui_look
 from zyngui import zynthian_gui_config
 from zyngui.zynthian_widget_base import zynthian_widget_base
 
@@ -59,10 +60,11 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         self.touch = self.slots = None
         self.polling = False
         self.drawn = None  # the renderer's view of the screen's part of the panel, see build_drawn
+        self.build_due = False  # a build asked from another thread waits for Tk's
         self.stopped = None  # how the renderer stopped: the panel is strips until it is opened again
         self.drawn_page = None
         self.drawn_state = None
-        self.image = None
+        self.panel_image = None  # the panel on the canvas, blitted where a draw changed (panel_view.PanelImage)
         self.meter_at = {}
         try:  # Tk sees one pointer; a multi-touch screen's fingers come from the evdev slots (a pinch needs two)
             self.touch = touch.EvdevSource()
@@ -70,9 +72,17 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
             logging.info("no multi-touch for the panel's pinch: %s", e)
 
     def zctrls(self):
+        """The page's slots, in order: a controller, or None for a slot the page leaves blank."""
         return [z for z in self.zyngui_control.zcontrollers if not getattr(z, "not_on_gui", False)]
 
     def build(self):
+        if not panel_view.in_owner_thread():
+            # the page change's thread (CUIA): the view is closed and opened by Tk's thread, which draws it
+            # (zynthian-ui#79); by the first of its idle time and the plot task's next refresh
+            self.build_due = True
+            self.after_idle(self.build_if_due)
+            return
+        self.build_due = False
         if self.build_drawn():
             return
         try:
@@ -86,6 +96,10 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
             if not self.polling:
                 self.polling = True
                 self.after(15, self.poll_touch)
+
+    def build_if_due(self):
+        if self.build_due:
+            self.build()
 
     def poll_touch(self):
         if self.slots and self.touch.poll(self.slots):
@@ -117,6 +131,8 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         engine = self.processor.engine if self.processor else None
         keys = {}
         for z in self.zctrls():
+            if z is None:  # a blank slot
+                continue
             sym = str(z.symbol)
             keys[engine_key(sym)] = z
         return keys
@@ -128,16 +144,19 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         if self.drawn:
             self.drawn.close()
         self.drawn = self.drawn_state = None
+        if self.panel_image:
+            self.panel_image.forget()
         if not drawn or self.width < 2 or self.height < 2 or self.stopped:
             return False
         keys = self.page_keys()
         part, self.display_map = panel_view.screen_part(drawn[0], set(keys))
         try:
-            view = panel_view.View(part)
+            look = ui_look.look_for(zynthian_gui_config, panel_view.tools_dir())
+            view = panel_view.View(part, look=look)
         except panel_view.RendererStopped as e:
             self.renderer_stopped(e)
             return False
-        except panel_view.RendererAbsent as e:
+        except (panel_view.RendererAbsent, ui_look.LookShort) as e:
             if not getattr(zynthian_widget_omx_panel, "said", False):
                 zynthian_widget_omx_panel.said = True
                 logging.warning("%s: the panel is drawn as strips", e)
@@ -195,19 +214,17 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
                 self.meter_at[sym] = now
                 view.set_meter(i, value, elapsed)
                 changed = True
-        if changed or self.image is None:
+        if changed or self.panel_image is None or self.panel_image.last is None:
             self.paint(view)
         return True
 
     def paint(self, view):
-        from PIL import Image, ImageTk
+        """The draw on the canvas: only the rows it changed are converted and blitted."""
         w, h = self.width, self.height
-        rgba = Image.frombuffer("RGBA", (w, h), view.draw(w, h), "raw", "RGBA", 0, 1)
-        back = Image.new("RGBA", (w, h), zynthian_gui_config.color_bg)
-        self.image = ImageTk.PhotoImage(Image.alpha_composite(back, rgba))
-        c = self.widget_canvas
-        c.delete("all")
-        c.create_image(0, 0, anchor="nw", image=self.image)
+        if self.panel_image is None:
+            self.panel_image = panel_view.PanelImage(zynthian_gui_config.color_bg, self.widget_canvas)
+        self.panel_image.background = zynthian_gui_config.color_bg
+        self.panel_image.show(view.draw(w, h), w, h)
 
     def drawn_input(self, kind, e=None, **kw):
         """An event to the renderer; the controls it moved are set, and `more` opens the surface's menu."""
@@ -289,6 +306,7 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         self.build()
 
     def refresh_gui(self):
+        self.build_if_due()
         if self.drawn:
             try:
                 if self.refresh_drawn():
@@ -297,6 +315,8 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
                 self.renderer_stopped(e)
         c = self.widget_canvas
         c.delete("all")
+        if self.panel_image:
+            self.panel_image.forget()
         if self.stopped:
             c.create_text(self.width / 2, self.height - MARGIN, anchor="s", text="omx-panel's renderer stopped",
                           fill=zynthian_gui_config.color_tx_off)
@@ -316,8 +336,10 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
 
 
 def engine_key(symbol):
-    """The layout's name of a plugin-hostd controller: a CLAP parameter's number is p<number>, an LV2 port keeps its
-    symbol (zynthian_engine_plugin_hostd.symbol_of)."""
+    """The layout's own key of a plugin-hostd controller (omx-panel's keyOf, what `describe --layout` names a control by):
+    a CLAP parameter's number is p<number>, an LV2 port keeps its symbol. A CLAP plugin whose descriptor states a symbol
+    is keyed by that symbol in the layout, which this cannot know from the controller alone: the layout's `param` is the
+    join for it (#47)."""
     return f"p{symbol}" if symbol.isdigit() else symbol
 
 
