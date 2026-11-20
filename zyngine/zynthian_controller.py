@@ -83,6 +83,7 @@ class zynthian_controller:
         self.ticks = None  # List of discrete value ticks
         self.range_reversed = False  # Flag if ticks order is reversed
         self.is_toggle = False  # True if control is Boolean toggle
+        self.toggle_declared = None  # What the engine said of is_toggle (None: nothing); is_toggle itself is also set by two labels
         self.is_trigger = False  # True if control is one-shot trigger
         self.is_integer = True  # True if control is Integer
         self.is_logarithmic = False  # True if control uses logarithmic scale
@@ -175,6 +176,7 @@ class zynthian_controller:
             self.ticks = options['ticks']
         if 'is_toggle' in options:
             self.is_toggle = options['is_toggle']
+            self.toggle_declared = options['is_toggle']
         if 'is_trigger' in options:
             self.is_trigger = options['is_trigger']
         if 'midi_cc_momentary_switch' in options:

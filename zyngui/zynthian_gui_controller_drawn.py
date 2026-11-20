@@ -52,7 +52,9 @@ def widget_kind(zctrl, selector_counter):
     if selector_counter or zctrl.is_path:
         return "display"
     if zctrl.ticks:
-        return "switch" if len(zctrl.ticks) == 2 else "selector"
+        # two values are a switch unless the engine said they are no toggle (an lv2 enumeration of two scale points, such as
+        # Polyphony's 8 and 32 voices, zynthian-ui#86); a list that came with no word on toggles keeps the controller's own rule
+        return "switch" if len(zctrl.ticks) == 2 and zctrl.toggle_declared is not False else "selector"
     return "knob"
 
 

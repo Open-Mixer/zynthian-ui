@@ -160,6 +160,7 @@ class Zctrl:
         self.ticks = self.labels = None
         self.is_logarithmic = self.is_path = self.is_integer = self.is_toggle = self.readonly = False
         self.position_law = None
+        self.toggle_declared = None  # the engine's own word on toggles (zynthian_controller): None where it said none
         self.nudge_factor = self.nudge_factor_fine = 0.01
         self.__dict__.update(kw)
         self.value_range = self.value_max - self.value_min
@@ -408,6 +409,24 @@ class DrawnController(unittest.TestCase):
         view = FakeView.opened[-1]
         self.assertEqual(view.layout["controls"][0]["standard"], {"widget": "switch"})
         self.assertEqual(view.calls[-1], ("value", 0, 1, "On"))
+
+    def test_a_two_value_enumeration_the_engine_says_is_no_toggle_is_a_selector(self):
+        # MDA Piano's Polyphony: two scale points (8 voices, 32 voices), lv2:enumeration, not lv2:toggled (zynthian-ui#86); the
+        # controller makes every two-label list is_toggle, the engine's own word is toggle_declared
+        z = Zctrl(ticks=[0, 1], labels=["8 voices", "32 voices"], value=1, is_toggle=True, toggle_declared=False)
+        self.controller(z)
+        view = FakeView.opened[-1]
+        self.assertEqual(view.layout["controls"][0]["standard"], {"widget": "selector"})
+        self.assertEqual(view.calls[-1], ("choice", 0, 1, 2, "32 voices"))
+
+    def test_a_two_value_list_the_engine_says_is_a_toggle_stays_a_switch(self):
+        self.controller(Zctrl(ticks=[0, 1], labels=["off", "on"], value=1, is_toggle=True, toggle_declared=True))
+        self.assertEqual(FakeView.opened[-1].layout["controls"][0]["standard"], {"widget": "switch"})
+
+    def test_a_midi_two_label_list_of_0_and_127_stays_a_switch(self):
+        # an engine that gave labels and no word on toggles: the controller's own rule stands (the MIDI toggles of [0, 127])
+        self.controller(Zctrl(ticks=[0, 127], labels=["off", "on"], value=127, is_toggle=True, toggle_declared=None))
+        self.assertEqual(FakeView.opened[-1].layout["controls"][0]["standard"], {"widget": "switch"})
 
     def test_a_path_is_a_display_with_its_name(self):
         self.controller(Zctrl(is_path=True, value="/zynthian/media/take 3.wav"))
