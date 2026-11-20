@@ -4,6 +4,7 @@
 #
 # What a chain will cost, as plugin-hostd's estimate verb answers it from the qualification records:
 #   estimate <rate> <quantum> <plugin-ref>...  =>  resp 0 <latency_frames> <cpu_percent> <ram_bytes> <workers> <unknown_count>
+#     <member>:<code>,... <ram_used_bytes> <ram_added_bytes> <ram_budget_bytes> <ram_unknown_count>  (plugin-hostd-protocol 0.7)
 # The figures are the daemon's, read by plugin-hostd's client (read_estimate); this file words them for a one-line
 # footer, and asks for them off the UI thread: debounced, one request in flight, the newest question the only one answered.
 #

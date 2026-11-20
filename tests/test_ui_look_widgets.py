@@ -602,12 +602,25 @@ def rgb(colour):
     return tuple(int(colour[k:k + 2], 16) for k in (1, 3, 5))
 
 
+def knob_pointer():
+    """The console's --knob-pointer as tokens.css gives it, from the console pin omx-panel's look.json carries
+    (console.tokens, the commit of tokens.css it is held to in console.commit): the one public copy of tokens.css."""
+    with open(LOOK_BASE) as f:
+        return json.load(f)["console"]["tokens"]["--knob-pointer"]
+
+
+KNOB_POINTER = knob_pointer()
+
+
 @unittest.skipUnless(Image and renderer(), "omx-panel's renderer is not installed")
 class RealRenderer(unittest.TestCase):
     """The vintage controller through the real libomx-panel-render.so.0: the drawn controller's own one-knob
     description, opened with zynthian_ui_look.tokens over the fixture, drawn by the library and painted by the
-    controller; the colours are read where the renderer puts them (view.c draw_knob: the pointer a segment from 0.28
-    to 0.78 of the radius in --accent; the panel's face in --surface, round the section the knob sits in)."""
+    controller; the colours are read where the renderer puts them. The knob is the look's drawing (omx-panel 0.15:
+    look.json drawings.knob-vintage, its pointer stroked in {console:--knob-pointer}); %7's ruling (#77 item 1): the
+    pointer is the console's vintage token --knob-pointer of tokens.css, read here from the console pin the look carries
+    (look.json console.tokens, held to tokens.css), never a literal. The panel's face is --surface, round the section
+    the knob sits in."""
 
     W, H = 240, 200
 
@@ -640,42 +653,46 @@ class RealRenderer(unittest.TestCase):
         cx, cy, r = self.knob()
         return {image.getpixel((x, int(cy))) for x in range(int(cx - r))}
 
-    def test_the_knobs_pointer_is_the_accent_and_the_face_the_surface(self):
+    def ray(self, image):
+        """The colours on the knob's 12 o'clock ray, from its centre to its rim: where the pointer stands at 0.5."""
+        cx, cy, r = self.knob()
+        return {image.getpixel((x, int(cy - dy)))[:3] for dy in range(int(r)) for x in (int(cx) - 1, int(cx), int(cx) + 1)}
+
+    def test_the_knobs_pointer_is_the_knob_pointer_token_and_the_face_the_surface(self):
         view = self.ctrl.view
         self.assertEqual(view.layout["controls"][0]["standard"], {"widget": "knob"})
         self.assertEqual(self.ctrl.value_plot, 0.5)  # the pointer stands at 12 o'clock
-        cx, cy, r = self.knob()
-        pointer = (int(cx), int(cy - r * 0.53))  # the middle of the pointer's segment
-        accent, surface = rgb(VINTAGE_ROLES["--accent"]), rgb(VINTAGE_ROLES["--surface"])
+        pointer, surface = rgb(KNOB_POINTER), rgb(VINTAGE_ROLES["--surface"])
         # the renderer's own pixels: opaque, in the look's colours
         raw = Image.frombuffer("RGBA", (self.W, self.H), view.draw(self.W, self.H), "raw", "RGBA", 0, 1)
-        self.assertEqual(raw.getpixel(pointer), accent + (255,))
+        self.assertIn(pointer, self.ray(raw), "the pointer is tokens.css's --knob-pointer")
+        self.assertNotIn(rgb(VINTAGE_ROLES["--accent"]), self.ray(raw), "the pointer is not the accent")
         self.assertIn(surface + (255,), self.beside(raw))
-        self.assertNotIn(accent + (255,), self.beside(raw))
+        self.assertNotIn(pointer + (255,), self.beside(raw))
         # and what the controller shows: the same pixels over color_panel_bg
-        self.assertEqual(self.ctrl.image.getpixel(pointer)[:3], accent)
+        self.assertIn(pointer, self.ray(self.ctrl.image))
         self.assertEqual(raw.getpixel((0, 0))[3], 0)  # outside the panel's round corner the renderer draws nothing
         self.assertEqual(self.ctrl.image.getpixel((0, 0))[:3], rgb(self.config.color_panel_bg))
         self.assertIn(surface + (255,), self.beside(self.ctrl.image))
 
     def test_the_colours_follow_the_look_given(self):
-        # the same description in a look whose accent and surface are other colours: the pointer and the face follow
-        # the look, so the colours above are the preset's and not the renderer's own
-        cx, cy, r = self.knob()
-        pointer = (int(cx), int(cy - r * 0.53))
+        # the same description in a look whose console pin names another --knob-pointer and whose panel is another
+        # colour: the pointer follows the token and the face the palette, so the colours above are the look's and not
+        # the renderer's own
         with open(LOOK_BASE) as f:
             base = json.load(f)
-        colours = types.SimpleNamespace(**{**vars(self.config), "color_on": "#123456", "color_panel_bg": "#654321"})
+        base["console"]["tokens"]["--knob-pointer"] = "#123456"
+        colours = types.SimpleNamespace(**{**vars(self.config), "color_panel_bg": "#654321"})
         other = real_view.View(self.ctrl.view.layout, look=self.look.tokens(colours, base))
         self.addCleanup(other.close)
         other.set_title("", "")
         other.set_surface(self.W, self.H)
         other.set_value(0, 0.5, "0.50")
         raw = Image.frombuffer("RGBA", (self.W, self.H), other.draw(self.W, self.H), "raw", "RGBA", 0, 1)
-        self.assertEqual(raw.getpixel(pointer), rgb("#123456") + (255,))
+        self.assertIn(rgb("#123456"), self.ray(raw))
+        self.assertNotIn(rgb(KNOB_POINTER), self.ray(raw))
         self.assertIn(rgb("#654321") + (255,), self.beside(raw))
         self.assertNotIn(rgb(VINTAGE_ROLES["--surface"]) + (255,), self.beside(raw))
-
 
 # ---- The plugin panel over a look short of a role
 
