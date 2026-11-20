@@ -1099,13 +1099,15 @@ class test_pages(plugin_hostd_case):
         self.assertEqual(got, self.recorded("calf-mbc", 4), "the engine adds, reorders and drops nothing")
         for n, k in screens:
             self.assertLessEqual(len(self.bands_on(k)), 1, f"{n} is cut across two bands: {k}")
-        # a band of six is two screens of its own, opening with its bypass; band 1's first four are the Easy page's
+        # a band of six is two screens of its own, opening with its bypass; band 1's first four are the Easy page's, and
+        # omx-panel (v0.15.1) keeps their slots hidden on band 1's own first screen, so its rest is on its continuation
         for i in (2, 3, 4):
             self.assertEqual(dict(screens)[f"Band: Band {i}"], [f"Band {i} Bypass", f"Band {i} Threshold", f"Band {i} Ratio", f"Band {i} Attack"])
             self.assertEqual(dict(screens)[f"Band: Band {i} 2"], [f"Band {i} Release", f"Band {i} Makeup", None, None])
         self.assertEqual(screens[0], ("Easy", ["Band 1 Bypass", "Band 1 Threshold", "Band 1 Ratio", "Band 1 Attack"]))
-        self.assertEqual(screens[1], ("Band: Band 1", ["Band 1 Release", "Band 1 Makeup", None, None]))
-        self.assertEqual([n for n, _ in screens], ["Easy", "Band: Band 1"] + [f"Band: Band {i}{s}" for i in (2, 3, 4) for s in ("", " 2")])
+        self.assertEqual(screens[1], ("Band: Band 1", [None, None, None, None]))
+        self.assertEqual(screens[2], ("Band: Band 1 2", ["Band 1 Release", "Band 1 Makeup", None, None]))
+        self.assertEqual([n for n, _ in screens], ["Easy"] + [f"Band: Band {i}{s}" for i in (1, 2, 3, 4) for s in ("", " 2")])
 
     def test_an_authored_controls_label_is_read_under_the_symbol_the_description_serves(self):
         """omx-panel serves a control under the name a session keys it by (the contract's `symbol`: an authored CLAP
