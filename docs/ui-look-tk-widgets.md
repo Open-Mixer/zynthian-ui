@@ -222,11 +222,11 @@ Two things the renderer does today that are not drawing, and that Zynthian must 
 
 - the curve's axes: `draw_curve` maps the points onto the frame (omx-panel `renderer/src/view.c:1028`), with a log
   frequency axis that the renderer derives from the kind's name (`log_x = strcmp(kind, "eq_response") == 0`,
-  `view.c:411`). The description does not carry it. Stage 2 asks omx-panel's description for it and types no rule
-  into Zynthian;
+  `view.c:411`). The description does not carry it. This is open item 2 (section 7).
+  Zynthian types no rule for it;
 - the meter's ballistics: the renderer takes `set_meter(value, elapsed)`. omx-panel's behaviour core names it as
   omx-dsp's view law (`omx_meter_view_step`, `docs/behaviour-core.md` section 1). Zynthian has no Python door to it
-  today. Until it has one, the Tk meter shows the raw reading, and the PR says so.
+  today. This is open item 1 (section 7).
 
 ## 3. The shared-behaviour boundary
 
@@ -385,6 +385,22 @@ Risks:
   Its contrast (`color_ctrl_tx` on `KNOB_FACE`) is checked in stage 1.
 - The proportions are a copy held to the console only by a picture: they can drift. The picture is named in the
   stage-1 test.
-- Stage 2 depends on two behaviours Zynthian cannot yet read: a curve display's axis mapping (if the description
-  does not carry it) and the meter's ballistics (no Python door to omx-dsp's view law). Stage 2 names each one it
-  meets, rather than typing a rule into Zynthian.
+- Stage 2 depends on two behaviours Zynthian cannot read yet. They are section 7's open items, not risks.
+
+## 7. Open items for the owner
+
+Both block stage 2 as designed. Without a ruling, stage 2 ships neither choice.
+
+1. **The meter's ballistics.** The renderer applies them today: the widget gives it `set_meter(value, elapsed)`
+   (`zynthian_widget_omx_panel.py:209-216`), and omx-panel's behaviour core names the law as omx-dsp's view law,
+   `omx_meter_view_step` (omx-panel `docs/behaviour-core.md` section 1). Zynthian has no Python door to it. A Tk meter
+   that shows the raw reading would be a visible regression: the peak would jump instead of falling. The owner picks one:
+   - (a) stage 2 ships the raw reading and says so in the screen's release notes; or
+   - (b) stage 2 waits for a Python door to `omx_meter_view_step`. That is an omx-dsp deliverable (or omx-panel's,
+     through the behaviour core's meter area), owned by omx-dsp's owner, C2.
+2. **The curve's log-frequency axis.** The renderer draws an `eq_response` curve on a log-frequency axis, chosen by
+   the kind's name (`log_x = strcmp(kind, "eq_response") == 0`, omx-panel `renderer/src/view.c:411`, used at `:1028`).
+   The description carries no axis. If omx-panel has not published the axis as data in the description by stage 2,
+   the owner picks one:
+   - (a) stage 2 ships a linear (placeholder) axis and says so in the screen's release notes; or
+   - (b) stage 2 waits for omx-panel to publish it (omx-panel's owner).
