@@ -58,7 +58,7 @@ jobs:
           # shellcheck disable=SC2086 # one word per pin
           apt-get install -y -qq --no-install-recommends $pins omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract \
             plugin-hostd-protocol-l10n-ca python3-plugin-hostd-protocol python3-omx-contract
-          # the contract the series is built and tested against: every declared package inside its range
+          # the contract the series is built and tested against: every declared package at or above its floor
           python3 -m tools.contract_versions
           dpkg-query -W plugin-hostd omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract python3-plugin-hostd-protocol \
             python3-omx-contract
