@@ -222,11 +222,12 @@ Two things the renderer does today that are not drawing, and that Zynthian must 
 
 - the curve's axes: `draw_curve` maps the points onto the frame (omx-panel `renderer/src/view.c:1028`), with a log
   frequency axis that the renderer derives from the kind's name (`log_x = strcmp(kind, "eq_response") == 0`,
-  `view.c:411`). The description does not carry it. This is open item 2 (section 7).
+  `view.c:411`). The description does not carry it. Stage 2 waits for omx-panel to publish
+  it in the description (section 6, Q7).
   Zynthian types no rule for it;
 - the meter's ballistics: the renderer takes `set_meter(value, elapsed)`. omx-panel's behaviour core names it as
   omx-dsp's view law (`omx_meter_view_step`, `docs/behaviour-core.md` section 1). Zynthian has no Python door to it
-  today. This is open item 1 (section 7).
+  today. Stage 2 waits for a ctypes door to it (section 6, Q6).
 
 ## 3. The shared-behaviour boundary
 
@@ -347,7 +348,9 @@ scratch dir, never touching the running UI.
    a page of four knobs walked and an encoder turned through 200 values, measuring per-update p99 and face build time
    against the same walk on the base (the renderer path). Screen shots of each kind under stock and vintage, set beside
    the reference picture (section 2).
-2. **zynthian-ui: the plugin panel in Tk.** Red: for omx-eq8 (curve, bands), omx-geq (bar group) and a metered
+2. **zynthian-ui: the plugin panel in Tk.** After the current pass. It starts when C2's ctypes door to
+   `omx_meter_view_step` and omx-panel's axis in the description exist (section 6, Q6 and Q7); the meter's reading
+   goes through that door and the curve's axis is read from the description. Red: for omx-eq8 (curve, bands), omx-geq (bar group) and a metered
    compressor, from recorded `describe` documents (layout and description), the Tk panel makes one item set per
    section, control, bar, curve and meter. A value, a curve's points and a meter's reading move items and make no
    image. Pointer, wheel and keys reach the controls through `zynthian_panel_gestures` (Panel, BarGroup, handle)
@@ -376,6 +379,19 @@ The owner ruled on 2026-11-20:
 - **Q5, `libomx-panel-render0` in zynthian-sys's package list: NO.** It is being retired; strips are the interim
   until the Tk plugin panel lands.
 
+The owner's second set of rulings covers stage 2's dependencies. The rule: shared behaviour comes through the C core
+and ctypes, never re-implemented in Python, and layout data comes through the description. Stage 2 runs after the
+current pass and starts only when both dependencies are met:
+
+- **Q6, the meter's ballistics: stage 2 WAITS** for a ctypes door to omx-dsp's view law, `omx_meter_view_step`
+  (omx-panel `docs/behaviour-core.md` section 1). The renderer applies it today: the widget gives it
+  `set_meter(value, elapsed)` (`zynthian_widget_omx_panel.py:209-216`). C2, omx-dsp's owner, owns the door, and it
+  is requested from C2 directly. No raw-reading meter ships.
+- **Q7, the curve's axis: stage 2 WAITS** for omx-panel to publish the axis (log frequency and the others) in the
+  description. Today the renderer picks the log-frequency axis from the kind's name (`log_x = strcmp(kind,
+  "eq_response") == 0`, omx-panel `renderer/src/view.c:411`, used at `:1028`). Zynthian ships no linear
+  placeholder and infers nothing from a kind's name; `view.c:411` is not copied.
+
 Risks:
 
 - Aliased Tk lines and ovals (pointer, pill) next to an anti-aliased PIL face may read as a cheaper finish than the
@@ -385,22 +401,3 @@ Risks:
   Its contrast (`color_ctrl_tx` on `KNOB_FACE`) is checked in stage 1.
 - The proportions are a copy held to the console only by a picture: they can drift. The picture is named in the
   stage-1 test.
-- Stage 2 depends on two behaviours Zynthian cannot read yet. They are section 7's open items, not risks.
-
-## 7. Open items for the owner
-
-Both block stage 2 as designed. Without a ruling, stage 2 ships neither choice.
-
-1. **The meter's ballistics.** The renderer applies them today: the widget gives it `set_meter(value, elapsed)`
-   (`zynthian_widget_omx_panel.py:209-216`), and omx-panel's behaviour core names the law as omx-dsp's view law,
-   `omx_meter_view_step` (omx-panel `docs/behaviour-core.md` section 1). Zynthian has no Python door to it. A Tk meter
-   that shows the raw reading would be a visible regression: the peak would jump instead of falling. The owner picks one:
-   - (a) stage 2 ships the raw reading and says so in the screen's release notes; or
-   - (b) stage 2 waits for a Python door to `omx_meter_view_step`. That is an omx-dsp deliverable (or omx-panel's,
-     through the behaviour core's meter area), owned by omx-dsp's owner, C2.
-2. **The curve's log-frequency axis.** The renderer draws an `eq_response` curve on a log-frequency axis, chosen by
-   the kind's name (`log_x = strcmp(kind, "eq_response") == 0`, omx-panel `renderer/src/view.c:411`, used at `:1028`).
-   The description carries no axis. If omx-panel has not published the axis as data in the description by stage 2,
-   the owner picks one:
-   - (a) stage 2 ships a linear (placeholder) axis and says so in the screen's release notes; or
-   - (b) stage 2 waits for omx-panel to publish it (omx-panel's owner).
