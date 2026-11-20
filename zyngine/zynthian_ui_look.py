@@ -54,6 +54,28 @@ def tokens(colors, base):
     return {**base, "tokens": tok}
 
 
+def _mix(a, b, t):
+    """The colour a fraction t of the way from the hex colour a to b."""
+    ca, cb = [tuple(int(c[k:k + 2], 16) for k in (1, 3, 5)) for c in (a, b)]
+    return "#%02x%02x%02x" % tuple(round(x + (y - x) * t) for x, y in zip(ca, cb))
+
+
+def cpu_colour(colors, cpu_load):
+    """The status icon's colour under a look: the look's meter green below 50 % CPU load, green to amber up to 75 %, amber
+    to red up to 100 %, each stop the colour <colors> holds for the --meter-green, --meter-amber and --meter-red roles
+    (the table above). None under stock, whose gradient is upstream's (zynthian_gui_base.refresh_status)."""
+    if getattr(colors, "ui_look", STOCK) == STOCK:
+        return None
+    by_role = dict(ROLES)
+    green, amber, red = (getattr(colors, by_role[r]) for r in ("--meter-green", "--meter-amber", "--meter-red"))
+    load = min(max(cpu_load, 0), 100)
+    if load <= 50:
+        return green
+    if load <= 75:
+        return _mix(green, amber, (load - 50) / 25)
+    return _mix(amber, red, (load - 75) / 25)
+
+
 def look_for(config, tools_dir):
     """The look a view is opened with under <config>'s ui_look: None under stock (the renderer's own look), else the
     palette over the renderer's look.json in <tools_dir>; None too when that file is not there (the renderer is
