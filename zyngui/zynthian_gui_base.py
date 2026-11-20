@@ -32,6 +32,7 @@ from tkinter import font as tkFont
 
 # Zynthian specific modules
 from zyngine import zynthian_controller
+from zyngine import zynthian_ui_look as ui_look
 from zyngui import zynthian_gui_config
 from zyngui.zynthian_gui_dpm import zynthian_gui_dpm
 
@@ -401,6 +402,8 @@ class zynthian_gui_base(tkinter.Frame):
                     cr = 0xCC
                     cg = int((100 - cpu_load) * 0xCC / 25)
                 color = "#%02x%02x%02x" % (cr, cg, 0)
+                if zynthian_gui_config.ui_look != "stock":  # the look's meter roles, not the stock gradient (zynthian-ui#87)
+                    color = ui_look.cpu_colour(zynthian_gui_config, cpu_load)
                 if self.state_manager.update_available:
                     flags = "\u21bb"
                 else:
