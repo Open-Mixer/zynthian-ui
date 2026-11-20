@@ -1023,9 +1023,10 @@ class test_pages(plugin_hostd_case):
         got = [(n, [s[0] if s else None for s in rows]) for n, rows in proc.engine.pages()]
         self.assertEqual(got, want, "the engine adds, reorders and drops nothing")
         self.assertEqual([k for _, k in self.screens(proc)], [k for _, k in want])
-        # Easy first, and a group is kept whole at four: Band 1's gain and frequency sit on the Easy page, its rest on its own
+        # Easy first; the bands are one matrix section (omx-panel 0.15.1), a page per band named "<section>: <band>", each
+        # control in its row's slot: Band 1's gain and frequency sit on the Easy page, their slots on its own page blank
         self.assertEqual(got[0], ("Easy", ["master", "gain1", "freq1", None]))
-        self.assertEqual(got[1], ("Band 1", ["q1", "width1", None, None]))
+        self.assertEqual(got[1], ("Band: Band 1", [None, None, "q1", "width1"]))
 
     def test_the_surface_names_its_width_and_the_cut_follows(self):
         proc = self.plugin("eq")
@@ -1040,14 +1041,14 @@ class test_pages(plugin_hostd_case):
             shutil.copy(os.path.join(FIXTURES, f"eq.{kind}.json"), f"{base}.{kind}.json")
         with open(base + ".pages4.json") as f:
             pages = json.load(f)
-        band2 = next(p for p in pages if p["pageName"] == "Band 2")
+        band2 = next(p for p in pages if p["pageName"] == "Band: Band 2")
         band2["ids"][1] = None  # omx-panel's cut with the band's gain hidden by a governing control
         with open(base + ".pages4.json", "w") as f:
             json.dump(pages, f)
         self.serve(descriptors={"urn:test:big": base + ".descriptor.json"})
         proc = self.add(self.chain(), "PH/Big")
-        self.assertEqual(dict(self.screens(proc))["Band 2"], ["freq2", None, "q2", "width2"], "the others keep their slots")
-        self.assertEqual([z.symbol if z else None for z in proc.get_ctrl_screen("Band 2")], ["freq2", None, "q2", "width2"])
+        self.assertEqual(dict(self.screens(proc))["Band: Band 2"], ["freq2", None, "q2", "width2"], "the others keep their slots")
+        self.assertEqual([z.symbol if z else None for z in proc.get_ctrl_screen("Band: Band 2")], ["freq2", None, "q2", "width2"])
 
     # ---- a repeated group (omx-panel's group model, docs/group-model.md P1): a screen never cuts inside a band ----
 

@@ -20,8 +20,8 @@ concurrency:
 
 jobs:
   tests:
-    name: python3 -m pytest tests/ (debian:trixie)
-    runs-on: ubuntu-latest
+    name: python3 -m pytest tests/ (debian:trixie arm64)
+    runs-on: ubuntu-24.04-arm
     container:
       image: debian:trixie
       # an init that reaps: the engine tests stop the daemons they start and expect the processes gone
@@ -58,16 +58,16 @@ jobs:
           # shellcheck disable=SC2086 # one word per pin
           apt-get install -y -qq --no-install-recommends $pins omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract \
             plugin-hostd-protocol-l10n-ca python3-plugin-hostd-protocol python3-omx-contract
-          # the contract the series is built and tested against: every declared package inside its range
+          # the contract the series is built and tested against: every declared package at or above its floor
           python3 -m tools.contract_versions
           dpkg-query -W plugin-hostd omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract python3-plugin-hostd-protocol \
             python3-omx-contract
           # the owners' sentences are read from the vocabularies omx-contract-data's contract directory holds, in the
-          # layout it has from 3.14.0 on (#6), and the catalogs of plugin-hostd-protocol-contract: a floor and the
-          # next major
+          # layout it has from 3.14.0 on (#6), and the catalogs of plugin-hostd-protocol-contract: a floor only (%7's
+          # ruling: no ceiling on our own packages)
           v=$(dpkg-query -W -f '${Version}' omx-contract-data)
-          dpkg --compare-versions "$v" ge 3.14.0 && dpkg --compare-versions "$v" lt 4 \
-            || { echo "::error::omx-contract-data $v is not >= 3.14.0 and < 4"; exit 1; }
+          dpkg --compare-versions "$v" ge 3.14.0 \
+            || { echo "::error::omx-contract-data $v is not >= 3.14.0"; exit 1; }
 
       - name: Fetch plugin-db's Python reader and its golden answers
         run: |
@@ -92,9 +92,9 @@ jobs:
         run: |
           apt-get install -y -qq --no-install-recommends git ca-certificates build-essential pkgconf libcjson-dev \
             libomx-contract-dev libomxdsp-dev binutils
-          # omx-panel main at the group model (omx-panel#63): the cut tests/fixtures/plugin_hostd records; moves to the release
-          # that carries it (#71)
-          SHA=85a44385acfc352f5188f84c52a33ada66421814
+          # omx-panel v0.15.1: its renderer holds omx-dsp-devel to a floor (0.32.2) only, and builds against omx-dsp 0.33; it carries the group model
+          # (omx-panel#63) the cut tests/fixtures/plugin_hostd records (#71)
+          SHA=3cace582d1da169fe3f6597e6574c3bc23a3cba2
           git clone -q https://github.com/Open-Mixer/omx-panel /tmp/omx-panel
           git -C /tmp/omx-panel checkout -q "$SHA"
           test -f /tmp/omx-panel/schema/gestures.json

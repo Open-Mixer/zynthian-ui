@@ -3,7 +3,7 @@
 #
 # A stand-in for plugin-hostd on its command port: NUL-terminated lines, one reply each,
 # the replies and refusal codes its README documents. Protocol 0.3 of plugin-hostd-protocol (hello with tags and
-# error words, param_get_many, param_set_many), plan, plan_get, plan_clear and estimate. hello_reply makes it a
+# error words, param_get_many, param_set_many), plan, plan_get, plan_clear and estimate (its reply of protocol 0.7). hello_reply makes it a
 # daemon that does not speak hello. It runs in a thread of a test, or as a
 # program started the way the engine starts the daemon: fake_plugin_hostd.py -n -p <port> [-c <conf>].
 # Every line it takes is appended to $FAKE_HOSTD_JOURNAL when that is set.
@@ -238,10 +238,15 @@ class fake_plugin_hostd:
 
     # What the qualification records hold per plugin at 48 kHz in blocks of 256: latency frames, CPU %, RAM bytes
     ESTIMATES = {"urn:test:amp": (0, 1.5, 4000000), "urn:test:nopin": (64, 2.25, 8500000)}
+    # The memory of the host: what the running workers hold (the Pss of every worker) and its ram_budget_mb in bytes
+    RAM_USED = 300000000
+    RAM_BUDGET = 2147483648
 
     def verb_estimate(self, rate, quantum, *refs):
-        """The chain's figures from the records: latencies add, CPU adds, RAM adds, one worker per chain; a
-        plugin without a record counts as unknown and adds nothing."""
+        """The chain's figures from the records, in the one reply form of plugin-hostd-protocol 0.7 (plugin-hostd
+        0.20.8 docs/guide.md, estimate): latencies add, CPU adds, RAM adds, one worker per chain; a plugin without a
+        record counts as unknown and adds nothing. Then the four RAM words: the host's used RAM, what the members
+        would add (- when none has a figure), the host's budget and how many members have no RAM figure."""
         if not refs:
             return "resp -902"
         refs = tuple(grammar.pin_key(r) for r in refs)
@@ -249,8 +254,10 @@ class fake_plugin_hostd:
         have = [k for k in known if k]
         lost = ",".join(f"{i}:-533" for i, k in enumerate(known) if not k) or "-"
         ram = str(sum(k[2] for k in have)) if len(have) == len(refs) else "-"
-        return "resp 0 %d %.2f %s 1 %d %s" % (sum(k[0] for k in have), sum(k[1] for k in have), ram,
-                                              len(refs) - len(have), lost)
+        added = str(sum(k[2] for k in have)) if have else "-"
+        return "resp 0 %d %.2f %s 1 %d %s %d %s %d %d" % (
+            sum(k[0] for k in have), sum(k[1] for k in have), ram, len(refs) - len(have), lost,
+            self.RAM_USED, added, self.RAM_BUDGET, len(refs) - len(have))
 
     def verb_plan(self, chain, *members):
         """The planner of plugin-hostd 0.13, reduced to what the pin verdicts and group_max decide: a member
