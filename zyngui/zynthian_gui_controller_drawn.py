@@ -6,7 +6,7 @@
 # Zynthian GUI Controller, drawn by omx-panel's renderer (docs/ui-look-drawn-widgets.md, zynthian-ui#53)
 #
 # The stock controller widget drawn as the OpenMixer console draws a control: one panel description of one control
-# per controller, given to the renderer every OpenMixer surface draws a panel with (zynthian_omx_panel_view), its RGBA
+# per controller, given to omx-panel's renderer (zynthian_omx_panel_view), its RGBA
 # painted over the panel colour as one canvas image. A numeric controller is the renderer's knob, a list of values its
 # selector, a two-value list its switch, a path or a selector counter its glass display; the label and the value are
 # the renderer's; the selection is a frame in the colour the stock arc would take (a host's chrome, not a colour role).

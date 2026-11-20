@@ -3,7 +3,7 @@
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian Engine (zynthian_omx_panel_view)
 #
-# A plugin's panel drawn by omx-panel's renderer, the one C library every OpenMixer surface draws a panel with
+# A plugin's panel drawn by omx-panel's renderer, omx-panel's own C library for drawing a panel
 # (libomx-panel-render.so.0, omx-panel's renderer/include/omx_panel_render.h): its bars, its curves and its meters,
 # in the omx look. This module is the ctypes door to it, and the host's side the renderer leaves to the host: which
 # part of the panel a screen shows, the curve_bind line plugin-hostd draws a display's points from, and the reply
