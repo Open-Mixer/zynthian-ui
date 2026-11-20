@@ -60,9 +60,14 @@ paints a plugin's page. The widget's size is the surface; the renderer scales it
 Selection and finish are a host's chrome, not a colour role (omx-panel `schema/look-roles.json`:
 "Finish and selection colours ... are a host's chrome and not roles"), so the frame is drawn by
 the host, in the colour the stock arc would take. The metal of a knob (the console's `--knob-face`,
-`--knob-edge`, the finish blocks of `tokens.css`) is the renderer's to draw: today (omx-panel
-0.14, `renderer/src/view.c` `draw_knob`) it draws rim, body and pointer from the roles; a relief
-or a glass highlight is omx-panel's own drawing for its renderer (no other client reads it), never a second one here.
+`--knob-edge`, the finish blocks of `tokens.css`) is the renderer's to draw: from omx-panel
+0.15 (`renderer/src/view.c` `draw_knob`, `scene.c`) the vintage knob is the look's drawing
+`drawings.knob-vintage` of `look.json`, its colours the console pin's (`console.tokens`, held to
+`tokens.css`) and the finish's; a relief or a glass highlight is omx-panel's own drawing for its
+renderer (no other client reads it), never a second one here. The pointer is the console's vintage
+token `--knob-pointer` (%7's ruling, #77 item 1): Zynthian's palette does not value it, so it
+reaches the renderer from `tokens.css` through the look's console pin unchanged, and the pixel
+test reads the expected colour from that same pin.
 
 The stock screen's four controllers are four Tk widgets placed by Zynthian's layout
 (`zynthian_gui_base`, `ZYNTHIAN_UI_GRAPHIC_LAYOUT`); that placement is not touched, so the

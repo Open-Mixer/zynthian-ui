@@ -653,8 +653,12 @@ def estimate(rate, quantum, refs):
 def estimate_steps(rate, quantum, steps):
     """The figures of a chain as signal_steps gives it, one estimate for each branch: a branch is what one worker
     runs. Latency adds along the steps, and a step takes its longest branch; everything else adds up. A member the
-    records lack is named by its place among all of them. The figures by the names read_estimate gives them."""
-    total = {"latency_frames": 0, "cpu_percent": 0.0, "ram_bytes": 0, "workers": 0, "unknown_count": 0, "members": []}
+    records lack is named by its place among all of them. The figures by the names read_estimate gives them. The RAM
+    words of protocol 0.7: what the members would add adds up over the branches, a branch without a figure adding
+    nothing (None when no branch has one), as do the members without one; the RAM the host holds and its budget are the
+    host's, one figure (the last branch's answer)."""
+    total = {"latency_frames": 0, "cpu_percent": 0.0, "ram_bytes": 0, "workers": 0, "unknown_count": 0, "members": [],
+             "ram_used_bytes": None, "ram_added_bytes": None, "ram_budget_bytes": None, "ram_unknown_count": 0}
     place = 0
     for step in steps:
         longest = 0
@@ -664,6 +668,10 @@ def estimate_steps(rate, quantum, steps):
             total["cpu_percent"] += est["cpu_percent"]
             total["ram_bytes"] = None if total["ram_bytes"] is None or est["ram_bytes"] is None \
                 else total["ram_bytes"] + est["ram_bytes"]
+            if est["ram_added_bytes"] is not None:
+                total["ram_added_bytes"] = (total["ram_added_bytes"] or 0) + est["ram_added_bytes"]
+            total["ram_used_bytes"], total["ram_budget_bytes"] = est["ram_used_bytes"], est["ram_budget_bytes"]
+            total["ram_unknown_count"] += est["ram_unknown_count"]
             total["workers"] += est["workers"]
             total["unknown_count"] += est["unknown_count"]
             total["members"] += [{**m, "member": place + m["member"]} for m in est["members"]]

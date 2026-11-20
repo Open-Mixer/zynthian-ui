@@ -303,6 +303,31 @@ class test_figures_follow_the_signal(signal_path_case):
         self.assertEqual(est["ram_bytes"], 400)
         self.assertEqual(est["workers"], 3)
 
+    def test_the_memory_figures_of_protocol_0_7_follow_the_branches(self):
+        """estimate's four RAM words (plugin-hostd-protocol 0.7): what the members would add adds up over the
+        branches, as do the members without a figure; the RAM the host holds and its budget are the host's, one
+        figure whatever the branches."""
+        fake = self.serve()
+        fake.ESTIMATES = {"urn:test:amp": (10, 1.0, 100), "urn:test:nopin": (40, 2.0, 200)}
+        chain = self.chain()
+        a, b, c = self.add(chain, "PH/Amp"), self.add(chain, "PH/Amp"), self.add(chain, "PH/NoPin")
+        self.parallel(chain, c)
+        est = self.figures(chain)
+        self.assertEqual(est["ram_added_bytes"], 100 + 100 + 200)
+        self.assertEqual(est["ram_used_bytes"], fake.RAM_USED)
+        self.assertEqual(est["ram_budget_bytes"], fake.RAM_BUDGET)
+        self.assertEqual(est["ram_unknown_count"], 0)
+
+    def test_a_member_without_a_memory_figure_is_counted_and_adds_nothing(self):
+        self.serve()
+        chain = self.chain()
+        self.add(chain, "PH/Amp")
+        self.strip(chain)
+        self.add(chain, "PH/Big")
+        est = self.figures(chain)
+        self.assertEqual(est["ram_added_bytes"], 4000000)
+        self.assertEqual(est["ram_unknown_count"], 1)
+
     def test_the_strip_splits_the_figures_as_it_splits_the_workers(self):
         self.serve()
         chain = self.chain()
