@@ -73,8 +73,9 @@ jobs:
         run: |
           # plugin_db, the reader the menus ask about a plugin (#4), and the golden answers the tests ask it with:
           # python3-plugin-db from plugin-db 0.3.2 on; until that release from a named commit of its main, and the
-          # log says so. The golden answers always come from the checkout.
-          SHA=4a9d62dce6b64d6fe141880c63905ab8255a9219
+          # log says so. The golden answers always come from the checkout. The sorting pass (chain 2026-11-22): its
+          # pass head, lane/sort-plugin-db-pass, until plugin-db 0.5.0 is on the channel
+          SHA=8ee7a401704e29351bcd4dfbe830446715b9df48
           apt-get install -y -qq --no-install-recommends git ca-certificates
           git clone -q https://github.com/Open-Mixer/plugin-db /tmp/plugin-db
           git -C /tmp/plugin-db checkout -q "$SHA"
@@ -113,9 +114,9 @@ jobs:
         run: |
           # the owners' contract packages, beside omx-contract-data and plugin-hostd-protocol-contract installed above;
           # omx-panel's schema is the commit fetched above. tools/restated_declarations.py names what a root lacks.
-          apt-get install -y -qq --no-install-recommends omx-clap-core-contract omx-dsp-contract omx-plugins-contract \
+          apt-get install -y -qq --no-install-recommends omx-clap-contract omx-dsp-contract omx-plugins-contract \
             plugin-db-contract $HOSTD_PINS
-          dpkg-query -W omx-clap-core-contract omx-dsp-contract omx-plugins-contract plugin-db-contract plugin-hostd-contract
+          dpkg-query -W omx-clap-contract omx-dsp-contract omx-plugins-contract plugin-db-contract plugin-hostd-contract
           mkdir -p /tmp/contract-root/omx-panel
           ln -s /usr/share/omx-contract /tmp/contract-root/omx-contract
           ln -s /usr/share/plugin-hostd-protocol /tmp/contract-root/plugin-hostd-protocol
