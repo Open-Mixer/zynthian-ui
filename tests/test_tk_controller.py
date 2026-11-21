@@ -9,6 +9,7 @@
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+import ast
 import math
 import os
 import re
@@ -18,7 +19,7 @@ import types
 import unittest
 from unittest import mock
 
-from tests.test_ui_look_widgets import (CONFIG, CONTROLLER, ROOT, STOCK, VINTAGE, Canvas, Font, Zctrl, config_under,
+from tests.test_ui_look_widgets import (CONFIG, CONTROLLER, ROOT, KNOB, STOCK, VINTAGE, Canvas, Font, Zctrl, config_under,
                                         load_module)
 
 try:
@@ -29,13 +30,8 @@ except ImportError:  # the Pi has PIL, CI installs it
 TK = os.path.join(ROOT, "zyngui", "zynthian_gui_controller_tk.py")
 CI = os.environ.get("CI") == "true"
 
-# the knob's metal as the vintage preset carries it (zynthian-sys config/ui-looks/openmixer-vintage.sh)
-KNOB = {"ZYNTHIAN_UI_COLOR_KNOB_FACE": "#8f98a2", "ZYNTHIAN_UI_COLOR_KNOB_EDGE": "#1d2227",
-        "ZYNTHIAN_UI_COLOR_KNOB_CAP_HI": "#dde3e9", "ZYNTHIAN_UI_COLOR_KNOB_KNURL": "#4f5963",
-        "ZYNTHIAN_UI_COLOR_KNOB_POINTER": "#e8732c", "ZYNTHIAN_UI_COLOR_SWITCH_TRACK": "#2a323d",
-        "ZYNTHIAN_UI_COLOR_SWITCH_THUMB": "#c7ced6"}
 TOKEN_ENV = sorted(KNOB)
-LOOK = {**VINTAGE, **KNOB}
+LOOK = VINTAGE
 
 
 def rgb(colour):
@@ -406,6 +402,14 @@ class ThePixels(unittest.TestCase):
     def near(self, a, b, levels=3):
         return all(abs(x - y) <= levels for x, y in zip(a, b))
 
+    def has(self, im, r, deg, colour, levels=3):
+        """The colour is at <r> radii, <deg> degrees: the pixel there or one beside it (a thin line's centre falls
+        between two pixels of an even face)."""
+        c, R = self.size / 2, self.size / 2
+        a = math.radians(deg)
+        x, y = round(c + math.sin(a) * r * R), round(c - math.cos(a) * r * R)
+        return any(self.near(im.getpixel((x + i, y + j))[:3], rgb(colour), levels) for i in (-1, 0, 1) for j in (-1, 0, 1))
+
     def focus(self):
         """The cap's highlight: (0.35, 0.3) of the cap's box, 0.70 of the radius across."""
         R = self.size / 2
@@ -428,22 +432,22 @@ class ThePixels(unittest.TestCase):
     def test_the_rim_ring_is_the_edge_token_and_the_knurl_ring_the_knurl_token(self):
         im = self.face()
         for deg in (7.5, 100, 200, 301.5):  # between the knurl lines, which fall every 15 degrees
-            self.assertTrue(self.near(self.at(im, 0.77, deg), rgb(self.config.color_knob_edge)), deg)
-        self.assertTrue(self.near(self.at(im, 0.715, 7.5), rgb(self.config.color_knob_knurl)))
+            self.assertTrue(self.has(im, 0.77, deg, self.config.color_knob_edge), deg)
+        self.assertTrue(self.has(im, 0.715, 7.5, self.config.color_knob_knurl))
 
     def test_a_tick_is_the_highlight_colour_at_minus_135_and_plus_135_degrees(self):
         im = self.face()
         for deg in (-135, 135, 0):
-            self.assertTrue(self.near(self.at(im, 0.915, deg), rgb(self.config.color_hl)), deg)
+            self.assertTrue(self.has(im, 0.915, deg, self.config.color_hl), deg)
         self.assertTrue(self.near(self.at(im, 0.915, 13.5), rgb(self.config.color_panel_bg)), "between two ticks is the ground")
 
     def test_another_token_set_moves_each(self):
         im = self.face(color_knob_face="#112233", color_knob_cap_hi="#ddeeff", color_knob_edge="#aa0000",
                        color_knob_knurl="#00aa00", color_hl="#0000ff")
         self.assertTrue(self.near(im.getpixel(self.focus())[:3], rgb("#ddeeff")))
-        self.assertTrue(self.near(self.at(im, 0.77, 100), rgb("#aa0000")))
-        self.assertTrue(self.near(self.at(im, 0.715, 7.5), rgb("#00aa00")))
-        self.assertTrue(self.near(self.at(im, 0.915, 135), rgb("#0000ff")))
+        self.assertTrue(self.has(im, 0.77, 100, "#aa0000"))
+        self.assertTrue(self.has(im, 0.715, 7.5, "#00aa00"))
+        self.assertTrue(self.has(im, 0.915, 135, "#0000ff"))
 
     def test_a_face_is_cached_by_its_size_and_tokens(self):
         a, b = self.face(), self.face()
@@ -451,6 +455,38 @@ class ThePixels(unittest.TestCase):
         self.assertEqual(len(self.tk.BUILDS), 1)
         self.face(color_knob_face="#112233")
         self.assertEqual(len(self.tk.BUILDS), 2)
+
+
+class StockIsUpstream(unittest.TestCase):
+    def test_the_exported_class_is_the_files_own_and_the_tk_module_is_not_imported(self):
+        cls, _, loaded = load_tk_controller(STOCK)
+        self.assertEqual(cls.__name__, "zynthian_gui_controller")
+        self.assertEqual(cls.__module__, "zynthian_gui_controller_tk_under_test")
+        self.assertNotIn("zyngui.zynthian_gui_controller_tk", loaded)
+
+    def test_stock_draws_the_upstream_items_and_no_image(self):
+        cls, config, _ = load_tk_controller(STOCK)
+        ctrl = cls(0, None, Zctrl())
+        ctrl._w, ctrl._h = 120, 100
+        ctrl.on_size(None)
+        ctrl.set_hl()
+        self.assertEqual([o["kind"] for o in ctrl.items.values()], ["arc", "arc", "text", "text", "text"])
+        self.assertEqual(ctrl.items[ctrl.graph]["outline"], config.color_hl)
+        self.assertEqual(ctrl.items[ctrl.graph]["state"], "normal")
+        self.assertEqual(ctrl.of("image"), [])
+
+    def test_the_stock_file_knows_no_look_renderer_or_pil_but_its_tail(self):
+        tree = ast.parse(open(CONTROLLER).read())
+        klass = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "zynthian_gui_controller")
+        words = re.compile(r"ui_look|drawn|renderer|panel_view|PIL|_tk\b", re.I)
+        for node in ast.walk(klass):
+            for text in ([node.id] if isinstance(node, ast.Name) else [node.attr] if isinstance(node, ast.Attribute)
+                         else [node.value] if isinstance(node, ast.Constant) and isinstance(node.value, str) else []):
+                self.assertFalse(words.search(text), f"line {node.lineno}: {text!r} in the stock class")
+        tails = [n for n in tree.body if isinstance(n, ast.If)]
+        self.assertEqual(len(tails), 1, "one module-level if: the look's class takes the name when the look is not stock")
+        self.assertIn("ui_look", ast.dump(tails[0].test))
+        self.assertEqual(tails[0].orelse, [], "stock has no branch: nothing runs for it")
 
 
 class TheRemovals(unittest.TestCase):
@@ -466,13 +502,15 @@ class TheRemovals(unittest.TestCase):
 
     def test_the_old_controller_tests_of_the_renderer_path_are_gone(self):
         text = open(os.path.join(ROOT, "tests", "test_ui_look_widgets.py")).read()
-        for word in ("class DrawnController", "class RealRenderer", "FakeView(", "def load_controller"):
+        for word in ("class DrawnController", "class RealRenderer", "class FakeView", "def load_controller"):
             self.assertNotIn(word, text)
 
     def test_ci_installs_what_the_tk_tests_import(self):
         text = open(os.path.join(ROOT, ".github", "workflows", "tests.yml")).read()
-        self.assertNotIn("no PIL|no omx-panel tools directory", text)
         self.assertIn("python3-pil", text)
+        self.assertIn("no PIL", text, "a skipped Tk test ran nothing: CI refuses it")
+        self.assertNotIn("drawn-controller", text, "the guard's words are the Tk look's")
+        self.assertNotIn("xvfb", text.lower(), "the Tk tests need no display")
 
 
 class WhatCIMustHave(unittest.TestCase):

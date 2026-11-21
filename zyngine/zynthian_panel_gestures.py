@@ -674,8 +674,11 @@ def tk_key(gestures, e):
 
 
 def widget_of(zctrl):
-    """The table's key of a controller: a toggle is a switch, one with labels a selector, the rest a fader."""
-    if zctrl.is_toggle:
+    """The kind of a controller, for the gesture table and for the Tk look's drawing alike (zynthian_gui_controller_tk
+    asks this function and has no rule of its own): a toggle is a switch, one with labels a selector, the rest a fader.
+    A two-value list the engine said is no toggle (toggle_declared False: an lv2 enumeration of two scale points,
+    zynthian-ui#86) is a selector, though the two labels made the controller's is_toggle."""
+    if zctrl.is_toggle and getattr(zctrl, "toggle_declared", None) is not False:
         return "switch"
     return "selector" if zctrl.ticks else "fader"
 
