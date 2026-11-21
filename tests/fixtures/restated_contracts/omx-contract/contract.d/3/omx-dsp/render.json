@@ -1,1 +1,1 @@
-{"DSP_KERNELS": {"kind": "set", "ids": ["omx-comp-kernel"]}}
+{"DSP_KERNELS": {"kind": "set", "ids": ["omx-comp-kernel"]}, "DSP_LIMITS": {"kind": "list", "unit": "ms", "values": ["fixed-frame", "id", "12345"]}}

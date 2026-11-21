@@ -1,0 +1,4 @@
+{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://openmixer.org/contract/plugin-hostd/grouping",
+ "info": {"title": "A fixture: plugin-hostd's domain plugin-hostd/grouping, trimmed", "version": "1.0.0", "x-owner": "plugin-hostd"},
+ "components": {"schemas": {
+  "PLUGIN_HOSTD_GROUPING_REASONS": {"x-kind": "words", "oneOf": [{"const": "plan-refused", "title": "planRefused", "description": "The daemon refused the plan.", "x-code": 0}]}}}}

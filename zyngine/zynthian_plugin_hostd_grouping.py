@@ -3,8 +3,8 @@
 # ZYNTHIAN PROJECT: plugin-hostd grouping reasons (zynthian_plugin_hostd_grouping)
 #
 # The reason plugin-hostd gives for a plugin its plan does not run together with its neighbours, as
-# a short text for the plugin's entry. The daemon declares the reason words (grouping.json, in the
-# directory of its contract package); the texts are this file's and are looked up by word. A word
+# a short text for the plugin's entry. The daemon declares the reason words (its domain
+# plugin-hostd/grouping, in the contract directory); the texts are this file's and are looked up by word. A word
 # the daemon declares and this file has no text for reads as the word itself, and the refusal of a
 # whole plan is told by the name of the code the daemon refused it with.
 #
@@ -19,31 +19,34 @@ import os
 import json
 import logging
 
-CONTRACT_DIR = os.environ.get("ZYNTHIAN_PLUGIN_HOSTD_CONTRACT_DIR",
-                              "/usr/share/omx-contract/contract.d/3/plugin-hostd")
+CONTRACT_PATH = "/usr/share/omx-contract/contract.d"
+# the daemon's domain plugin-hostd/grouping (plugin-hostd-contract 0.21.0 on): <contract dir>/plugin-hostd/grouping/
+DOMAIN = ("plugin-hostd", "grouping", "grouping.json")
+ITEM = "PLUGIN_HOSTD_GROUPING_REASONS"
 PLAN_REFUSED = "plan-refused"
 
-_declared = {}  # directory => {word: the daemon's sentence}
+_declared = {}  # contract directory => {word: the daemon's sentence}
 
 
-def declared(directory=None):
-    """{reason word: the sentence the daemon declares for it} from the grouping.json its package installs; {} when
-    it cannot be read."""
-    directory = directory or CONTRACT_DIR
-    if directory not in _declared:
+def declared(contract=None):
+    """{reason word: the sentence the daemon declares for it}: the words of PLUGIN_HOSTD_GROUPING_REASONS in the
+    domain plugin-hostd/grouping of the contract directory (OMX_CONTRACT_PATH's first, else the installed one), each
+    with its description; {} when it cannot be read."""
+    contract = contract or (os.environ.get("OMX_CONTRACT_PATH") or CONTRACT_PATH).split(":")[0]
+    if contract not in _declared:
         try:
-            with open(os.path.join(directory, "grouping.json")) as f:
+            with open(os.path.join(contract, *DOMAIN)) as f:
                 doc = json.load(f)
-            _declared[directory] = {w["word"]: w["doc"] for w in doc["PLUGIN_HOSTD_GROUPING_REASONS"]["words"].values()}
+            _declared[contract] = {w["const"]: w["description"] for w in doc["components"]["schemas"][ITEM]["oneOf"]}
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
-            logging.debug("plugin-hostd grouping.json is not readable (%s)", e)
+            logging.debug("plugin-hostd's domain plugin-hostd/grouping is not readable (%s)", e)
             return {}
-    return _declared[directory]
+    return _declared[contract]
 
 
-def declared_words(directory=None):
+def declared_words(contract=None):
     """The reason words the daemon declares; None when its declaration cannot be read."""
-    return set(declared(directory)) or None
+    return set(declared(contract)) or None
 
 
 def text(reason, error_name=None):

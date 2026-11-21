@@ -1,0 +1,11 @@
+{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://openmixer.org/contract/plugin-db",
+ "info": {"title": "A fixture: plugin-db's domain, trimmed", "version": "1.0.0", "x-owner": "plugin-db"},
+ "components": {"schemas": {
+  "PLUGIN_DB_TIERS": {"description": "A fixture: the words of a tier.", "x-kind": "words", "oneOf": [
+    {"const": "load-all", "title": "loadAll", "description": "Every plugin loads.", "x-code": 0, "x-text": "text-token"},
+    {"const": "qualified-only", "title": "qualifiedOnly", "description": "Only a qualified plugin loads; see pin_set.", "x-code": 1},
+    {"const": "off", "title": "off", "description": "doc-token", "x-code": 2}]},
+  "PLUGIN_DB_PROBES": {"x-kind": "set", "oneOf": [
+    {"const": "probe-timeout", "x-code": 0}, {"const": "on", "x-code": 1}, {"const": "off", "x-code": 2}, {"const": "rtSafety", "x-code": 3}]},
+  "PLUGIN_DB_TIMEOUT": {"x-kind": "scalar", "x-value": "never-read-scalar", "x-unit": "ms"},
+  "PLUGIN_DB_ISOLATION_HOSTS": {"x-kind": "words", "oneOf": [{"const": "demo-isolation-host", "description": "a host's id", "x-code": 0}]}}}}

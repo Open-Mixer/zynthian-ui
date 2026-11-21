@@ -873,8 +873,8 @@ class zynthian_gui_controller(tkinter.Canvas):
 
 # ------------------------------------------------------------------------------
 
-# A UI look that draws the controller through omx-panel's renderer (docs/ui-look-drawn-widgets.md) takes the class's
-# name here, so every screen importing zynthian_gui_controller gets the look's; stock leaves the class above as it is.
+# A UI look that draws the controller with Tk and PIL (docs/ui-look-tk-widgets.md) takes the class's name here, so every
+# screen importing zynthian_gui_controller gets the look's; stock leaves the class above as it is.
 if zynthian_gui_config.ui_look != "stock":
-    from zyngui.zynthian_gui_controller_drawn import drawn_controller
-    zynthian_gui_controller = drawn_controller(zynthian_gui_controller)
+    from zyngui.zynthian_gui_controller_tk import tk_look
+    zynthian_gui_controller = tk_look(zynthian_gui_controller)

@@ -60,6 +60,14 @@ def table_path():
 _loaded = {}
 
 
+def declared_code(table, name):
+    """A refusal code as the declaration holds it (the `codes` of schema/gestures.json, omx-panel's GESTURES_CODES);
+    KeyError naming it when it does not: no code of the engine's own stands in for one omx-panel declares."""
+    if name not in table.get("codes", {}):
+        raise KeyError(f"omx-panel's gesture declaration holds no code {name}")
+    return name
+
+
 def load_table(path=None):
     """The declaration, read once per file and modification time."""
     path = path or table_path()
@@ -163,6 +171,9 @@ class Gestures:
     def word(self, inp):
         return self.table["table"].get(self.widget, {}).get(inp)
 
+    def code(self, name):
+        return declared_code(self.table, name)
+
     def refuse(self, code, t, why):
         self.refused.append({"code": code, "t": t, "why": why})
 
@@ -197,11 +208,11 @@ class Gestures:
         if not self.inside(x, y):
             return
         if self.readonly:
-            return self.refuse("GESTURE_READ_ONLY", t, f"a {self.widget} that is read-only takes no gesture")
+            return self.refuse(self.code("GESTURE_READ_ONLY"), t, f"a {self.widget} that is read-only takes no gesture")
         if self.owner and pid != self.owner["id"] and pid not in self.pointers:
             return self.press_second(x, y, t, pid, ptype)
         if (self.claim and t < self.claim["until"]) or self.owner:
-            return self.refuse("GESTURE_CONTROL_OWNED", t, "the control belongs to another input")
+            return self.refuse(self.code("GESTURE_CONTROL_OWNED"), t, "the control belongs to another input")
         T = self.table["timings"]
         second = self.last_tap is not None and self.last_tap["ptype"] == ptype and t - self.last_tap["t"] <= T["doubleTapMs"]["default"]
         self.owner = {"id": pid, "ptype": ptype, "t0": t, "x0": x, "y0": y, "x": x, "y": y, "dragging": False,
@@ -216,7 +227,7 @@ class Gestures:
         T = self.table["timings"]
         if not (self.word("pinch") == "second" and self.second and not self.pinch and ptype == o["ptype"]
                 and t - o["t0"] <= T["palmGuardMs"]["default"] and first and self.inside(first["x0"], first["y0"])):
-            return self.refuse("GESTURE_CONTROL_OWNED", t, "the control belongs to another input")
+            return self.refuse(self.code("GESTURE_CONTROL_OWNED"), t, "the control belongs to another input")
         d0 = math.hypot(x - first["x"], y - first["y"]) or 1.0
         o["dragging"] = o["fired"] = True  # the first finger no longer drags or taps
         self.pointers[pid] = {"x0": x, "y0": y, "x": x, "y": y, "t0": t, "ptype": ptype}
@@ -290,7 +301,7 @@ class Gestures:
             return self.reset(g, t)
         word = self.word("tap")
         if not word:
-            return self.refuse("GESTURE_NOT_IN_TABLE", t, f"a {self.widget} has no tap")
+            return self.refuse(self.code("GESTURE_NOT_IN_TABLE"), t, f"a {self.widget} has no tap")
         g = self.open(word, "tap", o["t0"])
         if word == "toggle":
             lo, hi = self.travel.travel["min"], self.travel.travel["max"]
@@ -305,7 +316,7 @@ class Gestures:
     def reset(self, g, t):
         if self.travel.default is None:
             self.log.pop()
-            return self.refuse("GESTURE_NO_DEFAULT", t, "the control declares no default")
+            return self.refuse(self.code("GESTURE_NO_DEFAULT"), t, "the control declares no default")
         self.change(g, self.travel.default)  # the declared default itself, exact
 
     def step(self, n, t, coarse=False, source="wheel"):
@@ -315,12 +326,12 @@ class Gestures:
             coarse, source = False, "arrowSecond"  # Shift with the arrows is the handle's Q
         inp = "arrowSecond" if source == "arrowSecond" else "encoder3" if source == "encoder3" else ("detentCoarse" if coarse else "detent") if source == "detent" else ("wheelCoarse" if coarse else "wheel") if source == "wheel" else ("arrowCoarse" if coarse else "arrow")
         if self.readonly:
-            return self.refuse("GESTURE_READ_ONLY", t, f"a {self.widget} that is read-only takes no gesture")
+            return self.refuse(self.code("GESTURE_READ_ONLY"), t, f"a {self.widget} that is read-only takes no gesture")
         if self.owner or (self.claim and t < self.claim["until"] and self.claim["source"] != source):
-            return self.refuse("GESTURE_CONTROL_OWNED", t, "the control belongs to another input")
+            return self.refuse(self.code("GESTURE_CONTROL_OWNED"), t, "the control belongs to another input")
         word = self.word(inp)
         if not word:
-            return self.refuse("GESTURE_NOT_IN_TABLE", t, f"a {self.widget} has no {inp}")
+            return self.refuse(self.code("GESTURE_NOT_IN_TABLE"), t, f"a {self.widget} has no {inp}")
         if word == "second" and self.second is None or word not in ("step", "second"):
             return self.refuse("GESTURE_NOT_TAKEN", t, f"the {word} of a {self.widget} has no surface here")  # no Q
         G = self.table["thresholds"]
@@ -340,10 +351,10 @@ class Gestures:
         self.tick(t)
         if name == "BackSpace" or name == "Backspace":
             if self.readonly:
-                return self.refuse("GESTURE_READ_ONLY", t, "read-only")
+                return self.refuse(self.code("GESTURE_READ_ONLY"), t, "read-only")
             if self.word("backspace") == "reset":
                 return self.reset(self.open("reset", "backspace", t), t)
-            return self.refuse("GESTURE_NOT_IN_TABLE", t, f"a {self.widget} has no backspace")
+            return self.refuse(self.code("GESTURE_NOT_IN_TABLE"), t, f"a {self.widget} has no backspace")
         sign = {"Up": 1, "Right": 1, "Down": -1, "Left": -1}.get(name.replace("Arrow", ""))
         if sign:
             self.step(sign, t, coarse=shift, source="key")
@@ -523,6 +534,9 @@ class XY:
     def word(self, inp):
         return self.table["table"]["xy"].get(inp)
 
+    def code(self, name):
+        return declared_code(self.table, name)
+
     def open(self, word, inp, t):
         g = {"word": word, "input": inp, "begin": t, "end": t, "changes": []}
         self.log.append(g)
@@ -550,7 +564,7 @@ class XY:
         if not self.inside(x, y):
             return
         if self.owner:
-            self.refused.append({"code": "GESTURE_CONTROL_OWNED", "t": t, "why": "the control belongs to another input"})
+            self.refused.append({"code": self.code("GESTURE_CONTROL_OWNED"), "t": t, "why": "the control belongs to another input"})
             return
         T = self.table["timings"]
         second = self.last_tap is not None and self.last_tap["ptype"] == ptype and t - self.last_tap["t"] <= T["doubleTapMs"]["default"]
@@ -600,7 +614,7 @@ class XY:
     def reset(self, g, t):
         if self.tx.default is None or self.ty.default is None:
             self.log.pop()
-            self.refused.append({"code": "GESTURE_NO_DEFAULT", "t": t, "why": "an axis declares no default"})
+            self.refused.append({"code": self.code("GESTURE_NO_DEFAULT"), "t": t, "why": "an axis declares no default"})
             return
         self._put(g, self.tx.default, self.ty.default)
         g["end"] = t
@@ -660,8 +674,11 @@ def tk_key(gestures, e):
 
 
 def widget_of(zctrl):
-    """The table's key of a controller: a toggle is a switch, one with labels a selector, the rest a fader."""
-    if zctrl.is_toggle:
+    """The kind of a controller, for the gesture table and for the Tk look's drawing alike (zynthian_gui_controller_tk
+    asks this function and has no rule of its own): a toggle is a switch, one with labels a selector, the rest a fader.
+    A two-value list the engine said is no toggle (toggle_declared False: an lv2 enumeration of two scale points,
+    zynthian-ui#86) is a selector, though the two labels made the controller's is_toggle."""
+    if zctrl.is_toggle and getattr(zctrl, "toggle_declared", None) is not False:
         return "switch"
     return "selector" if zctrl.ticks else "fader"
 

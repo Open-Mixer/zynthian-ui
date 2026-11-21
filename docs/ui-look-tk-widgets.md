@@ -1,6 +1,6 @@
 # The vintage controller drawn with Tk (zynthian-ui#93)
 
-Status: design, not built; the owner's rulings of 2026-11-20 are in (section 6, "Decided"). It replaces
+Status: stage 1 (the controller) is built, in `zyngui/zynthian_gui_controller_tk.py` (zynthian-ui#93); stages 2 and 3 are design. The owner's rulings of 2026-11-20 are in (section 6, "Decided"). Stage 1 differs from the plan below in one detail, the reduction of the supersampled face: it is the box (the mean of each block), not `LANCZOS`, which rings at a hard edge and overshoots a thin tick's colour by a tenth (measured: 8 to 11 levels on a 3 px tick; the box is exact). The tick is 3 px at 168 px. It replaces
 `docs/ui-look-drawn-widgets.md` (zynthian-ui#53, #74, #79) when its last stage lands. The rulings widen #93 from
 the controller to the plugin panel: both are drawn in Tk, and the ctypes door to `libomx-panel-render.so.0` goes once
 both are.
@@ -115,7 +115,7 @@ host; the stage-1 lane uses the committed shots, or is handed the archive's omx-
 fixed by measuring the picture: tick ring 0.97 to 0.86 of the radius, rim 0.81, knurl 0.73, cap 0.70, pointer 0.21 to
 0.63. No Zynthian code reads omx-panel's drawing; the picture is a test reference, not an input.
 
-- Layer 1, the face: one PIL `RGBA` image of `2 * radius` square, drawn at 3x and reduced with `LANCZOS`: tick ring
+- Layer 1, the face: one PIL `RGBA` image of `2 * radius` square, drawn at 3x and reduced with the box (see the status line): tick ring
   (11 lines over -135..+135 in `color_hl`, the `--legend` the preset already maps), the shade (a disc offset 1/48 down,
   black at 50 %), the rim (`KNOB_EDGE`), the knurl disc and its 24 lines (`KNOB_KNURL`), the cap: the radial gradient
   approximated by N concentric discs stepping from `KNOB_FACE` (outer) to `KNOB_CAP_HI` (inner), each disc's centre
