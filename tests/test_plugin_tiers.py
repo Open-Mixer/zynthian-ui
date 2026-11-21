@@ -153,7 +153,8 @@ class the_words(unittest.TestCase):
     def test_the_sentences_are_read_in_the_devices_language(self):
         with tempfile.TemporaryDirectory() as tmp:
             with open(os.path.join(tmp, "ca.json"), "w") as f:
-                f.write('{"messages": {"PLUGIN_DB_STATES.refused": "Refusat: no es carrega."}}')
+                # an entry as omx-contract's catalog reader reads it (plugin-db reads its catalogs through it)
+                f.write('{"messages": {"PLUGIN_DB_STATES.refused": {"text": "Refusat: no es carrega.", "by": "human"}}}')
             with mock.patch.object(sys.modules["plugin_db.text"], "CATALOGS", tmp), \
                     mock.patch.dict(os.environ, {"LC_ALL": "ca_ES.UTF-8"}):
                 said = tiers.answer_text(expect("refused"))

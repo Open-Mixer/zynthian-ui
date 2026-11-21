@@ -87,7 +87,10 @@ uri_word = zynthian_plugin_hostd_protocol.uri_word
 
 def command(verb, *args):
     """The line of a command as plugin-hostd's client writes it from the protocol table: the verb, then each argument
-    as the table types it (an integer, a number in the protocol's one spelling, a word quoted when it has to be)."""
+    as the table types it (an integer, a number in the protocol's one spelling, a word quoted when it has to be).
+    An argument holding a NUL is refused as a line holding one is (refuse_nul), before the client is asked: the client
+    refuses it too from plugin-hostd-protocol 0.8.0 on, with its own ProtocolError, which is no reply of the daemon."""
+    refuse_nul(" ".join([verb, *(str(a) for a in args)]))
     return protocol.client.encode(verb, args)
 
 
