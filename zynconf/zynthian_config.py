@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # ********************************************************************
 # ZYNTHIAN PROJECT: Zynthian Config Library
 #
@@ -157,6 +156,7 @@ ServerPort = {
     "vnc_desktop": 5901,
     "linuxsampler_osc": 6688,
     "zynaddsubfx_osc": 6693,
+    "websocket": 8370,
     "aeolus_osc": 9000,
     "pianoteq_rpc": 9001,
     "sooperlooper_osc": 9951
@@ -206,7 +206,7 @@ def load_config(set_env=True, fpath=None):
     #logging.debug(f"CONFIG VARNAMES: {varnames}")
 
     # Execute config script and dump environment
-    env = check_output(f"source \"{fpath}\";env", shell=True, universal_newlines=True, executable="/bin/bash")
+    env = check_output(["/bin/bash", "-c", 'source "$1"; env', "bash", fpath], universal_newlines=True)
 
     # Parse environment dump
     config = {}
@@ -309,7 +309,7 @@ def load_plain_envars(fpath, set_env=True):
 def update_sys():
     try:
         os.environ['ZYNTHIAN_FLAG_MASTER'] = "NONE"
-        check_output(os.environ.get('ZYNTHIAN_SYS_DIR') + "/scripts/update_zynthian_sys.sh", shell=True)
+        check_output([os.environ.get('ZYNTHIAN_SYS_DIR') + "/scripts/update_zynthian_sys.sh"])
     except Exception as e:
         logging.error("Updating Sytem Config: %s" % e)
 
@@ -363,8 +363,8 @@ def get_wifi_list():
         logging.info("Creating Wi-Fi Access Point connection 'zynthian'...")
         check_output(f"{sys_dir}/sbin/create_wifi_access_point.sh", encoding='utf-8')
 
-    # Get list of available networks
-    wifi_data = []
+    # Get list of available networks, use a dict to avoid repeating APs with same SSID
+    wifi_data = {}
     ap_enabled = False
     rows = check_output(["nmcli", "--terse", "dev", "wifi", "list"], encoding='utf-8').split("\n")
     for row in rows:
@@ -376,20 +376,53 @@ def get_wifi_list():
             if signal == "0":
                 ap_enabled = True
                 continue
+            # Check if the SSID already is in the list
+            try:
+                curentry = wifi_data[ssid]
+                # If it's in the list and it's enabled, skip the rest with same SSID
+                if curentry[4]:
+                    continue
+            except:
+                curentry = None
+            # Check if it's configured'
             if ssid in configured_wifi:
                 configured = True
             else:
                 configured = False
-            rate = parts[-4].replace("Mbit/s", "Mbs")
+            # Get rate (quality of signal)
+            rate_parts = parts[-4].split(" ")
+            try:
+                rate_num = int(rate_parts[0])
+                rate_unit = rate_parts[1]
+            except:
+                continue
+            if rate_unit == "Gbit/s":
+                rate_num *= 1000000000
+                rate = rate_parts[0] + " Gbs"
+            elif rate_unit == "Mbit/s":
+                rate_num *= 1000000
+                rate = rate_parts[0] + " Mbs"
+            elif rate_unit == "Kbit/s":
+                rate_num *= 1000
+                rate = rate_parts[0] + " Kbs"
+            else:
+                continue
+            # Check if it's enabled (only one can be enabled!)
             if parts[0] == "*":
                 enabled = True
                 bullet = "\u2612"
             else:
                 enabled = False
                 bullet = "\u2610"
+            # Skip if not enabled and already in the list with a higher rate
+            if not enabled and curentry and curentry[5] >= rate_num:
+                continue
             title = f"{bullet} {bars} {ssid} ({rate})"
             txt = "Disconnect from" if enabled else "Connect to"
-            wifi_data.append((ssid, 0, title, configured, enabled, [f"{txt} Wi-Fi access point.", None]))
+            wifi_data[ssid] = (ssid, 0, title, configured, enabled, rate_num, [f"{txt} Wi-Fi access point.", None])
+
+    # Convert from dict to list
+    wifi_data = list(wifi_data.values())
 
     # Add Access Point
     if ap_enabled:
@@ -495,21 +528,17 @@ def get_external_storage_dirs(exdpath):
 # -------------------------------------------------------------------------------
 
 def is_process_running(procname):
-    cmd = "ps -e | grep %s" % procname
     try:
-        result = check_output(cmd, shell=True).decode('utf-8', 'ignore')
-        if len(result) > 3:
-            return True
-        else:
-            return False
+        # pgrep exits non-zero (raising CalledProcessError) when nothing matches
+        check_output(["pgrep", procname])
+        return True
     except Exception as e:
         return False
 
 
 def is_service_active(service):
-    cmd = "systemctl is-active %s" % service
     try:
-        result = check_output(cmd, shell=True).decode('utf-8', 'ignore')
+        result = check_output(["systemctl", "is-active", service]).decode('utf-8', 'ignore')
     except Exception as e:
         result = "ERROR: %s" % e
     # loggin.debug("Is service "+str(service)+" active? => "+str(result))

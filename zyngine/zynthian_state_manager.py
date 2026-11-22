@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # ****************************************************************************
 # ZYNTHIAN PROJECT: Zynthian State Manager (zynthian_state_manager)
 #
@@ -23,6 +22,7 @@
 #
 # ****************************************************************************
 
+import os
 import ctypes
 import logging
 import traceback
@@ -85,6 +85,8 @@ class zynthian_state_manager:
 
         logging.info("Creating state manager")
 
+        self.root_access = bool(os.getuid() == 0)
+
         self.busy = set()  # Set of clients indicating they are busy doing something (may be used by UI to show progress)
         self.busy_message = None
         self.busy_error = None
@@ -143,6 +145,9 @@ class zynthian_state_manager:
 
         self.zynmixer_chan = zynmixer.ZynMixer() # zynmixer used for channel strips
         self.zynmixer_bus = zynmixer.ZynMixer(True) # zynmixer used for buses, e.g main, fx return, etc.
+        for mixer in (self.zynmixer_chan, self.zynmixer_bus):
+            mixer.set_meter_config(zynthian_gui_config.dpm_range_db, zynthian_gui_config.dpm_decay_db_per_s,
+                                   zynthian_gui_config.dpm_hold_s, zynthian_gui_config.fader_zero_db)
         self.chain_manager = zynthian_chain_manager(self)
         self.reset_zs3()
 
@@ -692,15 +697,14 @@ class zynthian_state_manager:
         self.slow_update_callbacks.append([rate, cb, 0])
 
     def remove_slow_update_callback(self, cb):
-        """Add a callback to be called every "rate" seconds
+        """Remove a callback added with add_slow_update_callback
 
-        rate - time in seconds between callbacks
         cb - Callback function
         """
 
-        for cb in self.slow_update_callbacks:
-            if cb[1] == cb:
-                cb.remove(cb)
+        for entry in self.slow_update_callbacks:
+            if entry[1] == cb:
+                self.slow_update_callbacks.remove(entry)
                 break
 
     # ------------------------------------------------------------------
@@ -810,7 +814,7 @@ class zynthian_state_manager:
                             self.all_notes_off()
                         else:
                             if self.midi_learn_zctrl:
-                                self.chain_manager.add_midi_learn(chan, ccnum, self.midi_learn_zctrl, izmip)
+                                self.chain_manager.add_midi_binding(self.midi_learn_zctrl, ccnum, chan, izmip, self.midi_learn_state)
                     # Master Note CUIA with ZynSwitch emulation
                     elif evtype == 0x8 or evtype == 0x9:
                         note = str(ev[1] & 0x7F)
@@ -842,8 +846,6 @@ class zynthian_state_manager:
                     if ccnum < 120:
                         if not self.midi_learn_zctrl:
                             self.chain_manager.midi_control_change(izmip, chan, ccnum, ccval)
-                            self.alsa_mixer_processor.midi_control_change(chan, ccnum, ccval)
-                            self.audio_player.midi_control_change(chan, ccnum, ccval)
                         zynsigman.send_queued(zynsigman.S_MIDI, zynsigman.SS_MIDI_CC,
                                               izmip=izmip, chan=chan, num=ccnum, val=ccval)
                     # Special CCs >= Channel Mode
@@ -910,7 +912,9 @@ class zynthian_state_manager:
     def power_save_check(self):
         if zynthian_gui_config.power_save_secs <= 0:
             return
-        if self.last_event_flag or self.zynmixer_bus.dpm[0].a_hold > zynthian_gui_config.audio_power_threshold or self.zynmixer_bus.dpm[0].b_hold > zynthian_gui_config.audio_power_threshold:
+        # DPM hold is inverted square law (0.0 = 0dBFS, 1.0 = silence).
+        hold_limit = 1.0 - 10.0 ** (min(0.0, zynthian_gui_config.audio_power_threshold) / 40.0)
+        if self.last_event_flag or self.zynmixer_bus.dpm[0].a_hold < hold_limit or self.zynmixer_bus.dpm[0].b_hold < hold_limit:
             self.last_event_ts = monotonic()
             self.last_event_flag = False
             if self.power_save_mode:
@@ -928,13 +932,13 @@ class zynthian_state_manager:
             self.last_event_flag = False
             self.last_event_ts = monotonic() - zynthian_gui_config.power_save_secs
             try:
-                check_output("powersave_control.sh on", shell=True)
+                check_output(["powersave_control.sh", "on"])
             except Exception as e:
                 logging.error(e)
         else:
             logging.info("Power Save Mode: OFF")
             try:
-                check_output("powersave_control.sh off", shell=True)
+                check_output(["powersave_control.sh", "off"])
             except Exception as e:
                 logging.error(e)
             self.ctrldev_manager.sleep_off()
@@ -1205,6 +1209,8 @@ class zynthian_state_manager:
                 zs3 = self.sanitize_zs3_from_json(state["zs3"])
                 if not merge:
                     self.zs3 = zs3
+                if self.last_zs3_id not in self.zs3:
+                    self.last_zs3_id = None
                 self.load_zs3(zs3["zs3-0"], autoconnect=False)
                 try:
                     mute |= state['zs3']['zs3-0']['processors'][MAIN_MIXBUS_ID]['controllers']['mute']["value"]
@@ -1401,6 +1407,7 @@ class zynthian_state_manager:
         """
 
         active_phrase = 0
+        is_live_state = not isinstance(zs3_id, str)
         if isinstance(zs3_id, str):
             # Try loading exact match
             try:
@@ -1424,7 +1431,7 @@ class zynthian_state_manager:
 
         restored_chains = []
         restored_cc_mapping = []
-        restore_midi_learn = zs3_id == "zs3-0" or zs3_state.get("restore_midi_learn", False)
+        restore_midi_learn = is_live_state or zs3_id == "zs3-0" or zs3_state.get("restore_midi_learn", False)
         mute_pause = False
         if "chains" in zs3_state:
             self.set_busy_details("restoring chains state")
@@ -1484,23 +1491,7 @@ class zynthian_state_manager:
 
                 if restore_midi_learn:
                     # Current (correct) chain MIDI-learn state
-                    self.chain_manager.clean_midi_learn(chain_id)
-                    if "midi_learn" in chain_state:
-                        for low_key, cfg in chain_state["midi_learn"].items():
-                            low_key = int(low_key)
-                            midi_chan = (low_key >> 8) & 0xff
-                            midi_cc = low_key & 0x7f
-                            for proc_id, symbol in cfg:
-                                if proc_id in self.chain_manager.processors:
-                                    restored_cc_mapping.append((proc_id, symbol, midi_chan, midi_cc))
-                    # Legacy (wrong) chain MIDI-learn state
-                    elif "midi_cc" in chain_state:
-                        for midi_cc, cfg in chain_state["midi_cc"].items():
-                            midi_chan = 0xff
-                            midi_cc = int(midi_cc) & 0x7f
-                            for proc_id, symbol in cfg:
-                                if proc_id in self.chain_manager.processors:
-                                    restored_cc_mapping.append((proc_id, symbol, midi_chan, midi_cc))
+                    self.chain_manager.clean_midi_binding(chain_id)
 
         if mute_pause:
             # Wait for soft mutes to apply before changing settings
@@ -1522,14 +1513,6 @@ class zynthian_state_manager:
                         processor.set_state(proc_state)
                 except Exception as e:
                     logging.error(f"Failed to restore processor {proc_id} state => {e}")
-
-        for cc_map in restored_cc_mapping:
-            processor = self.chain_manager.processors[cc_map[0]]
-            try:
-                zctrl = processor.controllers_dict[cc_map[1]]
-                self.chain_manager.add_midi_learn(cc_map[2], cc_map[3], zctrl)
-            except:
-                logging.warning(f"Failed to restore MIDI learning {cc_map[2]}#{cc_map[3]} => {cc_map[0]}:{cc_map[1]}")
 
         if "active_chain" in zs3_state:
             self.chain_manager.set_active_chain_by_id(zs3_state["active_chain"])
@@ -1579,9 +1562,7 @@ class zynthian_state_manager:
                 except:
                     pass
 
-        if zs3_id == 'zs3-0':
-            self.last_zs3_id = None
-        else:
+        if not is_live_state:
             self.last_zs3_id = zs3_id
         self.zynseq.select_phrase(active_phrase, True)
         zynsigman.send(zynsigman.S_STATE_MAN, zynsigman.SS_LOAD_ZS3, zs3_id=zs3_id)
@@ -1656,6 +1637,7 @@ class zynthian_state_manager:
         self.zs3[zs3_id] = {
             "title": title,
             "active_chain": self.chain_manager.active_chain.chain_id,
+            "active_phrase": self.zynseq.phrase,
             "global": {}
         }
         if restore_midi_learn:
@@ -1665,9 +1647,7 @@ class zynthian_state_manager:
 
         chain_states = {}
         for chain_id, chain in self.chain_manager.chains.items():
-            chain_state = {
-                "midi_learn": {}
-            }
+            chain_state = {}
             if chain_id in omit_chains:
                 chain_state["restore"] = False
             if chain.is_midi():
@@ -1698,13 +1678,6 @@ class zynthian_state_manager:
                             out = [i, port_name]
                             break
                 chain_state["audio_out"].append(out)
-            # Add chain MIDI mapping
-            for key, zctrls in self.chain_manager.chain_midi_cc_binding.items():
-                if chain_id == (key >> 16) & 0xff:
-                    key_low = key & 0xff7f
-                    chain_state["midi_learn"][key_low] = []
-                    for zctrl in zctrls:
-                        chain_state["midi_learn"][key_low].append([zctrl.processor.id, zctrl.symbol])
             if chain_state:
                 chain_states[chain_id] = chain_state
         if chain_states:
@@ -1768,12 +1741,8 @@ class zynthian_state_manager:
         except:
             pass
 
-        if zs3_id == 'zs3-0':
-            self.last_zs3_id = None
-        else:
+        if zs3_id != 'zs3-0':
             self.last_zs3_id = zs3_id
-            # Jofemodo: this has not sense from my POV
-            #self.zs3['zs3-0'] = self.zs3[zs3_id].copy()
         zynsigman.send(zynsigman.S_STATE_MAN, zynsigman.SS_SAVE_ZS3, zs3_id=zs3_id)
 
     def delete_zs3(self, zs3_id):
@@ -2099,22 +2068,25 @@ class zynthian_state_manager:
             # Aubio state
             if uid == "AUBIO:in":
                 mcstate[uid]["audio_in"] = self.aubio_in
-            # Add global / absolute MIDI mapping
-            for key, zctrls in self.chain_manager.absolute_midi_cc_binding.items():
-                if izmip == (key >> 16) & 0xff:
-                    key_low = key & 0xff7f
-                    mcstate[uid]["midi_learn"][key_low] = []
+            # Add MIDI mapping
+            for key, zctrls in self.chain_manager.midi_cc_binding.items():
+                cc, chan, zmip, chain_id = self.chain_manager.unpack_midi_bind_key(key)
+                ss_key = f"{chain_id:02x}{chan:02x}{cc:02x}"
+                if izmip == zmip:
+                    mcstate[uid]["midi_learn"][ss_key] = []
                     for zctrl in zctrls:
-                        mcstate[uid]["midi_learn"][key_low].append([zctrl.processor.id, zctrl.symbol])
+                        mcstate[uid]["midi_learn"][ss_key].append([zctrl.processor.id, zctrl.symbol])
 
         mcstate["zynmidi"] = {"midi_learn": {}}
         # Add global / absolute MIDI mapping
-        for key, zctrls in self.chain_manager.absolute_midi_cc_binding.items():
+        """ TODO: Internal MIDI learn is not (correctly) inplemented
+        for key, zctrls in self.chain_manager.midi_cc_binding.items():
             if 0xff0000 == key & 0xff0000:
                 key_low = key & 0xff7f
                 mcstate["zynmidi"]["midi_learn"][key_low] = []
                 for zctrl in zctrls:
                     mcstate["zynmidi"]["midi_learn"][key_low].append([zctrl.processor.id, zctrl.symbol])
+        """
 
         return mcstate
 
@@ -2173,7 +2145,7 @@ class zynthian_state_manager:
                 else:
                     izmip = 0xff
 
-                # Absolute MIDI-learn state
+                # MIDI-learn state
                 if restore_midi_learn:
                     try:
                         midi_learn_state = state["midi_learn"]
@@ -2183,8 +2155,8 @@ class zynthian_state_manager:
                         except:
                             midi_learn_state = None
                     if midi_learn_state:
-                        for key_low, cfg in midi_learn_state.items():
-                            key_low = int(key_low)
+                        for key, cfg in midi_learn_state.items():
+                            key = int(key, 16)
                             for proc_id, symbol in cfg:
                                 try:
                                     processor = self.chain_manager.processors[proc_id]
@@ -2195,9 +2167,12 @@ class zynthian_state_manager:
                                 except:
                                     logging.warning(f"Can't MIDI learn '{symbol}'. Controller not found in processor {proc_id}.")
                                     continue
-                                chan = (key_low >> 8) & 0xff
-                                cc = key_low & 0x7f
-                                self.chain_manager.add_midi_learn(chan, cc, zctrl, izmip)
+                                chan = (key >> 8) & 0xff
+                                cc = key & 0x7f
+                                chain_id = (key >> 16) & 0xff
+                                if chain_id == 0xff:
+                                    chain_id = None
+                                self.chain_manager.add_midi_binding(zctrl, cc, chan, izmip, chain_id)
             self.ctrldev_manager.set_state_drivers(ctrldev_state_drivers)
 
         else:
@@ -2485,6 +2460,8 @@ class zynthian_state_manager:
     # ---------------------------------------------------------------------------
 
     def start_vncserver(self, save_config=True):
+        if not self.root_access:
+            return
         # Start VNC for Zynthian-UI
         self.start_busy("start_vncserver", "starting VNC")
 
@@ -2492,7 +2469,7 @@ class zynthian_state_manager:
             try:
                 logging.info("STARTING VNC-UI SERVICE")
                 self.set_busy_details("starting VNC-UI service")
-                check_output("systemctl start novnc0", shell=True)
+                check_output(["systemctl", "start", "novnc0"])
                 zynthian_gui_config.vncserver_enabled = 1
             except Exception as e:
                 logging.error(e)
@@ -2511,7 +2488,7 @@ class zynthian_state_manager:
             try:
                 logging.info("STARTING VNC-ENGINES SERVICE")
                 self.set_busy_details("starting VNC-ENGINES service")
-                check_output("systemctl start novnc1", shell=True)
+                check_output(["systemctl", "start", "novnc1"])
                 zynthian_gui_config.vncserver_enabled = 1
             except Exception as e:
                 logging.error(e)
@@ -2530,6 +2507,8 @@ class zynthian_state_manager:
         self.end_busy("start_vncserver")
 
     def stop_vncserver(self, save_config=True):
+        if not self.root_access:
+            return
         self.start_busy("stop_vncserver", "stopping VNC")
 
         # Stop VNC for Zynthian-UI
@@ -2537,7 +2516,7 @@ class zynthian_state_manager:
             try:
                 logging.info("STOPPING VNC-UI SERVICE")
                 self.set_busy_details("stopping VNC-UI service")
-                check_output("systemctl stop vncserver0", shell=True)
+                check_output(["systemctl", "stop", "vncserver0"])
                 zynthian_gui_config.vncserver_enabled = 0
             except Exception as e:
                 logging.error(e)
@@ -2556,7 +2535,7 @@ class zynthian_state_manager:
             try:
                 logging.info("STOPPING VNC-ENGINES SERVICE")
                 self.set_busy_details("stopping VNC-ENGINES service")
-                check_output("systemctl stop vncserver1", shell=True)
+                check_output(["systemctl", "stop", "vncserver1"])
                 zynthian_gui_config.vncserver_enabled = 0
             except Exception as e:
                 logging.error(e)
@@ -2597,10 +2576,12 @@ class zynthian_state_manager:
         if zynconf.is_service_active(service):
             zynthian_gui_config.midi_netump_enabled = 1
             return
+        if not self.root_access:
+            return
         self.start_busy("start_netump", "starting NetUMP MIDI 2.0")
         logging.info("STARTING Network MIDI 2.0")
         try:
-            check_output(f"systemctl start {service}", shell=True)
+            check_output(["systemctl", "start", service])
             zynthian_gui_config.midi_netump_enabled = 1
             # Update MIDI profile
             if save_config:
@@ -2622,10 +2603,12 @@ class zynthian_state_manager:
         if not zynconf.is_service_active(service):
             zynthian_gui_config.midi_netump_enabled = 0
             return
+        if not self.root_access:
+            return
         self.start_busy("stop_netump", "stopping Network MIDI 2.0")
         logging.info("STOPPING Network MIDI 2.0")
         try:
-            check_output(f"systemctl stop {service}", shell=True)
+            check_output(["systemctl", "stop", service])
             zynthian_gui_config.midi_netump_enabled = 0
             # Update MIDI profile
             if save_config:
@@ -2653,10 +2636,12 @@ class zynthian_state_manager:
         if zynconf.is_service_active(service):
             zynthian_gui_config.midi_rtpmidi_enabled = 1
             return
+        if not self.root_access:
+            return
         self.start_busy("start_rtpmidi", "starting RTP-MIDI")
         logging.info("STARTING RTP-MIDI")
         try:
-            check_output(f"systemctl start {service}", shell=True)
+            check_output(["systemctl", "start", service])
             zynthian_gui_config.midi_rtpmidi_enabled = 1
             # Update MIDI profile
             if save_config:
@@ -2678,10 +2663,12 @@ class zynthian_state_manager:
         if not zynconf.is_service_active(service):
             zynthian_gui_config.midi_rtpmidi_enabled = 0
             return
+        if not self.root_access:
+            return
         self.start_busy("stop_rtpmidi", "stopping RTP-MIDI")
         logging.info("STOPPING RTP-MIDI")
         try:
-            check_output(f"systemctl stop {service}", shell=True)
+            check_output(["systemctl", "stop", service])
             zynthian_gui_config.midi_rtpmidi_enabled = 0
             # Update MIDI profile
             if save_config:
@@ -2702,10 +2689,12 @@ class zynthian_state_manager:
         if zynconf.is_service_active(service):
             zynthian_gui_config.midi_network_enabled = 1
             return
+        if not self.root_access:
+            return
         self.start_busy("start_qmidinet", "starting QMidiNet")
         logging.info("STARTING QMidiNet")
         try:
-            check_output(f"systemctl start {service}", shell=True)
+            check_output(["systemctl", "start", service])
             zynthian_gui_config.midi_network_enabled = 1
             # Update MIDI profile
             if save_config:
@@ -2727,10 +2716,12 @@ class zynthian_state_manager:
         if not zynconf.is_service_active(service):
             zynthian_gui_config.midi_network_enabled = 0
             return
+        if not self.root_access:
+            return
         self.start_busy("stop_qmidinet", "stopping QMidiNet")
         logging.info("STOPPING QMidiNet")
         try:
-            check_output(f"systemctl stop {service}", shell=True)
+            check_output(["systemctl", "stop", service])
             zynthian_gui_config.midi_network_enabled = 0
             # Update MIDI profile
             if save_config:
@@ -2757,10 +2748,12 @@ class zynthian_state_manager:
         if zynconf.is_service_active(service):
             zynthian_gui_config.midi_touchosc_enabled = 1
             return
+        if not self.root_access:
+            return
         self.start_busy("start_touchosc2midi", "starting Touch-OSC")
         logging.info("STARTING touchosc2midi")
         try:
-            check_output(f"systemctl start {service}", shell=True)
+            check_output(["systemctl", "start", service])
             zynthian_gui_config.midi_touchosc_enabled = 1
             # Update MIDI profile
             if save_config:
@@ -2782,10 +2775,12 @@ class zynthian_state_manager:
         if not zynconf.is_service_active(service):
             zynthian_gui_config.midi_touchosc_enabled = 0
             return
+        if not self.root_access:
+            return
         self.start_busy("stop_touchosc2midi", "stopping Touch-OSC")
         logging.info("STOPPING touchosc2midi")
         try:
-            check_output(f"systemctl stop {service}", shell=True)
+            check_output(["systemctl", "stop", service])
             zynthian_gui_config.midi_touchosc_enabled = 0
             # Update MIDI profile
             if save_config:
@@ -2810,11 +2805,11 @@ class zynthian_state_manager:
     # Unblock all soft-blocked bluetooth controllers
     def unblock_bluetooth_controllers(self):
         self.start_busy("Unblock Bluetooth Controllers")
-        for row in check_output("rfkill -n", shell=True, encoding="utf-8").split("\n"):
+        for row in check_output(["rfkill", "-n"], encoding="utf-8").split("\n"):
             parts = row.split()  # ID, type, device, soft blocked, hard blocked
             if len(parts) == 5 and parts[1].strip() == "bluetooth" and parts[3].strip() == "blocked":
                 logging.debug(f"Unblocking {parts[0].strip()}")
-                check_output(f"rfkill unblock {parts[0].strip()}", shell=True)
+                check_output(["rfkill", "unblock", parts[0].strip()])
         self.end_busy("Unblock Bluetooth Controllers")
 
     def select_bluetooth_controller(self, controller):
@@ -2823,7 +2818,7 @@ class zynthian_state_manager:
             return
         self.unblock_bluetooth_controllers()
         proc = Popen('bluetoothctl', stdin=PIPE, stdout=PIPE, stderr=PIPE, encoding='utf-8')
-        for addr in check_output("bluetoothctl list", shell=True, timeout=1, encoding="utf-8").split():
+        for addr in check_output(["bluetoothctl", "list"], timeout=1, encoding="utf-8").split():
             if addr.count(":") == 5:
                 proc.stdin.write(f"select {addr}\n")
                 if controller == addr:
@@ -2844,10 +2839,12 @@ class zynthian_state_manager:
             zynthian_gui_config.bluetooth_enabled = 1
             self.select_bluetooth_controller(zynthian_gui_config.ble_controller)
             return
+        if not self.root_access:
+            return
         self.start_busy("start_bluetooth", "starting Bluetooth")
         logging.info("STARTING Bluetooth")
         try:
-            check_output(f"systemctl start {service}", shell=True, timeout=2)
+            check_output(["systemctl", "start", service], timeout=2)
             sleep(wait)
             zynthian_gui_config.bluetooth_enabled = 1
             self.select_bluetooth_controller(zynthian_gui_config.ble_controller)
@@ -2870,10 +2867,12 @@ class zynthian_state_manager:
         if not zynconf.is_service_active(service):
             zynthian_gui_config.bluetooth_enabled = 0
             return
+        if not self.root_access:
+            return
         self.start_busy("stop_bluetooth", "stopping Bluetooth")
         logging.info("STOPPING bluetooth")
         try:
-            check_output(f"systemctl stop {service}", shell=True, timeout=1)
+            check_output(["systemctl", "stop", service], timeout=1)
             sleep(wait)
             zynthian_gui_config.bluetooth_enabled = 0
             # Update MIDI profile
@@ -2900,10 +2899,12 @@ class zynthian_state_manager:
         if zynconf.is_service_active(service):
             zynthian_gui_config.midi_aubionotes_enabled = 1
             return
+        if not self.root_access:
+            return
         self.start_busy("start_aubionotes", "starting AubioNotes")
         logging.info("STARTING aubionotes")
         try:
-            check_output(f"systemctl start {service}", shell=True)
+            check_output(["systemctl", "start", service])
             zynthian_gui_config.midi_aubionotes_enabled = 1
             # Update MIDI profile
             if save_config:
@@ -2926,11 +2927,12 @@ class zynthian_state_manager:
         if not zynconf.is_service_active(service):
             zynthian_gui_config.midi_aubionotes_enabled = 0
             return
-
+        if not self.root_access:
+            return
         self.start_busy("stop_aubionotes", "stopping AubioNotes")
         logging.info("STOPPING aubionotes")
         try:
-            check_output(f"systemctl stop {service}", shell=True)
+            check_output(["systemctl", "stop", service])
             zynthian_gui_config.midi_aubionotes_enabled = 0
             # Update MIDI profile
             if save_config:
@@ -2957,10 +2959,7 @@ class zynthian_state_manager:
     # ---------------------------------------------------------------------------
 
     def get_zynthian_config(self, varname):
-        try:
-            return eval("zynthian_gui_config.{}".format(varname))
-        except:
-            return None
+        return getattr(zynthian_gui_config, varname, None)
 
     def allow_rbpi_headphones(self):
         try:
