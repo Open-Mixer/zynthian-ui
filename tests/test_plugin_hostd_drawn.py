@@ -149,6 +149,28 @@ class drawn_view(plugin_hostd_case):
         self.assertEqual(os.path.basename(proc.engine.custom_gui_fpath), "zynthian_widget_omx_panel.py")
         self.assertTrue(os.path.exists(proc.engine.custom_gui_fpath))
 
+    def declare_widget(self, fpath):
+        """A zyngui:widget declared for every plugin by zynthian_lv2 (its lookup replaced for the test)."""
+        from unittest import mock
+        widget = {"uri": "urn:test:widget", "fpath": fpath, "help": None, "user": False}
+        for target, value in (("get_plugin_zyngui_widget", mock.Mock(return_value=widget)),
+                              ("check_lv2_changes", mock.Mock(return_value=False))):
+            patcher = mock.patch.object(ph.zynthian_lv2, target, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_a_declared_widget_wins_over_the_panels_own_screen(self):
+        self.declare_widget("/w/zynthian_widget_declared.py")
+        _, proc = self.drawn_plugin()
+        self.assertTrue(proc.engine.drawn, "the panel has a curve: it would have its own screen")
+        self.assertEqual(proc.engine.custom_gui_fpath, "/w/zynthian_widget_declared.py")
+
+    def test_the_panels_own_screen_stays_when_no_widget_is_declared(self):
+        from unittest import mock
+        with mock.patch.object(ph.zynthian_lv2, "get_plugin_zyngui_widget", return_value=None):
+            _, proc = self.drawn_plugin()
+        self.assertEqual(os.path.basename(proc.engine.custom_gui_fpath), "zynthian_widget_omx_panel.py")
+
     def test_a_panel_with_none_keeps_the_controller_screens(self):
         _, proc = self.drawn_plugin(layout=False)  # the stub's layout for no record has no bar group, display or meter
         self.assertIsNone(proc.engine.custom_gui_fpath)
