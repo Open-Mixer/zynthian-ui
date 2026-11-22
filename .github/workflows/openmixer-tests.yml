@@ -31,6 +31,11 @@ jobs:
         run: |
           apt-get update -qq
           apt-get install -y -qq --no-install-recommends python3 python3-pytest python3-yaml python3-numpy python3-pil git ca-certificates
+          # upstream's suite (tests/conftest.py imports zyngine, which needs pyliblo3, JACK-Client, pyalsaaudio...): its
+          # requirements-dev.txt, the pip ones built against the libraries they bind
+          apt-get install -y -qq --no-install-recommends python3-pip python3-dev build-essential pkgconf cython3 \
+            liblo-dev libasound2-dev libjack-jackd2-dev
+          pip install -q --break-system-packages -r requirements-dev.txt
 
       # the checkout first: the install below reads tools/served_pair.py
       - uses: actions/checkout@v4
