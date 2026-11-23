@@ -7,6 +7,7 @@
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+import importlib
 import sys
 import types
 import unittest
@@ -22,7 +23,8 @@ def pin_mismatch():
     """What PIN_BINARY_MISMATCH says to the operator, as the protocol reads it from its owner."""
     p = protocol_files.reply_codes()
     return p.meaning(p.code("reply.plugin-hostd.pin-binary-mismatch"))
-from zyngine import zynthian_engine_plugin_hostd as ph
+# the module, not the class: zyngine/__init__'s star import binds zyngine.zynthian_engine_plugin_hostd to its class
+ph = importlib.import_module("zyngine.zynthian_engine_plugin_hostd")
 
 # What the chain manager imports beside the engines: stand-ins, as the hardware ones are
 _added = []  # the stand-ins put in sys.modules here, taken out again once the chain manager is imported
