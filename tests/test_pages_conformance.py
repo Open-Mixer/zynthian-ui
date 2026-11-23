@@ -17,11 +17,12 @@ import json
 import os
 import re
 import shlex
-import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+
+from tests.tree_copy import copy_core
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -85,8 +86,7 @@ ARMS = {
 
 def run_copy(mutations=()):
     with tempfile.TemporaryDirectory() as tmp:
-        for d in ("zyngine", "tests"):
-            shutil.copytree(os.path.join(ROOT, d), os.path.join(tmp, d), ignore=shutil.ignore_patterns("__pycache__"))
+        copy_core(tmp)
         path = os.path.join(tmp, ENGINE)
         with open(path) as f:
             code = f.read()

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # ****************************************************************************
 # ZYNTHIAN PROJECT: Zynthian Signal Manager (zynthian_signal_manager)
 #
@@ -81,6 +80,9 @@ class zynthian_signal_manager:
     SS_GUI_SHOW_MESSAGE = 5
     SS_GUI_LAUNCHER_MODE = 6
     SS_GUI_VIEW_POS = 7
+    SS_GUI_VIEW_SELECT = 8  # Selected item of a view (or view part) changed => view
+    SS_GUI_VIEW_LIST = 9  # Item list of a view (or view part) changed => view
+    SS_GUI_VIEW_STATE = 10  # Layout or other content of a view changed => view
 
     # MIDI events
     SS_MIDI_ALL = 0
@@ -99,6 +101,7 @@ class zynthian_signal_manager:
     SS_RENAME_CHAIN = 6
     SS_ADD_PROCESSOR = 7
     SS_REMOVE_PROCESSOR = 8
+    SS_SET_MIDI_CHAN = 9
 
     # Sequencer
     SS_SEQ_PLAY_STATE = 1
@@ -204,8 +207,7 @@ class zynthian_signal_manager:
                         #logging.debug(f"  => calling {rdata[0].__name__}(...)")
                         rdata[0](**kwargs)
                     except Exception as e:
-                        logging.error(f"Callback '{rdata[0].__name__}(...)' for signal({signal},{subsignal}): {e}")
-                        logging.exception(traceback.format_exc())
+                        logging.exception(f"Callback '{rdata[0].__name__}(...)' for signal({signal},{subsignal}): {e}")
 
     def send(self, signal, subsignal, **kwargs):
         """ Send direct call signal
@@ -237,8 +239,7 @@ class zynthian_signal_manager:
                 # logging.debug(f"  => calling {data[2].__name__}(...)")
                 data[2](**data[3])
             except Exception as e:
-                logging.error(f"Queued callback '{data[2].__name__}(...)' for signal({data[0]},{data[1]}): {e}")
-                logging.exception(traceback.format_exc())
+                logging.exception(f"Queued callback '{data[2].__name__}(...)' for signal({data[0]},{data[1]}): {e}")
 
 # ---------------------------------------------------------------------------
 

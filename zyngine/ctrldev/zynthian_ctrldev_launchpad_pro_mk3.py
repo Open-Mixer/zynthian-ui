@@ -1,12 +1,10 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian Control Device Driver
 #
 # Zynthian Control Device Driver for "Novation Launchpad X"
 #
 # Copyright (C) 2015-2025 Fernando Moyano <jofemodo@zynthian.org>
-#                         Brian Walton <brian@riban.co.uk>
+#                         Brian Walton <riban@zynthian.org>
 #                         Wapata <wapata.31@gmail.com>
 #
 #
@@ -34,6 +32,7 @@ from zynlibs.zynseq import zynseq
 from zyngui import zynthian_gui_config
 from zyncoder.zyncore import lib_zyncore
 from zyngine.ctrldev.zynthian_ctrldev_base import zynthian_ctrldev_zynpad
+from zyngine.zynthian_chain_manager import MAX_NUM_MIDI_CHANS
 
 # ------------------------------------------------------------------------------------------------------------------
 # Novation Launchpad Pro MK3

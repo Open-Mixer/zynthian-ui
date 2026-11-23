@@ -75,7 +75,8 @@ def processor(pages):
     """A real processor whose engine keeps blank slots (plugin-hostd's), its screens built from <pages>: [(name, [key
     or None])]."""
     proc = object.__new__(zynthian_processor)
-    proc.engine = types.SimpleNamespace(name="omx eq8", blank_slots=True, _ctrl_screens=pages)
+    proc.engine = types.SimpleNamespace(name="omx eq8", blank_slots=True, _ctrl_screens=pages,
+                                        refresh_custom_gui=lambda: None)  # zynthian_engine's hook, called before a widget
     proc.controllers_dict = {k: zctrl(k, name.split()[0].lower()) for name, keys in pages for k in keys if k}
     proc.current_screen_index, proc.chain = -1, None
     with mock.patch("zyngine.zynthian_processor.zynsigman", mock.MagicMock(), create=True):

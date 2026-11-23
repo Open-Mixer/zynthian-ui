@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian Engine (zynthian_engine)
 #
@@ -23,6 +22,7 @@
 # ******************************************************************************
 
 import os
+import subprocess
 import re
 import json
 import glob
@@ -169,6 +169,7 @@ class zynthian_engine(zynthian_basic_engine):
         self.chain_manager = state_manager.chain_manager
 
         self.custom_gui_fpath = None
+        self.custom_gui_help_fpath = None  # Help page (HTML) for the custom GUI, if any
 
         self.type = "MIDI Synth"
         self.nickname = ""
@@ -205,7 +206,7 @@ class zynthian_engine(zynthian_basic_engine):
     def config_remote_display(self):
         if 'ZYNTHIAN_X11_SSH' in os.environ and 'SSH_CLIENT' in os.environ and 'DISPLAY' in os.environ:
             return True
-        elif os.system('systemctl -q is-active vncserver1'):
+        elif subprocess.run(["systemctl", "-q", "is-active", "vncserver1"]).returncode:
             return False
         else:
             self.command_env['DISPLAY'] = ':1'
@@ -337,7 +338,7 @@ class zynthian_engine(zynthian_basic_engine):
                             title = str.replace(parts[0], '_', ' ')
                             if dn != '_':
                                 title = dn + '/' + title
-                            # print("filelist => " + title)
+                            # logging.info("filelist => " + title)
                             row = [os.path.join(dp, f), i, title, dn, f, ext]
                             if info:
                                 row.append(info[1])
@@ -655,7 +656,7 @@ class zynthian_engine(zynthian_basic_engine):
                 if symbol in symbols:
                     zctrl.reset(self, symbol, full=False)
                 else:
-                    self.state_manager.chain_manager.remove_midi_learn_from_zctrl(zctrl, chain=True, abs=True, zynstep=True)
+                    self.state_manager.chain_manager.clear_midi_binding(processor, symbol)
                     del processor.controllers_dict[symbol]
             # Regenerate / update controller dictionary
             for ctrl in self._ctrls:
@@ -669,7 +670,10 @@ class zynthian_engine(zynthian_basic_engine):
                     zctrl = zynthian_controller(self, ctrl[0], options)
                     processor.controllers_dict[zctrl.symbol] = zctrl
                     if zctrl.midi_cc is not None and processor.midi_autolearn and zctrl.midi_autolearn:
-                        self.state_manager.chain_manager.add_midi_learn(None, zctrl.midi_cc, zctrl)
+                        try:
+                            self.state_manager.chain_manager.add_midi_binding(zctrl, zctrl.midi_cc, processor.midi_chan, None, processor.chain.chain_id)
+                        except AttributeError:
+                            pass
 
         return processor.controllers_dict
 
@@ -732,6 +736,11 @@ class zynthian_engine(zynthian_basic_engine):
 
     def get_options(self):
         return self.options
+
+    def refresh_custom_gui(self):
+        """Update custom_gui_fpath if the available widgets changed.
+        Called by the GUI before showing the widget. Engines with dynamic widgets override it."""
+        pass
 
     def get_extended_config(self):
         return None

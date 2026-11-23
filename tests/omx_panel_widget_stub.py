@@ -17,6 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 VIEW = os.path.join(ROOT, "zyngine", "zynthian_omx_panel_view.py")
 LOOK = os.path.join(ROOT, "zyngine", "zynthian_ui_look.py")
+IMAGE = os.path.join(ROOT, "zyngui", "zynthian_gui_omx_panel_image.py")
 WIDGET = os.path.join(ROOT, "zyngui", "zynthian_widget_omx_panel.py")
 
 
@@ -46,6 +47,9 @@ def load_widget(**config_values):
     def no_touch():
         raise NoTouchDevice("none here")
 
+    spec = importlib.util.spec_from_file_location("panel_image_under_test", IMAGE)
+    panel_image = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(panel_image)
     spec = importlib.util.spec_from_file_location("ui_look_under_test", LOOK)
     ui_look = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(ui_look)
@@ -58,8 +62,9 @@ def load_widget(**config_values):
         "zyngine.zynthian_panel_gestures": stand_in("g", Panel=mock.MagicMock(), GestureTableAbsent=type("A", (Exception,), {})),
         "zyngine.zynthian_position_law": stand_in("p"),
         "zyngine.zynthian_touch_layer": stand_in("t", EvdevSource=no_touch, NoTouchDevice=NoTouchDevice),
-        "zyngui": stand_in("zyngui", __path__=[], zynthian_gui_config=config),
+        "zyngui": stand_in("zyngui", __path__=[], zynthian_gui_config=config, zynthian_gui_omx_panel_image=panel_image),
         "zyngui.zynthian_gui_config": config,
+        "zyngui.zynthian_gui_omx_panel_image": panel_image,
         "zyngui.zynthian_widget_base": stand_in("b", zynthian_widget_base=base),
     }
     with mock.patch.dict(sys.modules, modules):

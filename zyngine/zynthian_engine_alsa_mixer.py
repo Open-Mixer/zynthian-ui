@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian Engine (zynthian_engine_alsa_mixer)
 #
@@ -209,7 +208,7 @@ class zynthian_engine_alsa_mixer(zynthian_engine):
 
         return self.zctrls
 
-    def get_mixer_zctrls(self, device_name=None, ctrl_list=[]):
+    def get_mixer_zctrls(self, device_name, ctrl_list):
         _ctrls = {}
         if device_name:
             device = f"hw:{device_name}"
@@ -604,7 +603,7 @@ class zynthian_engine_alsa_mixer(zynthian_engine):
 
         try:
             cmd = self.sys_dir + "/sbin/get_rbpi_audio_device.sh"
-            self.rbpi_device_name = check_output(cmd, shell=True).decode("utf-8")
+            self.rbpi_device_name = check_output([cmd]).decode("utf-8")
         except:
             self.rbpi_device_name = None
 
@@ -647,7 +646,7 @@ class zynthian_engine_alsa_mixer(zynthian_engine):
                                "Unbalanced Mono TR", "Stereo TRS to Mono", "Balanced Mono TRS"],
                                "group_symbol": "input", 'group_name': "Input levels"},
             "ADC_Right_Input": {"name": f"Input 2 Mode", "labels": ["Disabled", "Unbalanced Mono TS",
-                                "Unbalanced Mono TR", "Stereo TRS to Mono", "Balanced Mono TRS"], 
+                                "Unbalanced Mono TR", "Stereo TRS to Mono", "Balanced Mono TRS"],
                                 "group_symbol": "input", 'group_name': "Input levels"}
         }
 
@@ -687,7 +686,7 @@ class zynthian_engine_alsa_mixer(zynthian_engine):
             overrides[f"Mute_{i}"] = {"name": f"Mute {i + 1}", "group_symbol": f"mixer{i}", "group_name": f"Mixer {i + 1}", "labels": ["mute", "unmute"], "display_priority": 2}
             #overrides[f"Level_Meter_{i}"] = {"name": f"Meter {i + 1}", "group_symbol": f"mixer{i}", "group_name": f"Mixer {i + 1}"}
         overrides["Buss_Out"] = {"name": "Mixdown", "group_symbol": "mixer_main", "group_name": "Mixer Main", "display_priority": 7}
-        overrides["Master"] = {"name": "Main Fader", "group_symbol": "mixer_main", "group_name": "Mixer Main", "labels": ["on", "off"], "labels": [f"{j} dB" for j in range(-127, 7)], "display_priority": 6}
+        overrides["Master"] = {"name": "Main Fader", "group_symbol": "mixer_main", "group_name": "Mixer Main", "labels": [f"{j} dB" for j in range(-127, 7)], "display_priority": 6}
         overrides["Master_Mute"] = {"name": "Main Mute", "group_symbol": "mixer_main", "group_name": "Mixer Main", "labels": ["mute", "unmute"], "display_priority": 5}
         self.device_overrides["US16x08"] = overrides
 

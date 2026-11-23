@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian GUI
 #
@@ -31,6 +29,7 @@ from time import sleep
 # Zynthian specific modules
 from zyngine import *
 from zyngine import zynthian_lv2
+from zyngine.zynthian_signal_manager import zynsigman
 from zyngine import zynthian_plugin_hostd_catalogue
 from zyngine import zynthian_plugin_hostd_estimate
 # The module: zyngine's package exports the engine class under the same name
@@ -612,11 +611,21 @@ class zynthian_gui_engine(zynthian_gui_selector):
         self.update_list()
         # Update header breadcrumb
         self.set_select_path()
+        zynsigman.send(zynsigman.S_GUI, zynsigman.SS_GUI_VIEW_STATE, view=self)
         if self.zyngui.tts:
             try:
                 self.zyngui.tts.announce(f"Category: {self.engine_cats[cat_index]}, Engine: {self.list_data[self.index][2]}")
             except IndexError:
                 pass
+
+
+    state_key = "zyngui_engine"
+
+    def get_state(self, what="all"):
+        state = super().get_state(what)
+        if what == "all":
+            state["categories"] = {"items": list(self.engine_cats), "selected": self.cat_index}
+        return state
 
     def zynpot_cb(self, i, dval):
         if not self.shown:
