@@ -1,0 +1,7 @@
+{
+  "kind": "codes",
+  "codes": {
+    "skinApiMismatch": {"code": "panel.skin.api-mismatch", "text": {"en": "This skin declares API {declared}."}}
+  },
+  "someKeyName-only": {"note": "a key is not a declared literal"}
+}

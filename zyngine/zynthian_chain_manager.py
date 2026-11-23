@@ -23,6 +23,7 @@
 # ****************************************************************************
 
 import logging
+from time import sleep
 
 # Zynthian specific modules
 import zynautoconnect
@@ -33,8 +34,10 @@ from zyngine import zynthian_lv2
 from zyngine.zynthian_chain import *
 from zyngine.zynthian_engine_jalv import *
 from zyngine.zynthian_engine_pianoteq import *
+from zyngine.zynthian_plugin_hostd_catalogue import add_catalogue as plugin_hostd_catalogue, refusal_text
 from zyngine.zynthian_signal_manager import zynsigman
 from zyngine.zynthian_processor import zynthian_processor
+from zyngine.zynthian_controller import zynthian_controller
 from zyngine.zynthian_cc_feedback import zynthian_cc_feedback
 from zyngine import zynthian_state_manager
 from zyngui import zynthian_gui_config
@@ -82,7 +85,8 @@ engine2class = {
     "MR": zynthian_engine_audio_mixer,
     "MX": zynthian_engine_alsa_mixer,
     "TP": zynthian_engine_tempo,
-    'CL': zynthian_engine_clippy
+    'CL': zynthian_engine_clippy,
+    'PH': zynthian_engine_plugin_hostd
 }
 
 CC_NAMES = {
@@ -127,6 +131,12 @@ class zynthian_midi_output_cc_binding:
 # ----------------------------------------------------------------------------
 
 
+# plugin-hostd refusals that say nothing of the plugin: the next add may be taken (pin-refused is the user's bar: lowered,
+# the plugin loads, so the menu keeps no mark on it)
+TRANSIENT_REFUSALS = ("reply.plugin-hostd.worker-spawn", "reply.plugin-hostd.gave-up", "reply.plugin-hostd.verb-dropped",
+                      "reply.plugin-hostd.pin-refused")
+
+
 class zynthian_chain_manager:
 
     engine_info = None
@@ -150,6 +160,11 @@ class zynthian_chain_manager:
         self.zyngine_counter = 0  # Appended to engine names for uniqueness
         self.zyngines = {}  # Map of instantiated engines, indexed by engine code
         self.processors = {}  # Dictionary of processor objects indexed by UID
+        self.add_refusal = None  # why the engine refused the last add_processor, None when it did not
+        # Processors a snapshot named that could not be built now (the daemon was down, the plugin refused): processor id
+        # (as in the snapshot) => where it sat, its engine code and configuration, and why. They are written back into
+        # every snapshot taken while they wait, so a chain is never saved without what it was meant to hold.
+        self.unbuilt = {}
         self.active_chain = None  # Active chain object => This should NEVER be None!!!
         self.active_midi_chain = None # Chain currently receiving active MIDI input
         self._pinned_chains = 1 # Quantity of pinned chains (shown pinned to right edge of mixer in UI)
@@ -225,6 +240,8 @@ class zynthian_chain_manager:
             "ENGINE": zynthian_engine_tempo,
             "ENABLED": False
         }
+        # LV2 and CLAP plugins run by plugin-hostd
+        plugin_hostd_catalogue(cls.engine_info)
         # Look for an engine class for each one
         for key, info in cls.engine_info.items():
             try:
@@ -412,6 +429,8 @@ class zynthian_chain_manager:
 
         if chain_id not in self.chains:
             return False
+        # Removing a chain is the user giving up what it was meant to hold
+        self.forget_unbuilt(chain_id)
         self.state_manager.start_busy("remove_chain", "Removing Chain")
         chain_pos = self.get_chain_index(chain_id)
         # List of associated chains that shold be removed simultaneously
@@ -1119,9 +1138,10 @@ class zynthian_chain_manager:
         proc_id : Processor UID (Default: Use next available ID)
         eng_config: Extended configuration for the engine (optional)
         midi_autolearn: True to auto-learn MIDI-CC based controllers (i.e. False when creating from state)
-        Returns : processor object or None on failure
+        Returns : processor object or None on failure; add_refusal says why when the engine refused it
         """
 
+        self.add_refusal = None
         if chain_id is not None and chain_id not in self.chains:
             logging.error(f"Chain '{chain_id}' doesn't exist!")
             return None
@@ -1129,6 +1149,11 @@ class zynthian_chain_manager:
         if eng_code not in self.engine_info:
             if eng_code != 'None':
                 logging.error(f"Engine '{eng_code}' not found!")
+            return None
+        if self.engine_info[eng_code].get("NOT_WORKING"):
+            # It does not load (plugin-hostd is not installed, or it refused this plugin's add): say why, add nothing
+            info = self.engine_info[eng_code]
+            self.add_refusal = f"{info.get('NAME') or eng_code}: {info.get('NOT_WORKING_WHY') or info['NOT_WORKING']}"
             return None
         if proc_id is None:
             proc_id = self.get_available_processor_id()
@@ -1156,10 +1181,28 @@ class zynthian_chain_manager:
                 self.remove_processor(chain_id, chain.synth_slots[0][0])   # Cannot have multiple synth engines
             chain.insert_processor(processor, slot)
 
-        engine = self.start_engine(processor, eng_code, eng_config)
+        try:
+            engine = self.start_engine(processor, eng_code, eng_config)
+        except Exception as e:
+            # The engine refused the processor (plugin-hostd's add answered an error): say why, and undo the insert
+            processor.engine = None  # the engine never took it
+            info = self.engine_info[eng_code]
+            if getattr(e, "code", None) is not None:
+                why = refusal_text(getattr(e, "name", None), getattr(e, "meaning", None))
+                if getattr(e, "name", None) not in TRANSIENT_REFUSALS:
+                    # it does not load: the menu lists it as not working, with this cause, until the catalogue is made again
+                    info.update(NOT_WORKING="does not load", NOT_WORKING_WHY=why)
+            else:
+                why = str(e)
+            self.add_refusal = f"{info.get('NAME') or eng_code}: {why}"
+            logging.error(f"Can't add processor '{eng_code}' to chain {chain_id}: {e}")
+            engine = None
         if not engine:
-            # Failed!! => Remove processor from list
-            del self.processors[proc_id]
+            # Failed!! => Remove processor from list, and from the chain it was inserted in
+            if chain_id is not None and processor in self.chains[chain_id].get_processors():
+                self.chains[chain_id].remove_processor(processor)
+            self.zyngines.pop(f"PH#{proc_id}", None)
+            self.processors.pop(proc_id, None)
             self.state_manager.end_busy("add_processor")
             return None
 
@@ -1185,6 +1228,7 @@ class zynthian_chain_manager:
         self.state_manager.end_busy("add_processor")
 
         # Success!! => Return processor
+        self.__dict__.get("unbuilt", {}).pop(str(proc_id), None)
         return processor
 
     def reload_processor(self, processor):
@@ -1563,6 +1607,10 @@ class zynthian_chain_manager:
             if eng_code[0:3] == "JV/":
                 eng_key = f"JV/{self.zyngine_counter}"
                 zyngine = zynthian_engine_class(eng_code, self.state_manager, False)
+            elif eng_code[0:3] == "PH/":
+                # One engine per processor, keyed by processor so a snapshot finds its state again
+                eng_key = f"PH#{processor.id}"
+                zyngine = zynthian_engine_class(eng_code, self.state_manager)
             elif eng_code in ("SF", "PD"):
                 eng_key = f"{eng_code}/{self.zyngine_counter}"
                 zyngine = zynthian_engine_class(self.state_manager)
@@ -1594,7 +1642,7 @@ class zynthian_chain_manager:
     def stop_unused_single_proc_engines(self):
         """Stop engines that need restart and are not used by any processors"""
         for eng_key in list(self.zyngines.keys()):
-            if not self.zyngines[eng_key].processors and (eng_key[0:3] == "JV/" or eng_key in self.single_processor_engines):
+            if not self.zyngines[eng_key].processors and (eng_key[0:3] in ("JV/", "PH#") or eng_key in self.single_processor_engines):
                 logging.debug(f"Stopping Unused Jalv Engine '{eng_key}'...")
                 self.state_manager.set_busy_details(f"stopping engine {self.zyngines[eng_key].get_name()}")
                 self.zyngines[eng_key].stop()
@@ -1677,12 +1725,32 @@ class zynthian_chain_manager:
     # ------------------------------------------------------------------------
 
     def get_state(self):
-        """Get dictionary of chain slot states indexed by chain id"""
+        """Get dictionary of chain slot states indexed by chain id
+
+        A processor that could not be built when the snapshot was loaded is written back in the slot it had."""
 
         state = {}
         for chain_id in self.chains:
             state[chain_id] = self.chains[chain_id].get_state()
+        for proc_id, kept in self.__dict__.get("unbuilt", {}).items():
+            chain_state = state.get(kept["chain"])
+            if chain_state is not None:
+                slots = chain_state.setdefault("slots", [])
+                slots.insert(min(kept["slot"], len(slots)), {int(proc_id): kept["eng_code"]})
         return state
+
+    def keep_unbuilt(self, chain_id, slot, proc_id, eng_code, eng_config, reason):
+        """Remember a processor a snapshot named and that could not be built, with why, so the next snapshot keeps it"""
+
+        self.__dict__.setdefault("unbuilt", {})[str(proc_id)] = {
+            "chain": chain_id, "slot": slot, "eng_code": eng_code, "eng_config": eng_config, "reason": reason}
+
+    def forget_unbuilt(self, chain_id=None):
+        """Give up the unbuilt processors of a chain, of every chain for None"""
+
+        unbuilt = self.__dict__.setdefault("unbuilt", {})
+        for proc_id in [i for i, k in unbuilt.items() if chain_id is None or k["chain"] == chain_id]:
+            del unbuilt[proc_id]
 
     def set_state(self, state, engine_config, merge=False):
         """Create chains from state
@@ -1693,11 +1761,13 @@ class zynthian_chain_manager:
         """
 
         self.state_manager.start_busy("set_chain_state", None, "loading chains")
+        dropped = []  # the refusals of the processors this restore could not add, which it leaves out
 
 
         if not merge:
             # Remove all chains but don't the unused engines yet
             self.remove_all_chains(False)
+            self.forget_unbuilt()
 
         # Stop those unused engines that need restart
         self.stop_unused_single_proc_engines()
@@ -1708,13 +1778,13 @@ class zynthian_chain_manager:
             chain_id = self.add_chain_from_state(chain_id, chain_state)
             if "slots" in chain_state:
                 slot = 0
-                for slot_state in chain_state["slots"]:
+                for slot_index, slot_state in enumerate(chain_state["slots"]):
                     # slot_state is a dict of proc_id:proc_type for procs in this slot
                     for proc_id, eng_code in slot_state.items():
                         if proc_id == str(zynthian_state_manager.MAIN_MIXBUS_ID):
                             continue  # Do not replace main mixbus audio mixer processor
                         try:
-                            eng_config = engine_config[eng_code]
+                            eng_config = engine_config.get(f"PH#{proc_id}") or engine_config[eng_code]
                         except:
                             eng_config = None
                         # TODO: insert in correct slot, accounting for slot being relative to subchain type
@@ -1722,11 +1792,37 @@ class zynthian_chain_manager:
                         processor = self.add_processor(chain_id, eng_code, slot, proc_id=int(proc_id), eng_config=eng_config, midi_autolearn=False)
                         if processor:
                             slot = self.chains[chain_id].get_slot(processor)
+                        elif self.add_refusal:
+                            dropped.append(self.add_refusal)
+                            # not built, not lost: the next snapshot writes it back where it was
+                            self.keep_unbuilt(chain_id, slot_index, proc_id, eng_code, eng_config, self.add_refusal)
                     slot += 1
+            self.restore_mixer_strip(chain_id)
             if "zctrls" in chain_state:
                 self.chains[chain_id].set_zctrls_state(chain_state["zctrls"])
         self.rebuild_optimisation_cache()
         self.state_manager.end_busy("set_chain_state")
+        if dropped:
+            logging.error("The snapshot was loaded without: " + "; ".join(dropped) + " (kept in the snapshot until the chain is removed)")
+            zynsigman.send_queued(zynsigman.S_GUI, zynsigman.SS_GUI_SHOW_MESSAGE,
+                                  message="Not loaded: " + "; ".join(dropped), timeout=8)
+
+    def restore_mixer_strip(self, chain_id):
+        """Give a restored chain that makes sound its mixer strip, if the snapshot left it out
+
+        The UI adds the strip when it creates a chain with a synth, and the audio autoconnect routes a chain's outputs
+        only through it: a snapshot written without it (by hand, by a tool) would leave the chain silent.
+        chain_id : ID of the restored chain
+        Returns : the strip's processor if one was added, else None
+        """
+
+        chain = self.chains.get(chain_id)
+        if chain_id == 0 or chain is None or chain.zynmixer_proc or not chain.synth_slots:
+            return None
+        logging.warning(f"The snapshot holds chain {chain_id} without its mixer strip: adding one, so its audio is routed")
+        # a proc_id, as for every processor of a snapshot: no add signal while it loads
+        return self.add_processor(chain_id, "MI", proc_id=self.get_available_processor_id(), fast_refresh=False,
+                                  midi_autolearn=False)
 
     def restore_presets(self):
         """Restore presets in active chain"""

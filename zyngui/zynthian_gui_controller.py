@@ -31,6 +31,7 @@ from tkinter import font as tkFont
 
 # Zynthian specific modules
 from zyncoder.zyncore import lib_zyncore
+from zyngine import zynthian_position_law as position_law
 from zyngui import zynthian_gui_config
 
 # ------------------------------------------------------------------------------
@@ -427,6 +428,8 @@ class zynthian_gui_controller(tkinter.Canvas):
         else:
             if self.zctrl.value_range == 0:
                 self.value_plot = 0
+            elif self.zctrl.position_law:
+                self.value_plot = position_law.scale_position(self.zctrl.position_law, self.zctrl.value)
             elif self.zctrl.is_logarithmic:
                 if self.zctrl.value_min < 0:
                     self.value_plot = math.log10((9 * self.zctrl.value - (10 * self.zctrl.value_min)) / self.zctrl.value_range)
@@ -882,3 +885,9 @@ class zynthian_gui_controller(tkinter.Canvas):
                 self.nudge(1)
 
 # ------------------------------------------------------------------------------
+
+# A UI look that draws the controller through omx-panel's renderer (docs/ui-look-drawn-widgets.md) takes the class's
+# name here, so every screen importing zynthian_gui_controller gets the look's; stock leaves the class above as it is.
+if zynthian_gui_config.ui_look != "stock":
+    from zyngui.zynthian_gui_controller_drawn import drawn_controller
+    zynthian_gui_controller = drawn_controller(zynthian_gui_controller)

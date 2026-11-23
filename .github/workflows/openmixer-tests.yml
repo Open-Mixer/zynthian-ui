@@ -1,0 +1,147 @@
+name: openmixer tests
+
+# OpenMixer's fork only (upstream's own suite is tests.yml): tests/ on every pull request and every push to vangelis, in Debian trixie as the Pi runs it,
+# with plugin-hostd from the OpenMixer channel as the Pi has it. The tests import the standard library, the
+# repository's own modules and yaml. One test still skips here: the UI start imports zyngui as zynthian_main.py does,
+# which needs the Zynthian's native libraries (zyncoder and the zynlibs C libraries on JACK); it runs on the Pi.
+on:
+  pull_request:
+  push:
+    branches: [vangelis]
+
+permissions:
+  contents: read
+
+concurrency:
+  # A new push to a pull request cancels the run it supersedes. Every other run (main, a tag) has a group of its own
+  # and is never cancelled; the run id keeps two pushes to main from replacing each other while one is queued.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  tests:
+    name: python3 -m pytest tests/ (debian:trixie arm64)
+    runs-on: ubuntu-24.04-arm
+    # the suite takes ~2 min here (100 s serial on trixie amd64); a run past this is a hang, never a slow pass
+    timeout-minutes: 20
+    container:
+      image: debian:trixie
+      # an init that reaps: the engine tests stop the daemons they start and expect the processes gone
+      options: --init
+    steps:
+      # the checkout first: the installs read requirements-dev.txt and tools/served_pair.py
+      - uses: actions/checkout@v4
+
+      - name: Install Python, pytest and the modules the tests import
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends python3 python3-pytest python3-yaml python3-numpy python3-pil git ca-certificates
+          # upstream's suite (tests/conftest.py imports zyngine, which needs pyliblo3, JACK-Client, pyalsaaudio...): its
+          # requirements-dev.txt, the pip ones built against the libraries they bind
+          apt-get install -y -qq --no-install-recommends python3-pip python3-dev python3-tk python3-pil.imagetk build-essential pkgconf cython3 \
+            liblo-dev libasound2-dev libjack-jackd2-dev
+          # pyliblo3 is built from its sdist here (arm64 has no wheel), and the newest Cython refuses its `long`
+          # (pyliblo3/_liblo.pyx:974: undeclared name not builtin: long): the build's Cython is held below 3.1
+          echo 'cython<3.1' > /tmp/pip-constraints.txt
+          PIP_CONSTRAINT=/tmp/pip-constraints.txt pip install -q --break-system-packages -r requirements-dev.txt
+
+      - name: Add the OpenMixer channel
+        uses: Open-Mixer/.github/.github/actions/add-openmixer@openmixer-v1
+
+      - name: Install plugin-hostd from the channel
+        run: |
+          # plugin-hostd depends on its contract at its own version: both at the newest version this cell serves
+          # TOGETHER (tools/served_pair.py reads the channel's deb/cells.tsv), so a release that has reached another
+          # architecture first is not this cell's version, and the gap never reads as this repository's red
+          v=$(python3 tools/served_pair.py plugin-hostd plugin-hostd-contract)
+          pins=
+          for p in plugin-hostd plugin-hostd-contract; do
+            full=$(apt-cache madison "$p" | awk -F'|' -v v="$v" '{gsub(/ /, "", $2)} $2 ~ "^"v"([-~+]|$)" {print $2; exit}')
+            [ -n "$full" ] || { echo "::error::$p $v is served in this cell but apt does not know it"; exit 1; }
+            pins="$pins $p=$full"
+          done
+          echo "plugin-hostd and its contract at $v, the newest pair this cell serves together:$pins"
+          echo "HOSTD_PINS=$pins" >> "$GITHUB_ENV"
+          # python3-plugin-hostd-protocol: plugin_hostd_protocol, the client the words of a line and the reply codes are
+          # read through (#4); python3-omx-contract: omx_contract.scale and omx_contract.catalog, the position law and
+          # the catalog reader (#28)
+          # shellcheck disable=SC2086 # one word per pin
+          apt-get install -y -qq --no-install-recommends $pins omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract \
+            plugin-hostd-protocol-l10n-ca python3-plugin-hostd-protocol python3-omx-contract
+          # the contract the series is built and tested against: every declared package at or above its floor
+          python3 -m tools.contract_versions
+          dpkg-query -W plugin-hostd omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract python3-plugin-hostd-protocol \
+            python3-omx-contract
+          # the owners' sentences are read from the vocabularies omx-contract-data's contract directory holds, in the
+          # layout it has from 3.14.0 on (#6), and the catalogs of plugin-hostd-protocol-contract: a floor only (%7's
+          # ruling: no ceiling on our own packages)
+          v=$(dpkg-query -W -f '${Version}' omx-contract-data)
+          dpkg --compare-versions "$v" ge 3.14.0 \
+            || { echo "::error::omx-contract-data $v is not >= 3.14.0"; exit 1; }
+
+      - name: Fetch plugin-db's Python reader and its golden answers
+        run: |
+          # plugin_db, the reader the menus ask about a plugin (#4), and the golden answers the tests ask it with:
+          # python3-plugin-db from plugin-db 0.3.2 on; until that release from a named commit of its main, and the
+          # log says so. The golden answers always come from the checkout.
+          SHA=4a9d62dce6b64d6fe141880c63905ab8255a9219
+          apt-get install -y -qq --no-install-recommends git ca-certificates
+          git clone -q https://github.com/Open-Mixer/plugin-db /tmp/plugin-db
+          git -C /tmp/plugin-db checkout -q "$SHA"
+          test -f /tmp/plugin-db/tests/golden/qualified.json
+          echo "ZYNTHIAN_PLUGIN_DB_GOLDEN=/tmp/plugin-db/tests/golden" >> "$GITHUB_ENV"
+          if python3 -c 'import plugin_db' 2>/dev/null; then
+            echo "READER FROM INSTALLED PACKAGE"
+          else
+            test -f /tmp/plugin-db/python/plugin_db/__init__.py
+            echo "PYTHONPATH=/tmp/plugin-db/python${PYTHONPATH:+:$PYTHONPATH}" >> "$GITHUB_ENV"
+            echo "READER FROM BRANCH $SHA"
+          fi
+
+      - name: Fetch omx-panel's gesture declaration and build its renderer
+        run: |
+          apt-get install -y -qq --no-install-recommends git ca-certificates build-essential pkgconf libcjson-dev \
+            libomx-contract-dev libomxdsp-dev binutils
+          # omx-panel v0.15.1: its renderer holds omx-dsp-devel to a floor (0.32.2) only, and builds against omx-dsp 0.33
+          SHA=3cace582d1da169fe3f6597e6574c3bc23a3cba2
+          git clone -q https://github.com/Open-Mixer/omx-panel /tmp/omx-panel
+          git -C /tmp/omx-panel checkout -q "$SHA"
+          test -f /tmp/omx-panel/schema/gestures.json
+          echo "ZYNTHIAN_OMX_GESTURES=/tmp/omx-panel/schema/gestures.json" >> "$GITHUB_ENV"
+          echo "GESTURES FROM BRANCH $SHA"
+          make -C /tmp/omx-panel/renderer build/libomx-panel-render.so.0
+          # the real command (dist/bin/omx-panel.mjs): the two tests that run it compare the recorded cut with it and
+          # drive the engine through it, and skip without OMX_PANEL_REAL, so the recordings could drift unseen
+          apt-get install -y -qq --no-install-recommends nodejs npm
+          (cd /tmp/omx-panel && npm ci --ignore-scripts --no-audit --no-fund && npm run build)
+          test -f /tmp/omx-panel/dist/bin/omx-panel.mjs
+          echo "OMX_PANEL_REAL=node /tmp/omx-panel/dist/bin/omx-panel.mjs" >> "$GITHUB_ENV"
+          echo "ZYNTHIAN_OMX_PANEL_RENDER=/tmp/omx-panel/renderer/build/libomx-panel-render.so.0" >> "$GITHUB_ENV"
+          echo "ZYNTHIAN_OMX_PANEL_TOOLS=/tmp/omx-panel/tools" >> "$GITHUB_ENV"
+
+      - name: Assemble the contract root the literal gate reads (#4)
+        run: |
+          # the owners' contract packages, beside omx-contract-data and plugin-hostd-protocol-contract installed above;
+          # omx-panel's schema is the commit fetched above. tools/restated_declarations.py names what a root lacks.
+          apt-get install -y -qq --no-install-recommends omx-clap-core-contract omx-dsp-contract omx-plugins-contract \
+            plugin-db-contract $HOSTD_PINS
+          dpkg-query -W omx-clap-core-contract omx-dsp-contract omx-plugins-contract plugin-db-contract plugin-hostd-contract
+          mkdir -p /tmp/contract-root/omx-panel
+          ln -s /usr/share/omx-contract /tmp/contract-root/omx-contract
+          ln -s /usr/share/plugin-hostd-protocol /tmp/contract-root/plugin-hostd-protocol
+          ln -s /tmp/omx-panel/schema /tmp/contract-root/omx-panel/schema
+          echo "RESTATED_CONTRACT_ROOT=/tmp/contract-root" >> "$GITHUB_ENV"
+
+
+      - name: python3 -m pytest -q tests/
+        shell: bash
+        run: |
+          set -o pipefail
+          # timeout_method=thread: a test stuck past the 60 s per-test timeout (pyproject.toml) inside a C call, where the
+          # default SIGALRM never lands, ends the run with every thread's stack and the test's name instead of hanging
+          # the job (a run sat in pytest 45 min, 2026-11-23); --durations names the slow ones on every run
+          python3 -m pytest -q -rs -o timeout_method=thread --durations=30 tests/ | tee /tmp/pytest.log
+          # a test that needs the real omx-panel and skipped ran nothing: refused
+          ! grep -q 'OMX_PANEL_REAL is' /tmp/pytest.log || { echo "::error::a test that needs the real omx-panel was skipped"; exit 1; }
+          # the drawn-controller tests need PIL (python3-pil above) and omx-panel's tools directory: skipped, they ran nothing
+          ! grep -qE 'no PIL|no omx-panel tools directory' /tmp/pytest.log || { echo "::error::a drawn-controller test was skipped"; exit 1; }

@@ -1,6 +1,7 @@
 import tkinter
 import logging
 from zyngui import zynthian_widget_base
+from zyngine import zynthian_panel_gestures as pg
 
 
 class zynthian_widget_drawbar(zynthian_widget_base.zynthian_widget_base):
@@ -41,10 +42,15 @@ class zynthian_widget_drawbar(zynthian_widget_base.zynthian_widget_base):
                                             )
         self.drawbar_nums = {}
         self.drawbar_values = {}
-        self.drag = {"item": None, "y": 0, 'barnum': None, 'value': None}
         self.widget_canvas.bind("<ButtonPress-1>", self.on_press)
         self.widget_canvas.bind("<B1-Motion>", self.on_motion)
         self.widget_canvas.bind("<ButtonRelease-1>", self.on_release)
+        self.widget_canvas.bind("<MouseWheel>", self.on_wheel)
+        self.widget_canvas.bind("<Button-4>", self.on_wheel)
+        self.widget_canvas.bind("<Button-5>", self.on_wheel)
+        # the touches go through omx-panel's one gesture vocabulary as a bar group (zynthian_panel_gestures.BarGroup)
+        self.gestures = None
+        self._gestures_for = None
 
     def _drawbar_ctrl(self, i):
         return self.processor.controllers_dict[self.drawbars[i]]
@@ -102,39 +108,44 @@ class zynthian_widget_drawbar(zynthian_widget_base.zynthian_widget_base):
     def show(self):
         super().show()
 
+    def _gesture_group(self):
+        """The drawbars as a bar group of the vocabulary, one column each where draw_drawbar puts its track, over the
+        widget's 9 positions (full-in at the top, full-out at the bottom: the bars come out downward)."""
+        key = (self.width, self.height, tuple(self.drawbars))
+        if self.gestures is None or self._gestures_for != key:
+            width = (self.width - 2 * self.border) // max(self.DRAWBAR_SLOTS, len(self.drawbars))
+            travel = {"scale": "stepped", "min": 0, "max": self.DRAWBAR_MAX, "step": 1}
+            bars = []
+            for i in range(len(self.drawbars)):
+                ctrl = self._drawbar_ctrl(i)
+                default = None if ctrl.value_default is None else round(self._value_to_position(ctrl, ctrl.value_default))
+                bars.append((pg.Travel(travel, default),
+                             lambda i=i: self._value_to_position(self._drawbar_ctrl(i), self._drawbar_ctrl(i).value),
+                             lambda pos, i=i: self._drawbar_ctrl(i).set_value(self._position_to_value(self._drawbar_ctrl(i), pos)),
+                             (self.border + i * width, 0, width, self.height)))
+            self.gestures = pg.BarGroup(bars, downward=True)
+            self._gestures_for = key
+        return self.gestures
+
     def on_press(self, event):
-        # the drag area under mouse, if any
-        canvas = self.widget_canvas
-        for item in reversed(canvas.find_overlapping(event.x, event.y,
-                                                     event.x, event.y)):
-            tags = self.widget_canvas.gettags(item)
-            if "track" in tags:
-                for tag in tags:
-                    if tag.startswith('drag') and tag[4:].isdigit():
-                        try:
-                            barnum = int(tag[4:])
-                            ctrl = self._drawbar_ctrl(barnum)
-                            y = max(0, min(self.height, event.y))
-                            self.drag.update(item=item, y=y,
-                                             barnum=barnum, value=ctrl.value)
-                        except Exception as e:
-                            logging.error(e)
-                        return
+        try:
+            pg.tk_press(self._gesture_group(), event)
+        except Exception as e:
+            logging.error(e)
 
     def on_motion(self, event):
-        if self.drag is not None and self.drag["item"]:
-            ctrl = self._drawbar_ctrl(self.drag['barnum'])
-            y = max(0, min(self.height, event.y))
-            # Start from the position corresponding to the value when pressed,
-            # then apply the pointer delta in position units.
-            start_position = self._value_to_position(ctrl, self.drag['value'])
-            delta_position = ((y - self.drag['y']) /
-                              self.height) * self.DRAWBAR_MAX
-            position = start_position + delta_position
-            ctrl.set_value(self._position_to_value(ctrl, position))
+        if self.gestures is not None:
+            pg.tk_motion(self.gestures, event)
 
     def on_release(self, event):
-        self.drag["item"] = None
+        if self.gestures is not None:
+            pg.tk_release(self.gestures, event)
+
+    def on_wheel(self, event):
+        try:
+            pg.tk_wheel(self._gesture_group(), event)
+        except Exception as e:
+            logging.error(e)
 
     def on_size(self, event):
         super().on_size(event)

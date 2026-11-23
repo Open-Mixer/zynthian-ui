@@ -114,6 +114,21 @@ def test_dir_fd_relative_name_matching_a_protected_link_in_cwd_is_allowed(guarde
     assert (guarded_dir / "keep.txt").exists()
 
 
+def test_a_symlink_to_a_protected_file_is_removable_and_still_refuses_a_write_through_it(guarded_dir, tmp_path):
+    """Removing or renaming a symlink changes the directory holding it, never the file it points to (a test's
+    temporary bin/python3 -> sys.executable is cleaned up); a write through the link still reaches the target."""
+    link = tmp_path / "link"
+    link.symlink_to(guarded_dir / "keep.txt")
+    with pytest.raises(write_guard.WriteGuardError):
+        open(link, "w")
+    n = len(write_guard.VIOLATIONS)
+    os.replace(link, tmp_path / "moved")
+    os.remove(tmp_path / "moved")
+    assert not (tmp_path / "moved").exists()
+    assert len(write_guard.VIOLATIONS) == n
+    assert (guarded_dir / "keep.txt").read_text() == "original"
+
+
 def test_reading_protected_dirs_is_allowed(guarded_dir):
     n = len(write_guard.VIOLATIONS)
     assert (guarded_dir / "keep.txt").read_text() == "original"
