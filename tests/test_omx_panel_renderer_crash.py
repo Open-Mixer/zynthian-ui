@@ -24,6 +24,8 @@ import types
 import unittest
 from unittest import mock
 
+from tests.omx_panel_widget_stub import load_widget  # noqa: E402
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 VIEW = os.path.join(ROOT, "zyngine", "zynthian_omx_panel_view.py")
@@ -125,58 +127,12 @@ class RendererCrash(unittest.TestCase):
 
 # ---- The widget over a renderer that stopped ----
 
-def stand_in(name, **attrs):
-    module = types.ModuleType(name)
-    module.__dict__.update(attrs)
-    return module
-
-
-def load_widget():
-    """zyngui/zynthian_widget_omx_panel.py and the real panel view module it reads RendererStopped from."""
-    spec = importlib.util.spec_from_file_location("panel_view_under_test", VIEW)
-    panel_view = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(panel_view)
-
-    class base:
-        def __init__(self, parent):
-            self.width, self.height, self.processor = 1, 1, None
-
-        def set_processor(self, processor):
-            self.processor = processor
-
-    class NoTouchDevice(Exception):
-        pass
-
-    def no_touch():
-        raise NoTouchDevice("none here")
-
-    zyngine = stand_in("zyngine", __path__=[], zynthian_omx_panel_view=panel_view)
-    config = stand_in("zyngui.zynthian_gui_config", color_bg="#000000", color_tx="#ffffff", color_tx_off="#888888",
-                      color_on="#ff0000")
-    modules = {
-        "tkinter": mock.MagicMock(), "PIL": mock.MagicMock(), "zyngine": zyngine,
-        "zyngine.zynthian_omx_panel_view": panel_view,
-        "zyngine.zynthian_panel_gestures": stand_in("g", Panel=mock.MagicMock(), GestureTableAbsent=type("A", (Exception,), {})),
-        "zyngine.zynthian_position_law": stand_in("p"),
-        "zyngine.zynthian_touch_layer": stand_in("t", EvdevSource=no_touch, NoTouchDevice=NoTouchDevice),
-        "zyngui": stand_in("zyngui", __path__=[], zynthian_gui_config=config),
-        "zyngui.zynthian_gui_config": config,
-        "zyngui.zynthian_widget_base": stand_in("b", zynthian_widget_base=base),
-    }
-    with mock.patch.dict(sys.modules, modules):
-        spec = importlib.util.spec_from_file_location("zynthian_widget_omx_panel_under_test", WIDGET)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        module.__dict__["Image"] = None
-    return module, panel_view, modules
-
-
 class FakeView:
     """A view whose renderer stops at the first draw while `crash` is set."""
     opened = 0
     crash = True
 
-    def __init__(self, layout):
+    def __init__(self, layout, tools_dir=None, look=None):
         FakeView.opened += 1
         self.symbols, self.meters, self.drew = [], [], 0
 

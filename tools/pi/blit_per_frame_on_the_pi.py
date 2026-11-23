@@ -4,9 +4,9 @@
 # graphic EQ and a band dot of eq8 dragged for DRAG_S seconds each, at the widget's size on the 1024 px screen. Each frame is
 # what the panel widget does on a drag (zyngui/zynthian_widget_omx_panel.py, drawn_input then paint): the event to the
 # renderer, its draw (into the one buffer the view keeps: with omx-panel#78's renderer only the changed cells, and it
-# says which), the blit (the panel view's PanelImage, the widget's own path: only those cells, else the rows the draw
-# changed, converted over the background and copied into the photo on the screen, #59), and the canvas update, each
-# timed.
+# says which), the blit (the panel image module's PanelImage, the widget's own path: only those cells, else the rows
+# the draw changed, converted over the background and copied into the photo on the screen, #59), and the canvas update,
+# each timed.
 # Frames run back to back: the frame rate is what the screen reached. Run once in the renderer's own process (the
 # panel view's View, as the UI runs it now) and once with the library in this process (the view before #44), so the
 # process boundary's cost is the difference. One JSON line per run goes to stdout; the figures go into
@@ -33,6 +33,9 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 _spec = importlib.util.spec_from_file_location("panel_view", os.path.join(ROOT, "zyngine", "zynthian_omx_panel_view.py"))
 pv = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(pv)
+_spec = importlib.util.spec_from_file_location("panel_image", os.path.join(ROOT, "zyngui", "zynthian_gui_omx_panel_image.py"))
+pi = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(pi)
 
 FIXTURES = os.path.join(ROOT, "tests", "fixtures", "omx_panel")
 SECONDS = float(os.environ.get("DRAG_S", "30"))
@@ -61,7 +64,7 @@ def drag(view_class, what, name, symbol, root, canvas):
         view.set_value(k, 0.5, "")
     (x, y, w, h), travel = view.target_rect(i)
     cx, cy = x + w / 2, y + h / 2
-    screen = pv.PanelImage("#000000", canvas)
+    screen = pi.PanelImage("#000000", canvas)
     t0 = time.monotonic()
     view.input(pv.EVENT_DOWN, t0 * 1000.0, cx, cy)
     parts = {"input": [], "draw": [], "blit": [], "canvas": [], "frame": []}

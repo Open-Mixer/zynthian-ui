@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian GUI
 #
@@ -26,9 +24,11 @@
 import os
 import sys
 import logging
+import inspect
 
 # Zynthian specific modules
 import zynconf
+from zyncoder.zyncore import lib_zyncore_init
 
 
 def get_env_int(env_var, default_val=0):
@@ -37,6 +37,28 @@ def get_env_int(env_var, default_val=0):
     except:
         #logging.warning(f"Failed to retrieve environmental variable {env_var}")
         return default_val
+
+
+def get_env_float(env_var, default_val=0.0, min_val=None, max_val=None):
+    """ Get a floating point value from an environment variable
+
+        env_var: Name of environment variable
+        default_val: Value to use if variable is not set, is not a number or is out of range
+        min_val: Optional minimum valid value (inclusive)
+        max_val: Optional maximum valid value (inclusive)
+    """
+    raw = os.environ.get(env_var)
+    if raw is None or not raw.strip():
+        return default_val
+    try:
+        val = float(raw)
+    except ValueError:
+        logging.warning(f"Invalid value '{raw}' for {env_var}. Using default {default_val}")
+        return default_val
+    if not (min_val is None or val >= min_val) or not (max_val is None or val <= max_val) or val != val:
+        logging.warning(f"Value {val} for {env_var} is out of range ({min_val}..{max_val}). Using default {default_val}")
+        return default_val
+    return val
 
 # ------------------------------------------------------------------------------
 # Log level and debuging
@@ -57,7 +79,6 @@ logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.info("ZYNTHIAN-UI CONFIG ...")
 
 if log_level == logging.DEBUG:
-    import inspect
     def logging_call_stack():
         fnames = []
         stack = list(inspect.stack())
@@ -559,6 +580,14 @@ color_grid_tx = os.environ.get('ZYNTHIAN_UI_COLOR_GRID_TX', "#ffffff")
 color_grid_tx_off = os.environ.get('ZYNTHIAN_UI_COLOR_GRID_TX_OFF', "#aaaaaa")
 color_grid_sel = os.environ.get('ZYNTHIAN_UI_COLOR_GRID_SEL', "yellow")
 
+# How the controller widgets are drawn (docs/ui-look-drawn-widgets.md): `stock` is upstream Zynthian's drawing;
+# `vintage` draws them through omx-panel's renderer, in the colours above. A word that names no look is said and
+# draws stock, so the UI starts whatever the config says.
+ui_look = os.environ.get('ZYNTHIAN_UI_LOOK', "stock")
+if ui_look not in ("stock", "vintage"):
+    logging.warning("ZYNTHIAN_UI_LOOK='%s' names no look (stock, vintage): the controllers are drawn stock", ui_look)
+    ui_look = "stock"
+
 # ------------------------------------------------------------------------------
 # Font Family
 # ------------------------------------------------------------------------------
@@ -616,6 +645,14 @@ audio_power_threshold = get_env_int('ZYNTHIAN_UI_AUDIO_POWER_THRESHOLD', -40)
 preset_preload = get_env_int('ZYNTHIAN_UI_PRESET_PRELOAD', 1)
 mixer_toggle = os.environ.get('ZYNTHIAN_UI_MIXER_TOGGLE', "record")
 main_menu_columns = get_env_int('ZYNTHIAN_UI_MAIN_MENU_COLUMNS', 0)
+
+# Mixer digital peak meter (DPM) and fader configuration. Values are dB and seconds.
+dpm_range_db = get_env_float('ZYNTHIAN_MIXER_DPM_RANGE_DB', 72.0, 24.0, 120.0)  # dB span of meter scale
+dpm_small_range_db = get_env_float('ZYNTHIAN_MIXER_DPM_SMALL_RANGE_DB', 40.0, 12.0, 120.0)  # dB span of small meter scale
+dpm_zero_db = get_env_float('ZYNTHIAN_MIXER_DPM_ZERO_DB', -18.0, 6.0 - dpm_range_db, -3.0)  # dBFS of meter "0dB" reference. EBU: -18
+dpm_decay_db_per_s = get_env_float('ZYNTHIAN_MIXER_DPM_DECAY_DB_PER_S', 30.0, 1.0, 200.0)  # Meter fall rate (dB/s)
+dpm_hold_s = get_env_float('ZYNTHIAN_MIXER_DPM_HOLD_S', 2.0, 0.0, 30.0)  # Peak hold time. 0 disables hold
+fader_zero_db = get_env_float('ZYNTHIAN_MIXER_FADER_ZERO_DB', -10.0, -40.0, -1.0)  # Fader "0dB" (unity) position relative to top of fader throw
 
 # ------------------------------------------------------------------------------
 # Audio Options
@@ -776,6 +813,8 @@ for i, value in enumerate(LAUNCHER_COLOUR):
 # ------------------------------------------------------------------------------
 
 if "zynthian_main.py" in sys.argv[0]:
+    # Tk and PIL are only needed by the main UI process. This module is also imported by processes
+    # that have no display, such as zynthian_headless.py, so they are not imported at module level.
     import tkinter
     from PIL import Image, ImageTk
 
@@ -916,6 +955,7 @@ if "zynthian_main.py" in sys.argv[0]:
         if touch_navigation:
             # Create touch keypad frame and show it!
             try:
+                # Imported here because zynthian_gui_touchkeypad_v5 imports this module (circular import)
                 from zyngui.zynthian_gui_touchkeypad_v5 import zynthian_gui_touchkeypad_v5
                 touch_keypad = zynthian_gui_touchkeypad_v5()
                 set_touch_keypad(get_env_int("ZYNTHIAN_TOUCH_SHOWN", 0))
@@ -951,12 +991,6 @@ if "zynthian_main.py" in sys.argv[0]:
 
     except Exception as e:
         logging.error("ERROR initializing Tkinter graphic framework => {}".format(e))
-
-    # ------------------------------------------------------------------------------
-    # Initialize ZynCore low-level library
-    # ------------------------------------------------------------------------------
-
-    from zyncoder.zyncore import lib_zyncore_init
 
     # ------------------------------------------------------------------------------
     # Initialize and config control I/O subsystem: switches, analog I/O, ...

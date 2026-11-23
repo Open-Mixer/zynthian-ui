@@ -106,7 +106,7 @@ CODES = ("reply.plugin-hostd.no-record", "reply.plugin-hostd.no-cell", "reply.pl
 
 
 class test_a_catalog_entry_reads_as_its_text(unittest.TestCase):
-    """omx-contract 3.18.0 installs an entry as an object ({"text", "by", "source"}); the footer of the chain manager
+    """omx-contract 3.18.0 installs an entry as an object ({"text", "by", "source"}; 3.19.0 reads only that form); the footer of the chain manager
     shows the sentence, never the object (#29)."""
 
     KEY = "reply.plugin-hostd.no-cell"
@@ -128,10 +128,18 @@ class test_a_catalog_entry_reads_as_its_text(unittest.TestCase):
             self.assertEqual(p.sentence(number), "Aquest plugin no te cap mesura")
             self.assertEqual(p.meaning(number), "Aquest plugin no te cap mesura")
 
-    def test_a_string_entry_is_still_its_text(self):
-        p, number = self.codes({self.KEY: "Frase en catala"})
+    def test_a_same_entry_is_its_text(self):
+        # omx-contract 3.19.0: by: same is the word that is the English source sentence, kept as the owner wrote it
+        p, number = self.codes({self.KEY: {"text": "Frase en catala", "by": "same"}})
         with mock.patch.dict(os.environ, CATALAN):
             self.assertEqual(p.sentence(number), "Frase en catala")
+
+    def test_a_bare_string_entry_is_no_entry(self):
+        # omx-contract 3.19.0 reads only the object form; a catalog still written as strings shows the source
+        # sentence, which is the contract's answer and not read around here
+        p, number = self.codes({self.KEY: "Frase en catala"})
+        with mock.patch.dict(os.environ, CATALAN):
+            self.assertEqual(p.sentence(number), p.client.sentence(number))
 
     def test_an_entry_made_from_another_source_is_skipped_for_the_source_sentence(self):
         p, number = self.codes({self.KEY: {"text": "Vella", "by": "machine", "model": "m", "source": "0" * 64}})

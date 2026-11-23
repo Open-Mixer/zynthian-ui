@@ -1,12 +1,10 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian GUI
 #
 # Zynthian Control Device Manager Class
 #
 # Copyright (C) 2015-2026 Fernando Moyano <jofemodo@zynthian.org>
-#                         Brian Walton <brian@riban.co.uk>
+#                         Brian Walton <riban@zynthian.org>
 #                         Oscar Acena <oscaracena@gmail.com>
 #
 # ******************************************************************************
@@ -59,6 +57,8 @@ class zynthian_ctrldev_base:
     dev_pated = False		# Can act as a pattern editor device
     enabled = False			# True if device driver is enabled
     autoload_flag = True    # False to prevent autoloading the driver when device is detected
+    sysex_ids = []          # List of SysEx identities the driver supports (8 octets: DevId, SubId1, SubId2, ManId, Fam1, Fam2, Mod1, Mod2)
+    sysex_autoload = True   # False to prevent autoloading the driver when its SysEx identity is detected
     # True if input device must be unrouted from chains when driver is loaded
     # Alternately specific MIDI channels can be unrouted by specifying a bitwise mask,
     # For instance, use "0b0000000000001111" to unroute MIDI channels 0 to 3.
@@ -73,6 +73,12 @@ class zynthian_ctrldev_base:
         """Returns autoload flag value"""
 
         return cls.autoload_flag
+
+    @classmethod
+    def get_sysex_autoload(cls):
+        """Returns True if the driver autoloads when a device with its SysEx identity is detected"""
+
+        return cls.sysex_autoload and bool(cls.sysex_ids)
 
     def __init__(self, state_manager, idev_in, idev_out=None):
         """Class Constructor
@@ -521,6 +527,39 @@ class zynthian_ctrldev_zynmixer(zynthian_ctrldev_base):
         self.zynmixer = state_manager.zynmixer_chan
         self.zynmixer_bus = state_manager.zynmixer_bus
         self.scroll_h = 0
+
+    @staticmethod
+    def get_chain_mixer_chan(chain):
+        """ Get the mixer strip index of a chain
+
+        chain - Chain object (may be None)
+        Returns - Mixer strip index or None if the chain has no mixer strip
+        """
+
+        try:
+            return chain.zynmixer_proc.mixer_chan
+        except AttributeError:
+            return None
+
+    @staticmethod
+    def get_chain_zctrl(chain, symbol, max_chan=None, allow_main=True):
+        """ Get a mixer controller of a chain
+
+        chain - Chain object (may be None)
+        symbol - Symbol name of the mixer parameter
+        max_chan - If not None, only return a controller if the chain's mixer strip index is below this value
+        allow_main - False to exclude the main chain
+        Returns - Controller or None if the chain has no such controller or is excluded
+        """
+
+        try:
+            if chain.zynmixer_proc is None or (not allow_main and chain.chain_id == 0):
+                return None
+            if max_chan is not None and chain.zynmixer_proc.mixer_chan >= max_chan:
+                return None
+            return chain.zynmixer_proc.controllers_dict[symbol]
+        except (AttributeError, KeyError, TypeError):
+            return None
 
     def init(self):
         super().init()

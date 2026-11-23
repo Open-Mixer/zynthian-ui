@@ -3,7 +3,7 @@
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian Engine (zynthian_omx_panel_view)
 #
-# A plugin's panel drawn by omx-panel's renderer, the one C library every OpenMixer surface draws a panel with
+# A plugin's panel drawn by omx-panel's renderer, omx-panel's own C library for drawing a panel
 # (libomx-panel-render.so.0, omx-panel's renderer/include/omx_panel_render.h): its bars, its curves and its meters,
 # in the omx look. This module is the ctypes door to it, and the host's side the renderer leaves to the host: which
 # part of the panel a screen shows, the curve_bind line plugin-hostd draws a display's points from, and the reply
@@ -12,10 +12,12 @@
 #
 # The renderer runs in a process of its own (zynthian-ui#44): a fault inside it stops that process, never the UI's. The
 # UI's View sends each call to it over a socket and reads the drawn pixels from shared memory; when the renderer
-# stops, the call raises RendererStopped, saying how, and the next View starts it again. That shared memory is the one
-# buffer every draw of a view goes into (zynthian-ui#59): with omx-panel#78's omx_panel_view_draw_dirty the renderer
-# repaints only the cells that changed in it and says where, and PanelImage blits only those. This file is that process
-# too (run as `python3 zynthian_omx_panel_view.py --serve <fd>`): it imports nothing but the standard library.
+# stops, the call raises RendererStopped, saying how, and the next View starts it again, up to STOPS_IN_A_ROW starts
+# without a draw. The socket carries one call at a time, whatever thread makes it (zynthian-ui#79); a view's calls
+# belong to Tk's thread (in_owner_thread), where the widgets make them. That shared memory is the one buffer every draw
+# of a view goes into (zynthian-ui#59): with omx-panel#78's omx_panel_view_draw_dirty the renderer repaints only the
+# cells that changed in it and says where, and PanelImage blits only those. This file is that process too (run as
+# `python3 zynthian_omx_panel_view.py --serve <fd>`): it imports nothing but the standard library.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 #
@@ -29,11 +31,13 @@ import json
 import logging
 import math
 import os
+import shutil
 import signal
 import socket
 import subprocess
 import sys
 import tempfile
+import threading
 from multiprocessing import connection, shared_memory
 
 LIBRARY = "libomx-panel-render.so.0"
@@ -57,7 +61,8 @@ class RendererAbsent(Exception):
 
 class RendererStopped(RendererAbsent):
     """The renderer's process stopped (a fault inside the library, or no answer): how, said once by the caller. The
-    views it held are gone; the next View starts the renderer again."""
+    views it held are gone; the next View starts the renderer again, unless it stopped STOPS_IN_A_ROW times without a
+    draw."""
 
 
 class _Buffer(ctypes.Structure):
@@ -161,22 +166,47 @@ def word_name(word):
     return _host().call("word", None, word)
 
 
+def tools_dir():
+    """The renderer's data directory: $ZYNTHIAN_OMX_PANEL_TOOLS, else where the omx-panel package installs it."""
+    return os.environ.get("ZYNTHIAN_OMX_PANEL_TOOLS", TOOLS_DIR)
+
+
+def look_dir(look, tools):
+    """A data directory for the renderer carrying the host's <look> (a look document, zynthian_ui_look.tokens) as its
+    look.json, and the renderer's own geometry, fonts and gesture declaration linked from <tools>: the renderer reads a
+    look from a directory and copies what it reads, so the caller removes the directory once the view is made."""
+    d = tempfile.mkdtemp(suffix=".look")
+    with open(os.path.join(d, "look.json"), "w") as f:
+        json.dump(look, f)
+    for name in ("look", "fonts"):
+        os.symlink(os.path.join(tools, name), os.path.join(d, name))
+    # omx-panel's schema/gestures.json: beside the tools directory in the source tree, inside it where the package installs it
+    for gestures in (os.path.join(tools, "gestures.json"), os.path.join(tools, "..", "schema", "gestures.json")):
+        if os.path.exists(gestures):
+            os.symlink(gestures, os.path.join(d, "gestures.json"))
+            break
+    return d
+
+
 class _LibraryView:
     """One panel layout (what `omx-panel describe --layout` prints, or a part of it) as the renderer holds it, in the
     process that loaded the library: the renderer's process."""
 
-    def __init__(self, layout, tools_dir=None):
+    def __init__(self, layout, tools_dir_=None, look=None):
         lib = self.lib = library()
         self.layout = layout
         with tempfile.NamedTemporaryFile("w", suffix=".layout.json", delete=False) as f:
             json.dump(layout, f)
             path = f.name
         err = ctypes.create_string_buffer(512)
+        tools = tools_dir_ or tools_dir()
+        data = look_dir(look, tools) if look else None
         try:
-            tools = tools_dir or os.environ.get("ZYNTHIAN_OMX_PANEL_TOOLS", TOOLS_DIR)
-            self.view = lib.omx_panel_view_create_from_files(path.encode(), tools.encode(), err, len(err))
+            self.view = lib.omx_panel_view_create_from_files(path.encode(), (data or tools).encode(), err, len(err))
         finally:
             os.unlink(path)
+            if data:
+                shutil.rmtree(data, ignore_errors=True)
         if not self.view:
             raise RendererAbsent(f"omx-panel's renderer refused the panel: {err.value.decode(errors='replace')}")
         self.symbols = [lib.omx_panel_view_symbol(self.view, i).decode() for i in range(lib.omx_panel_view_count(self.view))]
@@ -185,7 +215,7 @@ class _LibraryView:
         self.buffer = None  # the buffer the last draw went into, kept: the renderer repaints only what changed in it
 
     def close(self):
-        if self.view:
+        if getattr(self, "view", None):  # none yet when the library refused the panel, or it could not be written
             self.lib.omx_panel_view_destroy(self.view)
             self.view = None
 
@@ -281,8 +311,21 @@ class _LibraryView:
 
 # a call answers within this, else the renderer is taken as stopped (a draw of the whole screen takes milliseconds)
 ANSWER_S = 5.0
+# a renderer started this many times without one draw between is not started again: each start costs a process and a
+# library load, and one that stops on whatever it is given would be started at every page
+STOPS_IN_A_ROW = 3
 
 _the_host = None
+_starting = threading.Lock()  # one thread starts the renderer
+_starts = 0  # the renderer's starts since a view last drew
+_given_up = False  # said once
+
+
+def in_owner_thread():
+    """Whether the caller is the thread a view's calls belong to: Tk's, the main thread. A view is opened, given its
+    readings, drawn and closed as one sequence per widget; a page change that reaches a widget from another thread
+    (the CUIA thread) gives that sequence to Tk's thread (after_idle), so no view is closed under a draw."""
+    return threading.current_thread() is threading.main_thread()
 
 
 def _attach(name):
@@ -291,9 +334,17 @@ def _attach(name):
 
 
 def _serve(fd):
-    """The renderer's process: the views it holds by number, each call answered ("ok", value) or ("refused", why)."""
+    """The renderer's process: the views it holds by number, each call answered ("ok", value) or ("refused", why). A
+    view's shared memory is attached at its first draw and let go when the view closes or draws into another (a
+    bigger one): kept, each view ever drawn would hold a file of the process's 1024 (zynthian-ui#79)."""
     conn = connection.Connection(fd)
-    views, memory, next_id = {}, {}, 1
+    views, memory, next_id = {}, {}, 1  # memory: view number => (name, the attached memory)
+
+    def let_go(vid):
+        held = memory.pop(vid, None)
+        if held:
+            held[1].close()
+
     while True:
         try:
             op, vid, args = conn.recv()
@@ -309,6 +360,7 @@ def _serve(fd):
                 v = views.pop(vid, None)
                 if v:
                     v.close()
+                let_go(vid)
                 value = None
             elif op == "word":
                 value = _word_name(*args)
@@ -316,9 +368,11 @@ def _serve(fd):
                 # drawn straight into the UI's shared memory: the one buffer kept between draws, so the renderer repaints
                 # only what changed in it (the UI reads it, never writes it)
                 name, width, height, scale = args
-                if name not in memory:
-                    memory[name] = _attach(name)
-                rects = views[vid].draw_into(memory[name].buf, width, height, scale)
+                name, width, height, scale = args
+                if vid not in memory or memory[vid][0] != name:
+                    let_go(vid)
+                    memory[vid] = (name, _attach(name))
+                rects = views[vid].draw_into(memory[vid][1].buf, width, height, scale)
                 value = (width * height * 4, rects)
             else:
                 value = getattr(views[vid], op)(*args)
@@ -337,19 +391,23 @@ class _Host:
         theirs.close()
         self.conn = connection.Connection(ours.detach())
         self.stopped = None
+        # a call and its answer, whole: the plot task (Tk's thread), a page change (the CUIA thread) and a view freed
+        # by the collector (any thread) share this connection, and two calls at once read each other's answers
+        self.turn = threading.Lock()
 
     def call(self, op, vid, *args):
-        if self.stopped:
-            raise RendererStopped(self.stopped)
-        try:
-            self.conn.send((op, vid, args))
-            if not self.conn.poll(ANSWER_S):
-                self.process.kill()
-                raise EOFError(f"no answer in {ANSWER_S:g} s")
-            kind, value = self.conn.recv()
-        except (EOFError, OSError) as e:
-            self.stop(e)
-            raise RendererStopped(self.stopped) from None
+        with self.turn:
+            if self.stopped:
+                raise RendererStopped(self.stopped)
+            try:
+                self.conn.send((op, vid, args))
+                if not self.conn.poll(ANSWER_S):
+                    self.process.kill()
+                    raise EOFError(f"no answer in {ANSWER_S:g} s")
+                kind, value = self.conn.recv()
+            except (EOFError, OSError) as e:
+                self.stop(e)
+                raise RendererStopped(self.stopped) from None
         if kind == "refused":
             raise RendererAbsent(value)
         return value
@@ -376,11 +434,27 @@ class _Host:
 
 
 def _host():
-    """The renderer's process, started again when the last one stopped."""
-    global _the_host
-    if _the_host is None or not _the_host.alive():
-        _the_host = _Host()
-    return _the_host
+    """The renderer's process, started again when the last one stopped; RendererStopped, said once, when it was started
+    STOPS_IN_A_ROW times and no view drew."""
+    global _the_host, _starts, _given_up
+    with _starting:
+        if _the_host is None or not _the_host.alive():
+            if _starts >= STOPS_IN_A_ROW:
+                why = (f"omx-panel's renderer stopped {STOPS_IN_A_ROW} times in a row without a draw: it is not started "
+                       "again in this session")
+                if not _given_up:
+                    _given_up = True
+                    logging.error(why)
+                raise RendererStopped(why)
+            _starts += 1
+            _the_host = _Host()
+        return _the_host
+
+
+def _drew():
+    """A view drew: the renderer works, and the count of its starts begins again."""
+    global _starts
+    _starts = 0
 
 
 class View:
@@ -388,10 +462,12 @@ class View:
     renderer's process: each call is the library's, its answer the library's. RendererStopped when that process
     stopped."""
 
-    def __init__(self, layout, tools_dir=None):
+    def __init__(self, layout, tools_dir=None, look=None):
+        """<look>: the host's look document (zynthian_ui_look.tokens) the panel is drawn in; None draws it in the
+        renderer's own look."""
         self.host = _host()
         self.layout = layout
-        self.id, self.symbols = self.host.call("open", None, layout, tools_dir)
+        self.id, self.symbols = self.host.call("open", None, layout, tools_dir, look)
         self.meters = [m["symbol"] for m in layout.get("meters") or []]
         self.size = None
         self.memory = None
@@ -466,90 +542,8 @@ class View:
                 self.memory.unlink()
             self.memory = shared_memory.SharedMemory(create=True, size=size)
         n, rects = self._call("draw", self.memory.name, width, height, scale)
+        _drew()
         return bytes(self.memory.buf[:n]), rects
-
-
-# ---- The panel on the screen ----
-
-def changed_rows(before, after, stride):
-    """The band of rows two draws of one size differ in, (first, past the last); None when they are the same. A binary
-    search over the rows that match from the top and from the bottom, never a Python loop over every row."""
-    if before == after:
-        return None
-    # each step is one memcmp of `before` against a window on `after`, no copy (a memoryview slice compared with ==
-    # goes item by item: a row loop over them took 7.3 ms of a 1024 x 416 frame on the Pi)
-    a, b = bytes(before), memoryview(after)
-    n = len(b)
-    rows = n // stride
-    lo, hi = 0, rows  # rows above `lo` match
-    while lo < hi:
-        mid = (lo + hi + 1) // 2
-        if a.startswith(b[:mid * stride]):
-            lo = mid
-        else:
-            hi = mid - 1
-    top = lo
-    lo, hi = 0, rows - top  # rows below the band that match from the bottom (a suffix holding row `top` never does)
-    while lo < hi:
-        mid = (lo + hi + 1) // 2
-        if a.endswith(b[n - mid * stride:]):
-            lo = mid
-        else:
-            hi = mid - 1
-    return top, rows - lo
-
-
-class PanelImage:
-    """The panel on the screen: one Tk photo on a canvas, kept (zynthian-ui#59). show() blits only what a draw changed:
-    the renderer's own rectangles when it gives them, else the band of rows that differ from the draw before. The first
-    draw, a new size, a new background and a cleared canvas (forget) blit the whole panel; an unchanged draw blits
-    nothing. Each blit is the draw over the background, so the screen always equals the whole draw over it."""
-
-    def __init__(self, background, canvas=None):
-        self.background = background
-        self.canvas = canvas
-        self.photo = None
-        self.last = None  # (pixels, width, height, background) of the draw on the screen
-
-    def forget(self):
-        """The canvas was cleared under the panel: the next show blits the whole of it."""
-        self.last = None
-
-    def show(self, pixels, width, height, dirty=None):
-        """Put a draw (RGBA, straight alpha, rows of width * 4 bytes) on the screen; the boxes blitted, (x, y, w, h)."""
-        from PIL import Image
-        stride = width * 4
-        full = self.last is None or self.last[1:] != (width, height, self.background)
-        if full:
-            boxes = [(0, 0, width, height)]
-        elif dirty is not None:
-            boxes = [tuple(int(v) for v in d) for d in dirty if d[2] > 0 and d[3] > 0]
-        else:
-            band = changed_rows(self.last[0], pixels, stride)
-            boxes = [] if band is None else [(0, band[0], width, band[1] - band[0])]
-        self.last = (pixels, width, height, self.background)
-        for x, y, w, h in boxes:
-            rows = Image.frombuffer("RGBA", (width, h), pixels[y * stride:(y + h) * stride], "raw", "RGBA", 0, 1)
-            region = rows if w == width else rows.crop((x, 0, x + w, h))
-            image = Image.alpha_composite(Image.new("RGBA", (w, h), self.background), region)
-            if full:
-                self._new(image)
-            else:
-                self._put(image, x, y)
-        return boxes
-
-    def _new(self, image):
-        """The whole panel: a new photo, the canvas's only item."""
-        from PIL import ImageTk
-        self.photo = ImageTk.PhotoImage(image)
-        self.canvas.delete("all")
-        self.canvas.create_image(0, 0, anchor="nw", image=self.photo)
-
-    def _put(self, image, x, y):
-        """A region: converted alone and copied into the photo on the screen, which Tk redraws where it changed."""
-        from PIL import ImageTk
-        region = ImageTk.PhotoImage(image)
-        self.canvas.tk.call(str(self.photo), "copy", str(region), "-to", x, y)
 
 
 # ---- What a screen shows of the panel ----
@@ -587,8 +581,8 @@ _curve_words = {}  # contract directory => (display kinds, role words)
 def curve_words(root=None):
     """(the display kinds drawn from a curve, the role words a curve is bound by) as omx-dsp declares them:
     CURVE_DISPLAYS and CURVE_ROLES of the curve.json its contract package installs, in the wire's spelling (snake
-    case, the description's own words). A role of the description that is none of these (attack, release, mix) draws
-    nothing and is not bound. Two empty tuples when the declaration cannot be read: no display is a curve then."""
+    case, the description's own words). A role of the description that is none of these (attack, release) is not
+    bound; one the family's curve does not read (a compressor's mix) is bound and draws nothing. Two empty tuples when the declaration cannot be read: no display is a curve then."""
     root = root or (os.environ.get("OMX_CONTRACT_PATH") or CONTRACT_PATH).split(":")[0]
     if root not in _curve_words:
         def wire(ids):

@@ -81,7 +81,7 @@ class zynthian_ctrldev_akai_apc_key25(zynthian_ctrldev_akai_apc_key25_mk2):
     def _on_midi_event(self, ev):
         evtype = (ev[0] >> 4) & 0x0F
         channel = ev[0] & 0x0F
-            
+
         # Direct keybed to chains
         if (channel == 1):
             return
@@ -102,7 +102,7 @@ class zynthian_ctrldev_akai_apc_key25(zynthian_ctrldev_akai_apc_key25_mk2):
                 # lib_zyncore.dev_send_note_on(self._idev, mk1_brightness_100, led, color)
             if not overlay:
                 self._state[led] = (color, brightness)
-    
+
     class DeviceHandler(zynthian_ctrldev_akai_apc_key25_mk2.DeviceHandler):
 
         COLS = 8
@@ -250,7 +250,7 @@ class zynthian_ctrldev_akai_apc_key25(zynthian_ctrldev_akai_apc_key25_mk2):
                     return True
                 except:
                     return False
-        
+
     class PadMatrixHandler(zynthian_ctrldev_akai_apc_key25_mk2.PadMatrixHandler):
             BRIGHT_OFF = LED_BRIGHT_10
 
@@ -278,12 +278,10 @@ class zynthian_ctrldev_akai_apc_key25(zynthian_ctrldev_akai_apc_key25_mk2):
             # Skip own device events / not assigning mode
             if (chan == 0 and izmip == self._own_device_id) or len(self._pressed_pads) == 0:
                 return
-
             # If MIDI is playing, we need to ensure this note_on does come
             # from a device (i.e the user pressed it!).
             if izmip >= self._state_manager.get_zmip_seq_index():
                 return
-
             for pad in self._pressed_pads:
                 self._note_pads[pad] = NotePad(note, vel, 1.0)
             self.refresh()
@@ -291,7 +289,6 @@ class zynthian_ctrldev_akai_apc_key25(zynthian_ctrldev_akai_apc_key25_mk2):
         def _update_step_duration(self, step, duration):
             if self._selected_note is None:
                 return
-
             note = self._selected_note.note
             max_duration = self._libseq.getSteps()
             # duration = self._libseq.getNoteDuration(step, note) + delta * 0.1
@@ -303,7 +300,6 @@ class zynthian_ctrldev_akai_apc_key25(zynthian_ctrldev_akai_apc_key25_mk2):
         def _update_step_velocity(self, step, velocity):
             if self._selected_note is None:
                 return
-
             note = self._selected_note.note
             # velocity = self._libseq.getNoteVelocity(step, note) + delta
             velocity = min(127, max(10, velocity))
@@ -320,10 +316,9 @@ class zynthian_ctrldev_akai_apc_key25(zynthian_ctrldev_akai_apc_key25_mk2):
             self._libseq.setNoteStutterSpeed(step, note, speed)
             self._play_step(step)
 
-        def _update_step_stutter_velfx(self, step, duration):
+        def _update_step_stutter_velfx(self, step, velfx):
             if self._selected_note is None:
                 return
-
             note = self._selected_note.note
             velfx = min(MAX_STUTTER_VELFX, max(1, velfx))
             self._libseq.setNoteStutterVelfx(step, note, velfx)
@@ -331,34 +326,29 @@ class zynthian_ctrldev_akai_apc_key25(zynthian_ctrldev_akai_apc_key25_mk2):
 
         def _update_note_pad_duration(self, pad, note_spec, duration):
             max_duration = self._libseq.getSteps()
-            note_spec.duration = \
-                round(min(max_duration, max(0.1, duration)), 1)
+            note_spec.duration = round(min(max_duration, max(0.1, duration)), 1)
             self._play_note_pad(pad)
 
         def _update_note_pad_velocity(self, pad, note_spec, velocity):
             is_selected = note_spec == self._selected_note
             note_spec.velocity = min(127, max(10, velocity))
             self._play_note_pad(pad)
-
             color = self.NOTE_PAGE_COLORS[self._note_page_number]
             self._leds.led_on(pad, color, int((note_spec.velocity * 6) / 127))
-
             if is_selected:
                 self._leds.delayed("led_on", 1000, pad, color, LED_PULSING_8)
 
         def _update_note_pad_stutter_speed(self, pad, note_spec, stutter_speed):
-            note_spec.stutter_speed = \
-                min(MAX_STUTTER_SPEED, max(0, stutter_speed))
+            note_spec.stutter_speed = min(MAX_STUTTER_SPEED, max(0, stutter_speed))
             self._play_note_pad(pad)
 
         def _update_note_pad_stutter_velfx(self, pad, note_spec, stutter_velfx):
-            note_spec.stutter_velfx = \
-                min(MAX_STUTTER_VELFX, max(0, stutter_velfx))
+            note_spec.stutter_velfx = min(MAX_STUTTER_VELFX, max(0, stutter_velfx))
             self._play_note_pad(pad)
 
 
         def cc_change(self, ccnum, ccval):
-            
+
             if self._pressed_pads:
                 if self._note_config is not None:
                     return False
@@ -395,8 +385,7 @@ class zynthian_ctrldev_akai_apc_key25(zynthian_ctrldev_akai_apc_key25_mk2):
 
             # Adjust tempo
             if ccnum == KNOB_1:
-                self._show_screen_briefly(
-                    screen="tempo", cuia="TEMPO", timeout=1500)
+                self._show_screen_briefly(screen="tempo", cuia="TEMPO", timeout=1500)
                 cval = ccval / 127
                 curval = self._zynseq.get_tempo()
                 min = 13.2
@@ -406,22 +395,20 @@ class zynthian_ctrldev_akai_apc_key25(zynthian_ctrldev_akai_apc_key25_mk2):
                 now = monotonic()
                 then = self._knobmoves.get(ctrlid)
                 within_time = ((then is not None) and ((now - then) < 0.2))
-
                 if within_time or (abs(curval - val) < ((max - min) * 0.01)):
                     self._zynseq.set_tempo(val)
                     self._knobmoves[ctrlid] = now
 
             # Update sequence's chain volume
             elif ccnum == KNOB_2:
-                self._show_screen_briefly(
-                    screen="mixer", cuia="SCREEN_MIXER", timeout=1500)
-                chain_id = self._get_chain_id_by_sequence(
-                    self._zynseq.bank, self._selected_seq)
+                self._show_screen_briefly(screen="mixer", cuia="SCREEN_MIXER", timeout=1500)
+                chain_id = self._get_chain_id_by_sequence(self._zynseq.bank, self._selected_seq)
                 chain = self._chain_manager.chains.get(chain_id)
-                if chain is not None:
-                    mixer_chan = chain.mixer_chan
+                if chain is not None and chain.zynmixer_proc:
+                    mixer_chan = chain.zynmixer_proc.mixer_chan
                     cval = ccval / 127
-                    curval = self._zynmixer.get_level(mixer_chan)
+                    zctrl = chain.zynmixer_proc.controllers_dict["level"]
+                    curval = zctrl.value
                     min = 0
                     max = 1
                     val = min + (cval * (max - min))
@@ -429,7 +416,6 @@ class zynthian_ctrldev_akai_apc_key25(zynthian_ctrldev_akai_apc_key25_mk2):
                     now = monotonic()
                     then = self._knobmoves.get(ctrlid)
                     within_time = ((then is not None) and ((now - then) < 0.2))
-
                     if within_time or (abs(curval - val) < ((max - min) * 0.01)):
-                        self._zynmixer.set_level(mixer_chan, val)
+                        zctrl.set_value(val)
                         self._knobmoves[ctrlid] = now

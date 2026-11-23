@@ -1,0 +1,386 @@
+#!/usr/bin/python3
+# ******************************************************************************
+# ZYNTHIAN PROJECT: JACK test environment
+#
+# Helpers for integration tests running against a private JACK server that uses
+# the dummy backend, so no audio hardware is needed. Process cycles are run in
+# freewheel mode, as fast as possible, so tests are fast and deterministic: time
+# is measured in frames, not wall clock.
+#
+# Copyright (C) 2026 Fernando Moyano <jofemodo@zynthian.org>
+#
+# ******************************************************************************
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as
+# published by the Free Software Foundation; either version 2 of
+# the License, or any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# For a full copy of the GNU General Public License see the LICENSE.txt file.
+#
+# ******************************************************************************
+
+import os
+import re
+import glob
+import time
+import struct
+import tempfile
+import threading
+import subprocess
+from collections import deque
+
+import jack
+import numpy as np
+
+
+JACK_SHM_DIR = "/dev/shm"
+JACK_SHM_REGISTRY = f"{JACK_SHM_DIR}/jack-shm-registry"
+
+
+def reclaim_dead_test_servers(prefix="zyntest", registry=JACK_SHM_REGISTRY, shm_dir=JACK_SHM_DIR):
+    """Free the JACK registry entries of test servers that died without unregistering.
+
+    JACK2 has room for 8 servers in its shared memory registry. A server killed before it can
+    unregister (SIGKILL, killed test run...) leaves its entry, and jackd only reclaims a dead
+    entry when a server with the same name starts. Test servers have unique names, so leaked
+    entries pile up until jackd refuses to start: "Too many servers already active".
+
+    Each server entry is the server's pid (native int) followed by its name, "jack-<uid>:<name>:".
+    Only entries of this user's servers named <prefix>... whose process is dead are cleared
+    (as jackd does when reclaiming), and their leftover semaphores are removed. Leftover shared
+    memory segments of dead servers are released by jackd itself when the next server starts.
+
+    Returns the list of reclaimed server names.
+    """
+    uid = os.getuid()
+    try:
+        fd = os.open(registry, os.O_RDWR)
+    except OSError:
+        return []
+    reclaimed = []
+    try:
+        data = os.pread(fd, os.fstat(fd).st_size, 0)
+        pattern = re.compile(rb"jack-%d:(%s[^\x00:/]*):\x00" % (uid, re.escape(prefix.encode())))
+        for m in pattern.finditer(data):
+            offset = m.start()
+            if offset < 4:
+                continue
+            pid = struct.unpack_from("=i", data, offset - 4)[0]
+            if pid <= 0:
+                continue
+            try:
+                os.kill(pid, 0)
+                continue  # Alive (or another user's process) => keep it
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                continue
+            name = m.group(1).decode()
+            os.pwrite(fd, b"\0" * 4, offset - 4)
+            os.pwrite(fd, b"\0" * (m.end() - offset), offset)
+            for sem in glob.glob(f"{shm_dir}/jack_sem.{uid}_{glob.escape(name)}_*"):
+                try:
+                    os.remove(sem)
+                except OSError:
+                    pass
+            reclaimed.append(name)
+    finally:
+        os.close(fd)
+    return reclaimed
+
+
+def _processes_holding(path, proc="/proc"):
+    """Pids of the processes that map or hold open a file under path (of those whose /proc entries can be read)"""
+    holders = []
+    for pid in (p for p in os.listdir(proc) if p.isdigit()):
+        try:
+            with open(f"{proc}/{pid}/maps") as f:
+                if any(path in line for line in f):
+                    holders.append(int(pid))
+                    continue
+            fd_dir = f"{proc}/{pid}/fd"
+            for fd in os.listdir(fd_dir):
+                try:
+                    if os.readlink(f"{fd_dir}/{fd}").startswith(path):
+                        holders.append(int(pid))
+                        break
+                except OSError:
+                    pass
+        except OSError:
+            continue  # Gone, or another user's process
+    return holders
+
+
+def reclaim_orphan_metadata_env(shm_dir=JACK_SHM_DIR, proc="/proc"):
+    """Remove libjack's JACK metadata environment if no process holds it.
+
+    libjack keeps the JACK metadata in a Berkeley DB environment, <shm_dir>/jack_db-<uid>, which jackd opens when it
+    starts and any process opens with its first JACK client (even one that fails for want of a server). The first
+    of them creates its region files. A process killed while it creates them leaves an environment nobody can join:
+    e.g. a controller driver's MIDI process that the driver terminates as it starts (the hermetic ctrldev tests do
+    this) leaves an empty __db.001, and then every later jackd and client fails with "BDB1546 unable to join the
+    environment" (each attempt blocks some 18 s). jackd removes the environment when it exits; one that no process
+    holds is garbage, and is removed the same way.
+
+    Returns True if it was removed.
+    """
+    path = f"{shm_dir}/jack_db-{os.getuid()}"
+    if not os.path.isdir(path) or _processes_holding(path, proc):
+        return False
+    for name in os.listdir(path):
+        try:
+            os.remove(f"{path}/{name}")
+        except OSError:
+            pass
+    try:
+        os.rmdir(path)
+    except OSError:
+        return False
+    return True
+
+
+def _terminate_with_parent():
+    """In the jackd child (Linux): ask the kernel to send SIGTERM when the parent process dies."""
+    import ctypes
+    import signal
+    PR_SET_PDEATHSIG = 1
+    ctypes.CDLL(None, use_errno=True).prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
+
+
+class JackTestServer:
+    """Private jackd instance using the dummy backend
+
+    JACK_DEFAULT_SERVER is set to the server name, so libraries that open the
+    default server (e.g. zynseq) connect to this one.
+    """
+
+    def __init__(self, name="zyntest", rate=48000, period=256, die_with_parent=False):
+        self.name = name
+        self.die_with_parent = die_with_parent
+        self.rate = rate
+        self.period = period
+        self.proc = None
+        self.log = None
+
+    def start(self, timeout=10):
+        if self.proc:
+            return
+        reclaim_dead_test_servers()
+        reclaim_orphan_metadata_env()
+        # Silence libjack errors while the server is starting
+        jack.set_error_function(lambda msg: None)
+        try:
+            # Where the JACK metadata environment does not exist yet (see reclaim_orphan_metadata_env), jackd and
+            # the first probe below would both create it at once, and one waits for the other (a 3 s stall on a
+            # fresh CI runner). A client opened before jackd is started (it fails: no server yet) creates it from
+            # this process alone; jackd and the probes then join it.
+            self._probe()
+            # jackd's own output, kept so that a server that does not start says why (an unnamed file: no leftovers)
+            self.log = tempfile.TemporaryFile()
+            self.proc = subprocess.Popen(["jackd", "--no-realtime", "-n", self.name, "-d", "dummy",
+                                          "-r", str(self.rate), "-p", str(self.period)],
+                                         stdout=self.log, stderr=subprocess.STDOUT,
+                                         preexec_fn=_terminate_with_parent if self.die_with_parent else None)
+            os.environ["JACK_DEFAULT_SERVER"] = self.name
+            t0 = time.monotonic()
+            probes = []
+            while True:
+                tp = time.monotonic()
+                failure = self._probe()
+                if failure is None:
+                    return
+                probes.append((round(tp - t0, 2), round(time.monotonic() - tp, 2), failure))
+                if self.proc.poll() is not None or time.monotonic() > t0 + timeout:
+                    exited = self.proc.poll()
+                    self.stop()
+                    raise RuntimeError(self._start_failure(t0, exited, probes))
+                time.sleep(0.05)
+        finally:
+            jack.set_error_function()
+
+    def _probe(self):
+        """Open and close a client of this server: None if it answered, else libjack's failure status"""
+        try:
+            jack.Client("zyntest_probe", servername=self.name, no_start_server=True).close()
+            return None
+        except jack.JackError as e:
+            return str(e).split(": ", 1)[-1]
+
+    def _start_failure(self, t0, exited, probes):
+        """Why the server did not start: what jackd said, how it ended, and when each probe ran and how long it took"""
+        out = os.pread(self.log.fileno(), 4000, max(0, os.fstat(self.log.fileno()).st_size - 4000))
+        return (f"Can't start jackd server '{self.name}' after {time.monotonic() - t0:.1f}s: "
+                f"jackd {'exited with ' + str(exited) if exited is not None else 'still running at the timeout'}; "
+                f"{len(probes)} probes (start s, duration s, status), first {probes[:2]}, last {probes[-2:]}\n"
+                f"jackd output:\n{out.decode(errors='replace')}")
+
+    def stop(self):
+        if self.proc:
+            # Clients still open (e.g. libraries without close function) report errors when server stops
+            jack.set_error_function(lambda msg: None)
+            self.proc.terminate()
+            try:
+                self.proc.wait(5)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+                self.proc.wait()
+            self.proc = None
+
+    def seconds(self, secs):
+        """Convert seconds to frames"""
+        return int(round(secs * self.rate))
+
+
+class TestClient:
+    """JACK client calling process(frame, nframes) on each cycle
+
+    frame is the frame time (since server start) of the first frame in the cycle.
+    """
+
+    def __init__(self, server, name):
+        self.server = server
+        self.client = jack.Client(name, servername=server.name, no_start_server=True)
+        self.frame_time = 0  # Frame time of the last processed cycle
+        self.discontinuities = 0  # Quantity of frame time jumps, e.g. cycles lost by xruns
+        self._next_frame = None
+        self._stall = 0
+        self.client.set_process_callback(self._process)
+
+    def _process(self, nframes):
+        self.frame_time = self.client.last_frame_time
+        if self._next_frame is not None and self.frame_time != self._next_frame:
+            self.discontinuities += 1
+        self._next_frame = self.frame_time + nframes
+        self.process(self.frame_time, nframes)
+        if self._stall:
+            time.sleep(self._stall)
+            self._stall = 0
+
+    def stall(self, secs):
+        """Block the next process cycle for some time, to cause an xrun (only when not in freewheel mode)"""
+        self._stall = secs
+
+    def process(self, frame, nframes):
+        pass
+
+    def activate(self):
+        self.client.activate()
+
+    def close(self):
+        self.client.deactivate()
+        self.client.close()
+
+
+class FreewheelRunner(TestClient):
+    """Run process cycles in freewheel mode for a given quantity of frames"""
+
+    def __init__(self, server, name="zyntest_runner"):
+        super().__init__(server, name)
+        self.target = None
+        self.done = threading.Event()
+
+    def process(self, frame, nframes):
+        if self.target is not None and frame + nframes >= self.target:
+            self.done.set()
+
+    def run(self, nframes, timeout=60):
+        self.done.clear()
+        self.target = self.frame_time + nframes
+        self.client.set_freewheel(True)
+        try:
+            if not self.done.wait(timeout):
+                raise TimeoutError(f"Freewheel run of {nframes} frames timed out")
+        finally:
+            self.client.set_freewheel(False)
+            self.target = None
+
+    def run_seconds(self, secs, timeout=60):
+        self.run(self.server.seconds(secs), timeout)
+
+
+class MidiSource(TestClient):
+    """Send scheduled MIDI events at exact frame times
+
+    Events are (frame, bytes) tuples, using absolute frame times. Events scheduled
+    in the past are sent at the start of the cycle and counted in 'late'.
+    """
+
+    def __init__(self, server, name="zyntest_midi_src"):
+        super().__init__(server, name)
+        self.port = self.client.midi_outports.register("out")
+        self.lock = threading.Lock()
+        self.events = deque()
+        self.late = 0
+
+    def schedule(self, events):
+        with self.lock:
+            # Stable sort keeps order of events with the same frame time
+            self.events = deque(sorted(list(self.events) + list(events), key=lambda ev: ev[0]))
+
+    def clear(self):
+        with self.lock:
+            self.events.clear()
+            self.late = 0
+
+    def process(self, frame, nframes):
+        self.port.clear_buffer()
+        end = frame + nframes
+        with self.lock:
+            while self.events and self.events[0][0] < end:
+                f, data = self.events.popleft()
+                if f < frame:
+                    self.late += 1
+                    f = frame
+                self.port.write_midi_event(f - frame, data)
+
+
+class Recorder(TestClient):
+    """Record MIDI events and audio clicks, and call per-cycle hooks
+
+    midi[port] is a list of (frame, bytes) of received MIDI events.
+    clicks[port] is a list of (frame, length) of audio "clicks": non-silent sample
+    runs, e.g. metronome beats.
+    Hooks are called on each cycle as hook(frame, nframes), e.g. to sample the
+    state of the library under test, after it has processed the cycle (the hooks
+    run after the library if the recorder is connected to its outputs).
+    """
+
+    def __init__(self, server, name="zyntest_recorder", midi_ports=(), audio_ports=()):
+        super().__init__(server, name)
+        self.midi_ports = {name: self.client.midi_inports.register(name) for name in midi_ports}
+        self.audio_ports = {name: self.client.inports.register(name) for name in audio_ports}
+        self.hooks = []
+        self.lock = threading.Lock()
+        self.clear()
+
+    def clear(self):
+        with self.lock:
+            self.midi = {name: [] for name in self.midi_ports}
+            self.clicks = {name: [] for name in self.audio_ports}
+            self._click_start = {name: None for name in self.audio_ports}
+            self._sound_prev = {name: False for name in self.audio_ports}
+
+    def process(self, frame, nframes):
+        with self.lock:
+            for name, port in self.midi_ports.items():
+                for offset, data in port.incoming_midi_events():
+                    self.midi[name].append((frame + offset, bytes(data)))
+            for name, port in self.audio_ports.items():
+                sound = np.frombuffer(port.get_buffer(), dtype=np.float32) != 0
+                prev = np.concatenate(([self._sound_prev[name]], sound[:-1]))
+                for i in np.flatnonzero(sound != prev):
+                    if sound[i]:
+                        self._click_start[name] = frame + i
+                    elif self._click_start[name] is not None:
+                        start = self._click_start[name]
+                        self.clicks[name].append((start, frame + i - start))
+                        self._click_start[name] = None
+                self._sound_prev[name] = bool(sound[-1])
+            for hook in self.hooks:
+                hook(frame, nframes)

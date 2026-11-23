@@ -1,0 +1,227 @@
+{
+  "description": {
+    "family": "none",
+    "fingerprint": "37a2796db80bf363c213ce65ab60cc7c126645ae455faf157169f07cb3602c38",
+    "easy": [
+      "thresh",
+      "ratio",
+      "attack",
+      "release"
+    ],
+    "params": [
+      {
+        "kind": "number",
+        "symbol": "thresh",
+        "name": "Thr",
+        "unit": "db",
+        "scale": "linear",
+        "step": 0,
+        "min": -60,
+        "max": 0,
+        "default": -20
+      },
+      {
+        "kind": "number",
+        "symbol": "ratio",
+        "name": "Rat",
+        "unit": "none",
+        "scale": "log",
+        "step": 0,
+        "min": 1,
+        "max": 20,
+        "default": 4
+      },
+      {
+        "kind": "number",
+        "symbol": "attack",
+        "name": "Att",
+        "unit": "ms",
+        "scale": "log",
+        "step": 0,
+        "min": 0.1,
+        "max": 100,
+        "default": 10
+      },
+      {
+        "kind": "number",
+        "symbol": "release",
+        "name": "Rel",
+        "unit": "ms",
+        "scale": "log",
+        "step": 0,
+        "min": 1,
+        "max": 1000,
+        "default": 100
+      },
+      {
+        "kind": "number",
+        "symbol": "gr",
+        "name": "Gain Reduction",
+        "unit": "db",
+        "scale": "linear",
+        "step": 0,
+        "min": -40,
+        "max": 0,
+        "default": 0
+      },
+      {
+        "kind": "number",
+        "symbol": "makeup",
+        "name": "Mk",
+        "unit": "db",
+        "scale": "linear",
+        "step": 0,
+        "min": 0,
+        "max": 24,
+        "default": 0
+      },
+      {
+        "kind": "number",
+        "symbol": "on",
+        "name": "On",
+        "unit": "none",
+        "scale": "stepped",
+        "step": 1,
+        "min": 0,
+        "max": 1,
+        "default": 1
+      }
+    ],
+    "sections": [
+      {
+        "key": "dynamics",
+        "labelKey": "",
+        "label": "Dynamics"
+      },
+      {
+        "key": "output",
+        "labelKey": "",
+        "label": "Output"
+      }
+    ],
+    "controls": [
+      {
+        "symbol": "thresh",
+        "section": "dynamics",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Thr",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "ratio",
+        "section": "dynamics",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Rat",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "attack",
+        "section": "dynamics",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Att",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "release",
+        "section": "dynamics",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Rel",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "gr",
+        "section": "dynamics",
+        "widget": "auto",
+        "labelKey": "",
+        "label": "Gain Reduction",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "makeup",
+        "section": "output",
+        "widget": "knob",
+        "labelKey": "",
+        "label": "Mk",
+        "visibleWhen": null
+      },
+      {
+        "symbol": "on",
+        "section": "output",
+        "widget": "switch",
+        "labelKey": "",
+        "label": "On",
+        "visibleWhen": null
+      }
+    ],
+    "meters": [
+      {
+        "symbol": "gr",
+        "section": "dynamics",
+        "kind": "level",
+        "measurement": null,
+        "unit": "dB",
+        "min": -40,
+        "max": 0,
+        "channels": 1,
+        "held": false,
+        "clip": false,
+        "labelKey": "",
+        "label": "Gain Reduction"
+      }
+    ],
+    "roles": [],
+    "displays": [],
+    "pages": [
+      {
+        "section": null,
+        "sectionName": "Easy",
+        "pageName": "Easy",
+        "ids": [
+          1,
+          2,
+          3,
+          4,
+          null,
+          null,
+          null,
+          null
+        ]
+      },
+      {
+        "section": 0,
+        "sectionName": "Dynamics",
+        "pageName": "Dynamics",
+        "ids": [
+          5,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      },
+      {
+        "section": 1,
+        "sectionName": "Output",
+        "pageName": "Output",
+        "ids": [
+          6,
+          7,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      }
+    ]
+  },
+  "refusals": []
+}
