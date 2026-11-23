@@ -1,0 +1,26 @@
+name: jackd-repro
+on:
+  push:
+    branches: [lane/jackd-start-cause-repro]
+jobs:
+  repro:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        vm: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - timeout-minutes: 8
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libjack-jackd2-0 jackd2
+          python -m pip install JACK-Client numpy
+      - name: 15 first starts, each on a fresh /dev/shm/jack_db
+        run: python tests/native/jackd_start_repro.py 15 --fresh-db
+      - if: always()
+        run: ls -la /dev/shm /dev/shm/jack_db || true
