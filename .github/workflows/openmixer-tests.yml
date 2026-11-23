@@ -38,7 +38,10 @@ jobs:
           # requirements-dev.txt, the pip ones built against the libraries they bind
           apt-get install -y -qq --no-install-recommends python3-pip python3-dev build-essential pkgconf cython3 \
             liblo-dev libasound2-dev libjack-jackd2-dev
-          pip install -q --break-system-packages -r requirements-dev.txt
+          # pyliblo3 is built from its sdist here (arm64 has no wheel), and the newest Cython refuses its `long`
+          # (pyliblo3/_liblo.pyx:974: undeclared name not builtin: long): the build's Cython is held below 3.1
+          echo 'cython<3.1' > /tmp/pip-constraints.txt
+          PIP_CONSTRAINT=/tmp/pip-constraints.txt pip install -q --break-system-packages -r requirements-dev.txt
 
       - name: Add the OpenMixer channel
         uses: Open-Mixer/.github/.github/actions/add-openmixer@openmixer-v1

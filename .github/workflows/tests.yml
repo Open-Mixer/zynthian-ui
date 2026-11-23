@@ -49,6 +49,20 @@ jobs:
           echo "PYTHONPATH=$RUNNER_TEMP/omx-py${PYTHONPATH:+:$PYTHONPATH}" >> "$GITHUB_ENV"
           PYTHONPATH="$RUNNER_TEMP/omx-py" python -c "import omx_contract.catalog, omx_contract.scale"
 
+      # plugin_hostd_protocol, the client conftest imports (python3-plugin-hostd-protocol on the channel): its
+      # clients/python directory at a release tag
+      - uses: actions/checkout@v5
+        with:
+          repository: Open-Mixer/plugin-hostd
+          ref: v0.20.8
+          path: plugin-hostd-src
+          sparse-checkout: clients/python
+
+      - name: Put plugin_hostd_protocol on the path
+        run: |
+          echo "PYTHONPATH=$GITHUB_WORKSPACE/plugin-hostd-src/clients/python:$PYTHONPATH" >> "$GITHUB_ENV"
+          PYTHONPATH="$GITHUB_WORKSPACE/plugin-hostd-src/clients/python" python -c "from plugin_hostd_protocol import Protocol, ProtocolError"
+
       - name: Python dependencies
         run: |
           python -m pip install -r requirements-dev.txt
