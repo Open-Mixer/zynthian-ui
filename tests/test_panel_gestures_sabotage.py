@@ -9,11 +9,12 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+
+from tests.tree_copy import copy_core
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -55,8 +56,7 @@ ARMS = {
 
 def run_copy(mutation=None):
     with tempfile.TemporaryDirectory() as tmp:
-        for d in ("zyngine", "tests"):
-            shutil.copytree(os.path.join(ROOT, d), os.path.join(tmp, d), ignore=shutil.ignore_patterns("__pycache__"))
+        copy_core(tmp)
         if mutation:
             old, new, *module = mutation
             path = os.path.join(tmp, module[0] if module else MODULE)
