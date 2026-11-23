@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian GUI
 #
@@ -162,7 +160,7 @@ class zynthian_gui_midi_recorder(zynthian_gui_selector_info):
                 self.listbox.insert(i, item_label)
 
         if state:
-            if zynthian_gui_config.transport_clock_source == 0:
+            if zynthian_gui_config.transport_clock_source == "Internal":
                 self.show_playing_bpm()
         else:
             self.hide_playing_bpm()
@@ -338,6 +336,6 @@ class zynthian_gui_midi_recorder(zynthian_gui_selector_info):
     # -------------------------------------------------------------------------
 
     def set_select_path(self):
-        self.select_path.set("MIDI Recorder")
+        self.select_path.set("MIDI Player")
 
 # ------------------------------------------------------------------------------

@@ -106,6 +106,34 @@ class drawn_view(plugin_hostd_case):
         self.assertEqual(self.gr_bar(proc.engine.drawn[0]), [None, None])
         self.assertTrue([m for m in logs.output if "meter 3" in m])
 
+    def refused_panel(self, how):
+        os.environ["OMX_PANEL_STUB_PANEL_REFUSED"] = how
+        self.addCleanup(os.environ.pop, "OMX_PANEL_STUB_PANEL_REFUSED", None)
+        declared = {"family": "dynamics", "sections": [{"key": "comp", "label": "Comp"}], "controls": [], "roles": [],
+                    "displays": [{"kind": "transfer_curve", "section": 0, "source": "family"}]}
+        with self.assertLogs(level="WARNING") as logs:
+            _, proc = self.drawn_plugin(panel={"plugin": {"format": "lv2", "id": "urn:test:big"}, "panel": declared})
+            self.pages = proc.engine.pages()
+        return proc, logs.output
+
+    def test_a_panel_whose_family_describe_does_not_keep_is_described_without_it(self):
+        # eq8's CLAP: describe alone infers family eq and its curve; given eq8's own panel over a scan whose meanings
+        # are unknown it keeps family none. The plugin keeps what it had: described again without its panel, said once
+        proc, logs = self.refused_panel("none")
+        layout = proc.engine.drawn[0]
+        self.assertEqual([d["kind"] for d in layout["displays"]], ["transfer_curve", "gain_reduction_bar"],
+                         "the layout of the descriptor alone")
+        self.assertEqual(os.path.basename(proc.engine.custom_gui_fpath), "zynthian_widget_omx_panel.py")
+        self.assertEqual(sum("own panel" in m for m in logs), 1, logs)
+        self.assertTrue(self.pages, "the controller pages of the descriptor alone")
+
+    def test_a_panel_describe_refuses_to_lay_out_is_described_without_it(self):
+        # omx-panel refusing the panel outright (exit 1, as with a widget the scan does not back)
+        proc, logs = self.refused_panel("exit")
+        self.assertEqual([d["kind"] for d in proc.engine.drawn[0]["displays"]], ["transfer_curve", "gain_reduction_bar"])
+        self.assertTrue(self.pages)
+        self.assertTrue([m for m in logs if "own panel" in m], logs)
+
     def test_a_plugin_with_no_panel_of_its_own_is_described_from_its_descriptor(self):
         self.drawn_plugin()
         self.assertTrue(self.describe_lines())

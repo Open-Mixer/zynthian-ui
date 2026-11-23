@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian GUI
 #
@@ -30,6 +28,7 @@ from PIL import Image, ImageTk
 
 from zyngui import zynthian_gui_config
 from zyngui.zynthian_gui_base import zynthian_gui_base
+from zyngine.zynthian_signal_manager import zynsigman
 
 
 class zynthian_gui_selector_grid(zynthian_gui_base):
@@ -60,7 +59,7 @@ class zynthian_gui_selector_grid(zynthian_gui_base):
         self.selected_node = 0  # Selected node id
 
         # Canvas for drawing the graph
-        self.canvas = tkinter.Canvas(self.main_frame, bg=zynthian_gui_config.color_panel_bg, highlightthickness=0)
+        self.canvas = tkinter.Canvas(self.main_frame, bg=zynthian_gui_config.color_grid_bg, highlightthickness=0)
         self.canvas.pack(fill=tkinter.BOTH, expand=True)
         # Bind Mouse Events
         self.canvas.bind("<Button-1>", self.on_press)
@@ -132,6 +131,7 @@ class zynthian_gui_selector_grid(zynthian_gui_base):
         try:
             self.config[idx] = node
             self._update_node(idx, node)
+            zynsigman.send(zynsigman.S_GUI, zynsigman.SS_GUI_VIEW_LIST, view=self)
         except:
             logging.error(f"Can't update node '{idx}'")
 
@@ -151,7 +151,8 @@ class zynthian_gui_selector_grid(zynthian_gui_base):
             return self.icons[icon_fname]
 
     def _draw_node(self, idx, node, x, y):
-        fill = "#666666" if node["action"] else "#444444"
+        # the look's grid tokens (zynthian_gui_config.color_grid_*)
+        fill = zynthian_gui_config.color_grid_tile if node["action"] else zynthian_gui_config.color_grid_tile_off
         self.canvas.create_rectangle(x, y, x + self.BLOCK_WIDTH, y + self.BLOCK_HEIGHT,
             fill=fill,
             outline=fill,
@@ -163,7 +164,7 @@ class zynthian_gui_selector_grid(zynthian_gui_base):
                     image=img,
                     anchor="w",
                     tags=("node", f"node_{idx}", "img"))
-        fill = "#ffffff" if node["action"] else "#aaaaaa"
+        fill = zynthian_gui_config.color_grid_tx if node["action"] else zynthian_gui_config.color_grid_tx_off
         self.canvas.create_text(
             x + 2 * self.BLOCK_WIDTH // 3, y + self.BLOCK_HEIGHT // 2,
             text=node["title"],
@@ -204,6 +205,7 @@ class zynthian_gui_selector_grid(zynthian_gui_base):
         else:
             self.canvas.configure(scrollregion=(0, 0, 100, 100))
         self._draw_selection()
+        zynsigman.send(zynsigman.S_GUI, zynsigman.SS_GUI_VIEW_LIST, view=self)
 
     def _draw_selection(self):
         """
@@ -211,7 +213,8 @@ class zynthian_gui_selector_grid(zynthian_gui_base):
         """
         self.canvas.itemconfig("node && rect", outline="")
         node_tags = f"node_{self.selected_node} && rect"
-        self.canvas.itemconfig(node_tags, outline="yellow", width=2)
+        self.canvas.itemconfig(node_tags, outline=zynthian_gui_config.color_grid_sel, width=2)
+        zynsigman.send(zynsigman.S_GUI, zynsigman.SS_GUI_VIEW_SELECT, view=self)
         if self.shown and self.zyngui.tts:
             self.zyngui.tts.announce(self.config[self.selected_node]["title"])
 
@@ -409,6 +412,19 @@ class zynthian_gui_selector_grid(zynthian_gui_base):
 
     def set_select_path(self):
         self.select_path.set(self.title)
+
+    # --------------------------------------------------------------------------
+    # State, reported by the "screen_state" websocket feedback
+    # --------------------------------------------------------------------------
+
+    state_key = "zyngui_selector_grid"
+
+    def get_state(self, what="all"):
+        if what == "select":
+            return {"selected": self.selected_node}
+        # Empty grid cells are reported as "", so item indexes match the button indexes
+        items = [node["title"].replace("\n", " ") if node else "" for node in self.config or []]
+        return {"items": items, "selected": self.selected_node, "columns": self.columns}
 
     def get_help_fpath(self):
         return "selector_grid.html"

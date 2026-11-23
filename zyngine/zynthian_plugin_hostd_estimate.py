@@ -4,6 +4,7 @@
 #
 # What a chain will cost, as plugin-hostd's estimate verb answers it from the qualification records:
 #   estimate <rate> <quantum> <plugin-ref>...  =>  resp 0 <latency_frames> <cpu_percent> <ram_bytes> <workers> <unknown_count>
+#     <member>:<code>,... <ram_used_bytes> <ram_added_bytes> <ram_budget_bytes> <ram_unknown_count>  (plugin-hostd-protocol 0.7)
 # The figures are the daemon's, read by plugin-hostd's client (read_estimate); this file words them for a one-line
 # footer, and asks for them off the UI thread: debounced, one request in flight, the newest question the only one answered.
 #
@@ -16,12 +17,7 @@
 
 import threading
 
-UNAVAILABLE = "estimate unavailable"
 DEBOUNCE = 0.25
-
-
-class estimate_unavailable(Exception):
-    """The daemon has no estimate verb (a plugin-hostd older than the one that brought it)."""
 
 
 def reason(code):
@@ -48,10 +44,9 @@ def footer(est):
 
 class estimator:
     """Asks for the estimate of a list of plugin refs without blocking its caller.
-    fetch(rate, quantum, refs) returns the figures or raises estimate_unavailable; any other exception is
-    no figure for that question. request() waits delay seconds for the next one before asking; while a
+    fetch(rate, quantum, refs) returns the figures; an exception is no figure for that question. request() waits delay seconds for the next one before asking; while a
     question is out, only the newest later one is kept. result is (key, text) for the newest answered
-    question, text None for no figure; the unavailable text is given once, then None."""
+    question, text None for no figure."""
 
     def __init__(self, fetch, delay=DEBOUNCE):
         self.fetch = fetch
@@ -60,8 +55,6 @@ class estimator:
         self.timer = None
         self.busy = False
         self.pending = None
-        self.unavailable = False
-        self.said = False
         self.result = None
         self.asked = 0  # the questions that reached the daemon
 
@@ -95,22 +88,11 @@ class estimator:
                     self.result = (key, text)
 
     def answer(self, rate, quantum, refs):
-        if self.unavailable:
-            return self.unavailable_text()
         self.asked += 1
         try:
             return footer(self.fetch(rate, quantum, refs))
-        except estimate_unavailable:
-            self.unavailable = True
-            return self.unavailable_text()
         except Exception:
             return None
-
-    def unavailable_text(self):
-        if self.said:
-            return None
-        self.said = True
-        return UNAVAILABLE
 
     def idle(self):
         with self.lock:

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # ********************************************************************
 # ZYNTHIAN PROJECT: Zynthian Autoconnector
 #
@@ -75,6 +74,57 @@ class fake_port:
             self.aliases.remove(alias)
         except:
             pass
+
+# -------------------------------------------------------------------------------
+# Patch the jack library when running under pipewire
+# -------------------------------------------------------------------------------
+
+def patch_jack_library():
+    # 1. Capture the original, official read-only property logic
+    original_aliases_getter = jack.Port.aliases
+
+    # 2. Define a custom getter that checks for our injected fallback aliases
+    def patched_aliases_getter(self):
+        # Check if we manually force-injected aliases onto this specific port instance
+        if hasattr(self, '_forced_aliases'):
+            return self._forced_aliases
+
+        # Otherwise, fallback cleanly to standard library behavior
+        return original_aliases_getter.__get__(self, jack.Port)
+
+    # 3. Define a custom setter to gracefully consume `port.aliases = [...]` calls
+    def patched_aliases_setter(self, value):
+        if isinstance(value, list):
+            self._forced_aliases = value
+        else:
+            raise TypeError("Aliases must be provided as a list of strings.")
+
+    # 4. Inject the new writable property directly into the base library
+    jack.Port.aliases = property(patched_aliases_getter, patched_aliases_setter)
+
+    # 5. Patch the set_alias/unset_alias methods to avoid pw-jack failure loops
+    def patched_set_alias(self, alias):
+        if not hasattr(self, '_forced_aliases'):
+            # Initialize with current system ones if empty
+            self._forced_aliases = original_aliases_getter.__get__(self, jack.Port)
+        if alias not in self._forced_aliases and len(self._forced_aliases) < 2:
+            self._forced_aliases.append(alias)
+        return 0  # Return success code
+
+    def patched_unset_alias(self, alias):
+        if hasattr(self, '_forced_aliases') and alias in self._forced_aliases:
+            self._forced_aliases.remove(alias)
+        return 0  # Return success code
+
+    jack.Port.set_alias = patched_set_alias
+    jack.Port.unset_alias = patched_unset_alias
+
+
+# Patch jack library when running under PipeWire
+if "pipewire" in jack.version_string().lower():
+    logging.info("[*] Detected PipeWire backend. Patching jack library ...")
+    patch_jack_library()
+
 
 # -------------------------------------------------------------------------------
 # Define some Constants and Global Variables
@@ -196,21 +246,16 @@ def get_ports(name, is_input=None):
 
 
 def hosted_key():
-    """plugin-hostd's instance key, from plugin-hostd-protocol's table (node_metadata); None from a protocol that
-    declares none."""
-    try:
-        from zyngine import zynthian_plugin_hostd_protocol
-        return zynthian_plugin_hostd_protocol.reply_codes().instance_key()
-    except Exception:
-        return None
+    """plugin-hostd's instance key, from plugin-hostd-protocol's table (node_metadata)."""
+    from zyngine import zynthian_plugin_hostd_protocol
+    return zynthian_plugin_hostd_protocol.reply_codes().instance_key()
 
 
 def hosted_client(instance):
     """The name of the JACK client that carries plugin-hostd's instance key for `instance`, or None."""
-    key = hosted_key()
-    if key is None or jclient is None:
+    if jclient is None:
         return None
-    return client_of_instance(jclient, instance, key)
+    return client_of_instance(jclient, instance, hosted_key())
 
 def get_a2m_ports():
     """ Returns list of audio to midi (port name, title)"""
@@ -741,7 +786,7 @@ def midi_autoconnect():
             busy_idevs.append(devnum)
 
             # Enable external MIDI-clock sync for the configured device
-            if devices_in[devnum].aliases[0] == ext_clock_device_name:
+            if ext_clock_device_name and devices_in[devnum].aliases[0] == ext_clock_device_name:
                 ext_clock_zmip = devnum
 
             # Try to connect ctrldev driver's RT MIDI processor between input device and zmip
@@ -771,6 +816,7 @@ def midi_autoconnect():
                 ext_clock_zmip = -1
             # Unload device drivers
             state_manager.ctrldev_manager.unload_driver(i)
+            state_manager.ctrldev_manager.forget_identity(i)
 
     # Connect MIDI Output Devices
     busy_odevs = []
@@ -985,7 +1031,7 @@ def midi_autoconnect():
     # Remove mod-ui routes; plugin-hostd's clients, told by their instance key, keep theirs
     key = hosted_key()
     drop_mod_ui_routes(required_routes, chain_manager.processors.values(),
-                       hosted=(lambda client: hosted_instance(jclient, client, key) is not None) if key else None)
+                       hosted=lambda client: hosted_instance(jclient, client, key) is not None)
     # Workaround for mod-host auto routing
     try:
         port = jclient.get_port_by_name("mod-host:midi_in")
@@ -1548,8 +1594,10 @@ def update_midi_port_aliases(port):
             else:
                 port.set_alias(alias1)
     except:
-        logger.warning(f"Unable to set alias for port {port.name}")
-        return False
+        #logger.warning(f"Unable to set alias for port {port.name}")
+        # Do the trick for pw-jack
+        port.aliases = [alias1, alias2]
+        return True
     return True
 
 

@@ -17,17 +17,18 @@ import json
 import os
 import re
 import shlex
-import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 
+from tests.tree_copy import copy_core
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 FIXTURES = os.path.join(HERE, "fixtures", "plugin_hostd")
 ENGINE = os.path.join("zyngine", "zynthian_engine_plugin_hostd.py")
-NAMES = ("big", "synth", "eq")
+NAMES = ("big", "synth", "eq", "authored")
 
 
 class RecordedCutIsTheRealCut(unittest.TestCase):
@@ -72,6 +73,7 @@ ARMS = {
         ('        result = []\n        for page in cut[0]:', '        result, seen = [], set()\n        for page in cut[0]:'),
         ('                    slots.append((key, lc.get("label") or dc.get("name"), None, dc))',
          '                    slots.append(None if key in seen else (key, lc.get("label") or dc.get("name"), None, dc))\n                    seen.add(key)')],
+    "a key of the engine's own for the served symbol": [('return control.get("symbol") or str(control["id"])', 'return f"p{control[\'id\']}"')],
     "a hidden slot compressed out of the screen": [('self._ctrl_screens.append([name, [slot[0] if slot and slot[0] in zctrl_dict else None for slot in rows]])',
                                                    'self._ctrl_screens.append([name, [slot[0] for slot in rows if slot and slot[0] in zctrl_dict]])')],
 }
@@ -79,8 +81,7 @@ ARMS = {
 
 def run_copy(mutations=()):
     with tempfile.TemporaryDirectory() as tmp:
-        for d in ("zyngine", "tests"):
-            shutil.copytree(os.path.join(ROOT, d), os.path.join(tmp, d), ignore=shutil.ignore_patterns("__pycache__"))
+        copy_core(tmp)
         path = os.path.join(tmp, ENGINE)
         with open(path) as f:
             code = f.read()

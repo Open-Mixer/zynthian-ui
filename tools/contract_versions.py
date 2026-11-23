@@ -4,11 +4,12 @@ installed.
 
   python3 tools/contract_versions.py [--file contract-versions]
 
-contract-versions declares, one line each, `<name> >= <floor> < <ceiling>`, optionally followed by `: <package>...`,
-the binary packages that carry it (default: the name itself). The check reads each package's installed version
-(dpkg-query) and names every one below its floor or at its ceiling, and every declared package not installed: exit 1
-with the lines, 0 when the installed set is inside the declaration. Outward requires the latest: when the channel
-serves a newer contract, the floor line moves.
+contract-versions declares, one line each, `<name> >= <floor>`, optionally followed by `: <package>...`, the binary
+packages that carry it (default: the name itself). Floors only: a ceiling on our own packages is refused (%7's
+ruling), so a newer release the channel serves is never a red. The check reads each package's installed version
+(dpkg-query) and names every one below its floor, and every declared package not installed: exit 1 with the lines, 0
+when the installed set reaches the declaration. Outward requires the latest: when the channel serves a newer contract,
+the floor line moves.
 """
 import argparse
 import re
@@ -17,40 +18,41 @@ import sys
 
 from tools.served_pair import vercmp
 
-LINE = re.compile(r"^(\S+)\s*>=\s*(\S+)\s*<\s*(\S+)(?:\s*:\s*(.+))?$")
+LINE = re.compile(r"^(\S+)\s*>=\s*([^\s<:]+)(?:\s*:\s*(.+))?$")
+CEILING = re.compile(r"^\S+\s*>=\s*\S+\s*<")
 
 
 def _lines(text):
     for n, line in enumerate(text.splitlines(), 1):
         line = line.strip()
         if line and not line.startswith("#"):
+            if CEILING.match(line):
+                raise ValueError(f"contract-versions line {n} carries a ceiling, and floors only are declared: {line}")
             m = LINE.match(line)
             if not m:
-                raise ValueError(f"contract-versions line {n} is not '<name> >= <floor> < <ceiling>': {line}")
+                raise ValueError(f"contract-versions line {n} is not '<name> >= <floor>': {line}")
             yield m
 
 
 def parse(text):
-    """{name: (floor, ceiling)}"""
-    return {m.group(1): (m.group(2), m.group(3)) for m in _lines(text)}
+    """{name: floor}"""
+    return {m.group(1): m.group(2) for m in _lines(text)}
 
 
 def packages(text):
     """{name: [binary package, ...]}"""
-    return {m.group(1): (m.group(4).split() if m.group(4) else [m.group(1)]) for m in _lines(text)}
+    return {m.group(1): (m.group(3).split() if m.group(3) else [m.group(1)]) for m in _lines(text)}
 
 
-def check(ranges, installed):
-    """the lines naming what is outside its range; installed is {name: version}"""
+def check(floors, installed):
+    """the lines naming what is below its floor or not installed; installed is {name: version}"""
     bad = []
-    for name, (floor, ceiling) in ranges.items():
+    for name, floor in floors.items():
         v = installed.get(name)
         if v is None:
             bad.append(f"{name} is not installed")
         elif vercmp(v, floor) < 0:
             bad.append(f"{name} {v} is below the declared floor {floor}")
-        elif vercmp(v, ceiling) >= 0:
-            bad.append(f"{name} {v} is at or above the declared ceiling {ceiling}")
     return bad
 
 
@@ -59,14 +61,14 @@ def main():
     ap.add_argument("--file", default="contract-versions")
     a = ap.parse_args()
     text = open(a.file).read()
-    ranges, bad = parse(text), []
+    floors, bad = parse(text), []
     for name, pkgs in packages(text).items():
         for p in pkgs:
             r = subprocess.run(["dpkg-query", "-W", "-f", "${Version}", p], capture_output=True, text=True)
             got = {name: r.stdout.strip()} if r.returncode == 0 and r.stdout.strip() else {}
-            bad += [b.replace(name, p, 1) for b in check({name: ranges[name]}, got)]
+            bad += [b.replace(name, p, 1) for b in check({name: floors[name]}, got)]
             if got:
-                print(f"{p} {got[name]} (declared {name} >= {ranges[name][0]} < {ranges[name][1]})")
+                print(f"{p} {got[name]} (declared {name} >= {floors[name]})")
     for b in bad:
         print(f"contract-versions: {b}", file=sys.stderr)
     return 1 if bad else 0

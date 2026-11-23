@@ -1,12 +1,17 @@
 # The contract versions this series is built and tested against (tools/contract_versions.py checks the installed set
-# against them). Outward requires the latest: when the channel serves a newer contract, the floor line moves.
-# <name> >= <floor> < <ceiling> [: <binary packages that carry it>]
-plugin-hostd-protocol >= 0.5.8 < 0.6 : libplugin-hostd-protocol0 plugin-hostd-protocol-contract plugin-hostd-protocol-l10n-ca
-plugin-hostd-contract >= 0.20.4 < 0.21
-# plugin-hostd's Python client, imported at module load: every name zyngine imports from it is in it from 0.20.4 on
-python3-plugin-hostd-protocol >= 0.20.4 < 0.21
+# against them). Floors only (%7's ruling): no ceiling on our own packages. Outward requires the latest: when the
+# channel serves a newer contract the series needs, the floor line moves.
+# <name> >= <floor> [: <binary packages that carry it>]
+# estimate's reply in its one form of 0.7.0: ten words, the four RAM words after the members (ram_used_bytes,
+# ram_added_bytes, ram_budget_bytes, ram_unknown_count); 0.7.0 reads no shorter form
+plugin-hostd-protocol >= 0.7.0 : libplugin-hostd-protocol0 plugin-hostd-protocol-contract plugin-hostd-protocol-l10n-ca
+# the daemon answers estimate with the four RAM words from 0.20.0 on (docs/guide.md); 0.20.4 for the rest of the verbs
+plugin-hostd-contract >= 0.20.4
+# plugin-hostd's Python client, imported at module load: read_estimate gives the four RAM figures, and reads the
+# ten-word reply only, from 0.7.0 on
+python3-plugin-hostd-protocol >= 0.7.0
 # omx-contract's Python readers (omx_contract.scale, omx_contract.catalog): python3-omx-contract ships from 3.18.1 on
-omx-contract >= 3.18.1 < 4 : python3-omx-contract
+omx-contract >= 3.18.1 : python3-omx-contract
 # omx-dsp's declarations, read at run time: the RTA level window (RTA_LEVEL_DB_MIN, RTA_LEVEL_DB_MAX, RTA_LEVEL_GRID_DB of
 # kernels/rta.json) the spectrum under a curve is drawn on, declared from 0.32.2 on
-omx-dsp >= 0.32.2 < 0.33 : omx-dsp-contract
+omx-dsp >= 0.32.2 : omx-dsp-contract

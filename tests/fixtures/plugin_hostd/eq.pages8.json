@@ -16,13 +16,13 @@
   },
   {
     "section": 1,
-    "sectionName": "Band 1",
-    "pageName": "Band 1",
+    "sectionName": "Band",
+    "pageName": "Band: Band 1",
     "ids": [
+      null,
+      null,
       "q1",
       "width1",
-      null,
-      null,
       null,
       null,
       null,
@@ -30,9 +30,9 @@
     ]
   },
   {
-    "section": 2,
-    "sectionName": "Band 2",
-    "pageName": "Band 2",
+    "section": 1,
+    "sectionName": "Band",
+    "pageName": "Band: Band 2",
     "ids": [
       "freq2",
       "gain2",
@@ -45,9 +45,9 @@
     ]
   },
   {
-    "section": 3,
-    "sectionName": "Band 3",
-    "pageName": "Band 3",
+    "section": 1,
+    "sectionName": "Band",
+    "pageName": "Band: Band 3",
     "ids": [
       "freq3",
       "gain3",
@@ -60,7 +60,7 @@
     ]
   },
   {
-    "section": 4,
+    "section": 2,
     "sectionName": "Tone",
     "pageName": "Tone",
     "ids": [

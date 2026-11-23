@@ -1,12 +1,10 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian GUI
 #
 # Zynthian GUI Audio Mixer
 #
 # Copyright (C) 2015-2026 Fernando Moyano <jofemodo@zynthian.org>
-#                         Brian Walton <brian@riban.co.uk>
+#                         Brian Walton <riban@zynthian.org>
 #
 # ******************************************************************************
 #
@@ -29,8 +27,8 @@ import copy
 import tkinter
 import logging
 #import traceback
-from time import sleep
-from math import log10
+from time import sleep, monotonic
+from math import log10, sqrt
 from threading import Timer
 from os.path import basename, splitext
 from PIL import Image, ImageTk, ImageDraw, ImageFont
@@ -41,7 +39,7 @@ from zynlibs.zynseq import zynseq
 from zynlibs.zynaudioplayer import *
 from zyngui import zynthian_gui_config
 from zyngui.zynthian_gui_base import zynthian_gui_base
-from zyngui.zynthian_gui_dpm import zynthian_gui_dpm
+from zyngui.zynthian_gui_dpm import zynthian_gui_dpm, db_to_norm, run_script, DPM_RANGE_DB, dpm_small_range_db, DPM_ZERO_DB, DPM_HIGH_DB, DPM_OVER_DB, DPM_OVER_HOLD_S
 from zyngine.zynthian_signal_manager import zynsigman
 
 logging.getLogger('PIL').setLevel(logging.WARNING)
@@ -556,7 +554,8 @@ class zynthian_gui_mixer_strip():
         self.x = x
         self.width = width
         self.height = height
-        self.over_id = None
+        self.over_ts = 0.0
+        self.over_active = False
         self.pending_draw_fader_text = False
 
         self.chain = chain
@@ -613,6 +612,7 @@ class zynthian_gui_mixer_strip():
 
         # Audio mixer elements. They are not created if the chain has no mixer processor when the strip is created.
         self.fader_overlay = None
+        self.fader_horizontal = None
         if self.chain.zynmixer_proc:
             # Separator
             if self.launcher_mode:
@@ -643,8 +643,8 @@ class zynthian_gui_mixer_strip():
 
             if self.launcher_mode:
                 self.dpm_bg = self.canvas.create_rectangle(self.dpm_a_x0, 0, self.x + self.width, self.balance_y, width=0, fill=self.gui_mixer.fader_bg_color)
-                self.dpm_a = zynthian_gui_dpm(self.canvas, self.dpm_a_x0, 0, self.dpm_width, self.balance_y, tags=dpm_tags, main=chain.chain_id==0)
-                self.dpm_b = zynthian_gui_dpm(self.canvas, self.dpm_b_x0, 0, self.dpm_width, self.balance_y, tags=dpm_tags, main=chain.chain_id==0)
+                self.dpm_a = zynthian_gui_dpm(self.canvas, self.dpm_a_x0, 0, self.dpm_width, self.balance_y, tags=dpm_tags, main=chain.chain_id==0, range_db=dpm_small_range_db)
+                self.dpm_b = zynthian_gui_dpm(self.canvas, self.dpm_b_x0, 0, self.dpm_width, self.balance_y, tags=dpm_tags, main=chain.chain_id==0, range_db=dpm_small_range_db)
                 dpm_xstate = tkinter.HIDDEN
             else:
                 self.dpm_bg = self.canvas.create_rectangle(self.dpm_a_x0, self.dpm_y0, x + self.width , self.dpm_y0 + self.dpm_length, width=0, fill=self.gui_mixer.fader_bg_color)
@@ -718,7 +718,7 @@ class zynthian_gui_mixer_strip():
         self.canvas.tag_bind(f"fader_{id}", "<B1-Motion>", self.on_fader_motion)
         self.canvas.tag_bind(f"fader_{id}", "<Button-4>", self.on_fader_wheel_up)
         self.canvas.tag_bind(f"fader_{id}", "<Button-5>", self.on_fader_wheel_down)
-        if self.chain.zynmixer_proc:
+        if self.fader_horizontal:
             self.canvas.tag_bind(self.fader_horizontal, "<Button-4>", self.on_fader_wheel_up)
             self.canvas.tag_bind(self.fader_horizontal, "<Button-5>", self.on_fader_wheel_down)
         self.canvas.tag_bind(f"balance_{id}", "<Button-4>", self.on_balance_wheel_up)
@@ -736,8 +736,8 @@ class zynthian_gui_mixer_strip():
                 self.canvas.coords(self.sep, self.x + self.wwidth, 0, self.x + self.width, self.fader_y + self.balance_height)
                 if self.chain.zynmixer_proc:
                     self.canvas.coords(self.dpm_bg, self.dpm_a_x0, 0, self.x + self.width, self.balance_y)
-                    self.dpm_a.move(self.dpm_a_x0, 0, self.dpm_width, self.balance_y)
-                    self.dpm_b.move(self.dpm_b_x0, 0, self.dpm_width, self.balance_y)
+                    self.dpm_a.move(self.dpm_a_x0, 0, self.dpm_width, self.balance_y, dpm_small_range_db)
+                    self.dpm_b.move(self.dpm_b_x0, 0, self.dpm_width, self.balance_y, dpm_small_range_db)
                     self.canvas.itemconfig(self.dpm_scale, state=tkinter.HIDDEN)
                     if self.chain.chain_id == 0:
                         self.canvas.itemconfig(self.dpm_labels, state=tkinter.HIDDEN)
@@ -745,8 +745,8 @@ class zynthian_gui_mixer_strip():
                 if self.chain.zynmixer_proc:
                     self.canvas.coords(self.sep, self.x + self.wwidth, 0, self.x + self.width, self.fader_y)
                     self.canvas.coords(self.dpm_bg, self.dpm_a_x0, self.dpm_y0, self.x + self.width, self.dpm_y0 + self.dpm_length)
-                    self.dpm_a.move(self.dpm_a_x0, self.dpm_y0, self.dpm_width, self.dpm_length)
-                    self.dpm_b.move(self.dpm_b_x0, self.dpm_y0, self.dpm_width, self.dpm_length)
+                    self.dpm_a.move(self.dpm_a_x0, self.dpm_y0, self.dpm_width, self.dpm_length, DPM_RANGE_DB)
+                    self.dpm_b.move(self.dpm_b_x0, self.dpm_y0, self.dpm_width, self.dpm_length, DPM_RANGE_DB)
                     self.canvas.itemconfig(self.dpm_scale, state=tkinter.NORMAL)
                     if self.chain.chain_id == 0:
                         self.canvas.itemconfig(self.dpm_labels, state=tkinter.NORMAL)
@@ -793,7 +793,7 @@ class zynthian_gui_mixer_strip():
         for pad in self.launchers:
             pad.move(dx, 0)
 
-    def get_bg_img(self, id, width, height):
+    def get_bg_img(self, img_id, width, height):
         """ Get the tri-colour background image
         Args:
             id: An id for the type of image, e.g. fader
@@ -802,7 +802,7 @@ class zynthian_gui_mixer_strip():
         Returns: Background image
         """
 
-        key = (id, width, height)
+        key = (img_id, width, height)
         if key in self.bg_images:
             return self.bg_images[key]
 
@@ -812,47 +812,52 @@ class zynthian_gui_mixer_strip():
         img = Image.new("RGB", (width, height), (r, g, b))
         pixels = img.load()
 
-        def db_to_norm(db):
-            db = max(-50, min(0, db))
-            return (db + 50) / 50
-
         c_low = (0, 200, 0)
         c_zero = (200, 200, 200)
         c_mid = (200, 200, 0)
         c_high = (240, 0, 0)
         if width > 7:
             font = ImageFont.truetype("DejaVuSans.ttf", int(width * 0.6))
-            for db in (-40, -30, -20, -16, -13, -10, -7, -4, -1):
+            # Ticks are dBFS. Labels are relative to the "0dB" reference (default -18dBFS)
+            for db in [t for t in (-60, -48, -36, -30, -24, -12, -6) if db_to_norm(t) > 0 and abs(t - DPM_ZERO_DB) >= 3] + [DPM_ZERO_DB]:
                 y = min(height - 1, height - int(db_to_norm(db) * height))
-                c = c_zero if db == -10 else c_high if db >=-3 else c_mid if db >= -10 else c_low
-                if id == "dpm":
-                    if db != -10:
+                c = c_zero if db == DPM_ZERO_DB else c_high if db >= DPM_OVER_DB else c_mid if db >= DPM_HIGH_DB else c_low
+                if img_id == "dpm":
+                    if db != DPM_ZERO_DB:
                         for x in range(width):
                             pixels[x, y] = c
-                elif id == "dpm_lbl":
+                elif img_id == "dpm_lbl":
                     fill = f"#{c[0]:02x}{c[1]:02x}{c[2]:02x}"
                     draw = ImageDraw.Draw(img)
-                    if db == -10:
+                    if db == DPM_ZERO_DB:
                         draw.text((width, y), "0", fill=fill, font=font, anchor="rm")
                     else:
-                        draw.text((width - 1, y), f"{db+10:+}", fill=fill, font=font, anchor="rm")
+                        draw.text((width - 1, y), f"{int(db - DPM_ZERO_DB):+}", fill=fill, font=font, anchor="rm")
 
         self.bg_images[key] = ImageTk.PhotoImage(img)
         return self.bg_images[key]
 
-    def draw_dpm(self):
-        """ Function to draw the DPM level meter for a mixer strip
+    def get_dpm_script(self):
+        """ Build a Tcl script to draw the DPM level meter for this mixer strip.
+        Optimisation abstraction reduces the quantity of tk.eval() methods.
+
+        Returns: Tcl script, or empty string if nothing needs drawing
+        Note: The strip's zynmixer dpm states must have been updated first (update_dpm_states)
         """
 
         dpm = self.chain.zynmixer_proc.zynmixer.dpm[self.chain.zynmixer_proc.mixer_chan]
-        self.dpm_a.refresh(dpm.a, dpm.a_hold, dpm.mono)
-        self.dpm_b.refresh(dpm.b, dpm.b_hold, dpm.mono)
-        if self.chain.chain_id == 0 and (dpm.a_hold >= 0 or dpm.b_hold >= 0):
-            self.canvas.itemconfig(self.mute_text, fill="#FF0000")
-            if self.over_id is not None:
-                self.canvas.after_cancel(self.over_id)
-            self.over_id = self.canvas.after(4000, lambda: self.canvas.itemconfig(self.mute_text, fill=self.gui_mixer.button_txcol))
-
+        cmds = [self.dpm_a.get_script(dpm.a, dpm.a_hold, dpm.mono),
+                self.dpm_b.get_script(dpm.b, dpm.b_hold, dpm.mono)]
+        if self.chain.chain_id == 0:
+            path = str(self.canvas)
+            if dpm.a_hold <= 0.0 or dpm.b_hold <= 0.0:
+                self.over_ts = monotonic()
+                self.over_active = True
+                cmds.append(f"{path} itemconfigure {self.mute_text} -fill #FF0000")
+            elif self.over_active and monotonic() - self.over_ts >= DPM_OVER_HOLD_S:
+                self.over_active = False
+                cmds.append(f"{path} itemconfigure {self.mute_text} -fill {self.gui_mixer.button_txcol}")
+        return "\n".join(c for c in cmds if c)
 
     def draw_balance(self):
         """
@@ -866,20 +871,15 @@ class zynthian_gui_mixer_strip():
             x = self.centre_x + balance * self.balance_width + 1
         else:
             x = self.centre_x + balance * self.balance_width - 1
-        self.canvas.coords(self.balance_fg,
-            self.centre_x, self.balance_y,
-            x, self.balance_y + self.balance_height)
+        self.canvas.coords(self.balance_fg, self.centre_x, self.balance_y, x, self.balance_y + self.balance_height)
 
     """Draws the mixer strip level"""
     def draw_level(self):
         level = self.chain.zynmixer_proc.controllers_dict["level"].value
         if level is not None:
-            self.canvas.coords(self.fader_overlay,
-                self.x, self.fader_y + self.gui_mixer.fader_height * (1 - level),
-                self.x + self.fader_width, self.legend_y)
-            self.canvas.coords(self.fader_horizontal,
-                self.x, self.fader_y,
-                self.x + self.wwidth * level, self.fader_y + self.balance_height)
+            self.canvas.coords(self.fader_overlay, self.x, self.fader_y + self.gui_mixer.fader_height * (1 - level), self.x + self.fader_width, self.legend_y)
+            if self.fader_horizontal:
+                self.canvas.coords(self.fader_horizontal, self.x, self.fader_y, self.x + self.wwidth * level, self.fader_y + self.balance_height)
 
     def draw_fader_text(self):
         label_parts = self.chain.get_description(2).split("\n") + [""]
@@ -1245,6 +1245,7 @@ class zynthian_gui_mixer(zynthian_gui_base):
         self.alt_mode = False
         self.launcher_mode = False
         self._touching_launchers = False
+        self._dpm_update_count = 2 # Used to reduce DPM update rate when small meters shown
 
         self.chan2strip = {} # Map of audio strips, indexed by [is_mixbus, mixer_channel]
         self.highlighted_strip = None  # Highligted mixer strip object
@@ -1562,7 +1563,8 @@ class zynthian_gui_mixer(zynthian_gui_base):
         """ Function to handle hiding display
         """
         if self.shown:
-            if not self.zyngui.osc_clients:
+            # Keep DPM enabled while OSC clients or websocket "dpm_state" subscribers need it
+            if not self.zyngui.osc_clients and not self.zyngui.websocket_has_subscribers("dpm_state"):
                 self.zyngui.state_manager.zynmixer_chan.enable_dpm(False)
                 self.zyngui.state_manager.zynmixer_bus.enable_dpm(False)
             zynsigman.unregister(zynsigman.S_MIXER, zynsigman.SS_ZYNMIXER_SET_VALUE, self.update_control)
@@ -1606,18 +1608,6 @@ class zynthian_gui_mixer(zynthian_gui_base):
 
         if self.shown:
             super().refresh_status()
-            if zynthian_gui_config.enable_dpm:
-                # Update all chains DPM
-                self.zyngui.state_manager.zynmixer_chan.update_dpm_states()
-                self.zyngui.state_manager.zynmixer_bus.update_dpm_states()
-                if zynthian_gui_config.enable_dpm:
-                    for strip in self.chain_strips:
-                        if strip.chain.is_audio():
-                            strip.draw_dpm()
-            else:
-                # Update main chain DPM
-                self.state_manager.zynmixer_bus.update_dpm_states(1)
-                self.chain_strips[-1].draw_dpm()
             if self.beat != self.zynseq.beat:
                 self.beat = self.zynseq.beat
                 self.status_canvas.itemconfig(self.status_timesig, text=f"{self.beat} | {self.bpb}/4")
@@ -1634,6 +1624,62 @@ class zynthian_gui_mixer(zynthian_gui_base):
                     strip.update_clip_progress(self.zynseq.progress[strip.chain.midi_chan])
                 elif strip.chain.chain_id == 0:
                     strip.update_clip_progress(self.zynseq.progress[32])
+
+    def _get_visible_x_range(self):
+        """ Get the range of x coordinates of the scrollable (left) canvas that is currently in view
+
+        Returns: (left, right) in canvas coordinates, extended by one strip each side so strips about to scroll into view are kept current.
+                 None if the range could not be determined
+        """
+
+        try:
+            path = str(self.left_canvas)
+            left, width = self.left_canvas.tk.eval(f"list [{path} canvasx 0] [winfo width {path}]").split()
+            width = float(width)
+            if width <= 1:
+                return None # Not yet mapped
+            left = float(left)
+            return left - self.strip_width, left + width + self.strip_width
+        except Exception:
+            return None
+
+    def get_dpm_script(self):
+        """ Build one Tcl script to draw all DPM meters that need drawing.
+        Optimisation abstraction reduces the quantity of tk.eval() methods.
+
+        Returns: Tcl script, or empty string if nothing needs drawing
+        """
+
+        if not self.shown:
+            return ""
+        cmds = [super().get_dpm_script()]
+        if zynthian_gui_config.enable_dpm:
+            # Update all chains DPM
+            self.zyngui.state_manager.zynmixer_chan.update_dpm_states()
+            self.zyngui.state_manager.zynmixer_bus.update_dpm_states()
+            view = self._get_visible_x_range()
+            for strip in self.chain_strips:
+                if not strip.chain.is_audio():
+                    continue
+                if view and strip.canvas is self.left_canvas and (strip.x >= view[1] or strip.x + strip.width <= view[0]):
+                    continue
+                cmds.append(strip.get_dpm_script())
+        elif self.chain_strips:
+            # Update main chain DPM
+            self.state_manager.zynmixer_bus.update_dpm_states(1)
+            cmds.append(self.chain_strips[-1].get_dpm_script())
+        return "\n".join(c for c in cmds if c)
+
+    def refresh_dpm(self):
+        """ Draw all DPM meters """
+
+        if self.launcher_mode:
+            # Reduce refresh rate when showing smaller DPM
+            self._dpm_update_count += 1
+            if self._dpm_update_count < 2:
+                return
+            self._dpm_update_count = 0
+        super().refresh_dpm()
 
     def plot_zctrls(self):
         """Function to refresh display (fast)
@@ -1662,9 +1708,9 @@ class zynthian_gui_mixer(zynthian_gui_base):
         else:
             self.pending_refresh_queue.add((strip, symbol))
         if symbol == "level":
-            #value = strip.zctrls["level"].value
-            if value > 0:
-                level_db = f"{20 * log10(value):.2f}dB"
+            if value > 0.0:
+                # Use library fader law so the readout always matches the gain applied
+                level_db = f"{strip.chain.zynmixer_proc.zynmixer.level_to_db(value):.2f}dB"
             else:
                 level_db = "-∞"
             self.set_title(f"Volume: {level_db} ({strip.chain.get_description(1)})", None, None, 1)
@@ -2300,7 +2346,7 @@ class zynthian_gui_mixer(zynthian_gui_base):
         self.pated.refresh_sequence_info()
         self.pated.load_pattern(self.zynseq.libseq.getPattern(self.zynseq.scene, self.zynseq.phrase, self.zynseq.chan, 0, 0))
         #pated.enable_sequence()
-        self.zyngui.show_screen("pattern_editor")
+        self.zyngui.show_screen("pated")
         return True
 
     def edit_audio_clip(self, chain, phrase):
@@ -2834,9 +2880,9 @@ class zynthian_gui_mixer(zynthian_gui_base):
                         cpfc = self.can_paste_from_clipboard(i)
                         if cpfc is None:
                             wsl.blink(leds[wsli], wsl.wscolor_red)
-                        elif cpfc == False:
+                        elif cpfc is False:
                             wsl.blink(leds[wsli], wsl.wscolor_active2)
-                        elif cpfc == True:
+                        elif cpfc is True:
                             wsl.blink(leds[wsli], wsl.wscolor_active)
 
             # Add chain button (F3 in V5)
