@@ -30,6 +30,7 @@ import re
 import glob
 import time
 import struct
+import tempfile
 import threading
 import subprocess
 from collections import deque
@@ -115,31 +116,52 @@ class JackTestServer:
         self.rate = rate
         self.period = period
         self.proc = None
+        self.log = None
 
     def start(self, timeout=10):
         if self.proc:
             return
         reclaim_dead_test_servers()
+        # jackd's own output is kept, so a server that does not come up says why
+        self.log = tempfile.NamedTemporaryFile(prefix=f"{self.name}-", suffix=".log", delete=False)
         self.proc = subprocess.Popen(["jackd", "--no-realtime", "-n", self.name, "-d", "dummy",
                                       "-r", str(self.rate), "-p", str(self.period)],
-                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     stdout=self.log, stderr=subprocess.STDOUT,
                                      preexec_fn=_terminate_with_parent if self.die_with_parent else None)
         os.environ["JACK_DEFAULT_SERVER"] = self.name
         # Wait for server, silencing libjack errors while it is starting
         jack.set_error_function(lambda msg: None)
+        t0 = time.monotonic()
+        probes = []
         try:
-            tend = time.monotonic() + timeout
+            tend = t0 + timeout
             while True:
+                tp = time.monotonic()
                 try:
                     jack.Client("zyntest_probe", servername=self.name, no_start_server=True).close()
                     return
-                except jack.JackError:
+                except jack.JackError as e:
+                    probes.append((round(tp - t0, 2), round(time.monotonic() - tp, 2), str(e).split(": ", 1)[-1]))
                     if self.proc.poll() is not None or time.monotonic() > tend:
+                        exited = self.proc.poll()
                         self.stop()
-                        raise RuntimeError(f"Can't start jackd server '{self.name}'")
+                        raise RuntimeError(self._start_failure(t0, exited, probes))
                     time.sleep(0.05)
         finally:
             jack.set_error_function()
+
+    def _start_failure(self, t0, exited, probes):
+        """The reason a server did not start: what jackd said, how it ended and how the probes went"""
+        slow = [p for p in probes if p[1] >= 0.5]
+        try:
+            with open(self.log.name, errors="replace") as f:
+                out = f.read()[-4000:]
+        except OSError as e:
+            out = f"(log unreadable: {e})"
+        return (f"Can't start jackd server '{self.name}' after {time.monotonic() - t0:.1f}s: "
+                f"jackd {'exited ' + str(exited) if exited is not None else 'still running at the timeout'}; "
+                f"{len(probes)} probes, first {probes[:2]}, last {probes[-2:]}, slow (>=0.5s) {slow[:10]}\n"
+                f"jackd output:\n{out}")
 
     def stop(self):
         if self.proc:
