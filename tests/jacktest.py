@@ -30,6 +30,7 @@ import re
 import glob
 import time
 import struct
+import tempfile
 import threading
 import subprocess
 from collections import deque
@@ -94,6 +95,56 @@ def reclaim_dead_test_servers(prefix="zyntest", registry=JACK_SHM_REGISTRY, shm_
     return reclaimed
 
 
+def _processes_holding(path, proc="/proc"):
+    """Pids of the processes that map or hold open a file under path (of those whose /proc entries can be read)"""
+    holders = []
+    for pid in (p for p in os.listdir(proc) if p.isdigit()):
+        try:
+            with open(f"{proc}/{pid}/maps") as f:
+                if any(path in line for line in f):
+                    holders.append(int(pid))
+                    continue
+            fd_dir = f"{proc}/{pid}/fd"
+            for fd in os.listdir(fd_dir):
+                try:
+                    if os.readlink(f"{fd_dir}/{fd}").startswith(path):
+                        holders.append(int(pid))
+                        break
+                except OSError:
+                    pass
+        except OSError:
+            continue  # Gone, or another user's process
+    return holders
+
+
+def reclaim_orphan_metadata_env(shm_dir=JACK_SHM_DIR, proc="/proc"):
+    """Remove libjack's JACK metadata environment if no process holds it.
+
+    libjack keeps the JACK metadata in a Berkeley DB environment, <shm_dir>/jack_db-<uid>, which jackd opens when it
+    starts and any process opens with its first JACK client (even one that fails for want of a server). The first
+    of them creates its region files. A process killed while it creates them leaves an environment nobody can join:
+    e.g. a controller driver's MIDI process that the driver terminates as it starts (the hermetic ctrldev tests do
+    this) leaves an empty __db.001, and then every later jackd and client fails with "BDB1546 unable to join the
+    environment" (each attempt blocks some 18 s). jackd removes the environment when it exits; one that no process
+    holds is garbage, and is removed the same way.
+
+    Returns True if it was removed.
+    """
+    path = f"{shm_dir}/jack_db-{os.getuid()}"
+    if not os.path.isdir(path) or _processes_holding(path, proc):
+        return False
+    for name in os.listdir(path):
+        try:
+            os.remove(f"{path}/{name}")
+        except OSError:
+            pass
+    try:
+        os.rmdir(path)
+    except OSError:
+        return False
+    return True
+
+
 def _terminate_with_parent():
     """In the jackd child (Linux): ask the kernel to send SIGTERM when the parent process dies."""
     import ctypes
@@ -115,31 +166,59 @@ class JackTestServer:
         self.rate = rate
         self.period = period
         self.proc = None
+        self.log = None
 
     def start(self, timeout=10):
         if self.proc:
             return
         reclaim_dead_test_servers()
-        self.proc = subprocess.Popen(["jackd", "--no-realtime", "-n", self.name, "-d", "dummy",
-                                      "-r", str(self.rate), "-p", str(self.period)],
-                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                     preexec_fn=_terminate_with_parent if self.die_with_parent else None)
-        os.environ["JACK_DEFAULT_SERVER"] = self.name
-        # Wait for server, silencing libjack errors while it is starting
+        reclaim_orphan_metadata_env()
+        # Silence libjack errors while the server is starting
         jack.set_error_function(lambda msg: None)
         try:
-            tend = time.monotonic() + timeout
+            # Where the JACK metadata environment does not exist yet (see reclaim_orphan_metadata_env), jackd and
+            # the first probe below would both create it at once, and one waits for the other (a 3 s stall on a
+            # fresh CI runner). A client opened before jackd is started (it fails: no server yet) creates it from
+            # this process alone; jackd and the probes then join it.
+            self._probe()
+            # jackd's own output, kept so that a server that does not start says why (an unnamed file: no leftovers)
+            self.log = tempfile.TemporaryFile()
+            self.proc = subprocess.Popen(["jackd", "--no-realtime", "-n", self.name, "-d", "dummy",
+                                          "-r", str(self.rate), "-p", str(self.period)],
+                                         stdout=self.log, stderr=subprocess.STDOUT,
+                                         preexec_fn=_terminate_with_parent if self.die_with_parent else None)
+            os.environ["JACK_DEFAULT_SERVER"] = self.name
+            t0 = time.monotonic()
+            probes = []
             while True:
-                try:
-                    jack.Client("zyntest_probe", servername=self.name, no_start_server=True).close()
+                tp = time.monotonic()
+                failure = self._probe()
+                if failure is None:
                     return
-                except jack.JackError:
-                    if self.proc.poll() is not None or time.monotonic() > tend:
-                        self.stop()
-                        raise RuntimeError(f"Can't start jackd server '{self.name}'")
-                    time.sleep(0.05)
+                probes.append((round(tp - t0, 2), round(time.monotonic() - tp, 2), failure))
+                if self.proc.poll() is not None or time.monotonic() > t0 + timeout:
+                    exited = self.proc.poll()
+                    self.stop()
+                    raise RuntimeError(self._start_failure(t0, exited, probes))
+                time.sleep(0.05)
         finally:
             jack.set_error_function()
+
+    def _probe(self):
+        """Open and close a client of this server: None if it answered, else libjack's failure status"""
+        try:
+            jack.Client("zyntest_probe", servername=self.name, no_start_server=True).close()
+            return None
+        except jack.JackError as e:
+            return str(e).split(": ", 1)[-1]
+
+    def _start_failure(self, t0, exited, probes):
+        """Why the server did not start: what jackd said, how it ended, and when each probe ran and how long it took"""
+        out = os.pread(self.log.fileno(), 4000, max(0, os.fstat(self.log.fileno()).st_size - 4000))
+        return (f"Can't start jackd server '{self.name}' after {time.monotonic() - t0:.1f}s: "
+                f"jackd {'exited with ' + str(exited) if exited is not None else 'still running at the timeout'}; "
+                f"{len(probes)} probes (start s, duration s, status), first {probes[:2]}, last {probes[-2:]}\n"
+                f"jackd output:\n{out.decode(errors='replace')}")
 
     def stop(self):
         if self.proc:
