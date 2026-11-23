@@ -58,11 +58,12 @@ def load_widget():
     modules = {
         "tkinter": mock.MagicMock(), "PIL": mock.MagicMock(), "zyngine": engine,
         "zyngine.zynthian_touch_layer": stand_in("t", EvdevSource=no_touch, NoTouchDevice=NoTouchDevice),
-        "zyngui": stand_in("zyngui", __path__=[], zynthian_gui_config=config),
+        "zyngui": stand_in("zyngui", __path__=[os.path.join(ROOT, "zyngui")], zynthian_gui_config=config),
         "zyngui.zynthian_gui_config": config,
         "zyngui.zynthian_widget_base": stand_in("b", zynthian_widget_base=base),
     }
-    for name in ("zyngine.zynthian_omx_panel_view", "zyngine.zynthian_panel_gestures", "zyngine.zynthian_position_law"):
+    for name in ("zyngine.zynthian_omx_panel_view", "zyngine.zynthian_panel_gestures", "zyngine.zynthian_position_law",
+                 "zyngui.zynthian_gui_omx_panel_image"):
         modules[name] = None  # this tree's own, imported afresh
     with mock.patch.dict(sys.modules, modules):
         for name in [n for n, m in modules.items() if m is None]:
@@ -189,9 +190,11 @@ class BlankSlotPage(unittest.TestCase):
     def test_the_renderers_part_of_a_page_with_a_blank_slot_and_then_another_page(self):
         self.proc.engine.drawn = ({"controls": []},)
         FakeView.opened = []
-        for name, value in (("View", FakeView), ("screen_part", lambda layout, keys: ({"keys": sorted(keys)}, {})),
-                            ("PanelImage", mock.MagicMock())):
-            patch = mock.patch.object(self.module.panel_view, name, value)
+        for module, name, value in ((self.module.panel_view, "View", FakeView),
+                                    (self.module.panel_view, "screen_part",
+                                     lambda layout, keys: ({"keys": sorted(keys)}, {})),
+                                    (self.module.panel_image, "PanelImage", mock.MagicMock())):
+            patch = mock.patch.object(module, name, value)
             patch.start()
             self.addCleanup(patch.stop)
         widget = self.open("HPF 2")
