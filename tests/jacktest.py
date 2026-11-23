@@ -95,6 +95,56 @@ def reclaim_dead_test_servers(prefix="zyntest", registry=JACK_SHM_REGISTRY, shm_
     return reclaimed
 
 
+def _processes_holding(path, proc="/proc"):
+    """Pids of the processes that map or hold open a file under path (of those whose /proc entries can be read)"""
+    holders = []
+    for pid in (p for p in os.listdir(proc) if p.isdigit()):
+        try:
+            with open(f"{proc}/{pid}/maps") as f:
+                if any(path in line for line in f):
+                    holders.append(int(pid))
+                    continue
+            fd_dir = f"{proc}/{pid}/fd"
+            for fd in os.listdir(fd_dir):
+                try:
+                    if os.readlink(f"{fd_dir}/{fd}").startswith(path):
+                        holders.append(int(pid))
+                        break
+                except OSError:
+                    pass
+        except OSError:
+            continue  # Gone, or another user's process
+    return holders
+
+
+def reclaim_orphan_metadata_env(shm_dir=JACK_SHM_DIR, proc="/proc"):
+    """Remove libjack's JACK metadata environment if no process holds it.
+
+    libjack keeps the JACK metadata in a Berkeley DB environment, <shm_dir>/jack_db-<uid>, which jackd opens when it
+    starts and any process opens with its first JACK client (even one that fails for want of a server). The first
+    of them creates its region files. A process killed while it creates them leaves an environment nobody can join:
+    e.g. a controller driver's MIDI process that the driver terminates as it starts (the hermetic ctrldev tests do
+    this) leaves an empty __db.001, and then every later jackd and client fails with "BDB1546 unable to join the
+    environment" (each attempt blocks some 18 s). jackd removes the environment when it exits; one that no process
+    holds is garbage, and is removed the same way.
+
+    Returns True if it was removed.
+    """
+    path = f"{shm_dir}/jack_db-{os.getuid()}"
+    if not os.path.isdir(path) or _processes_holding(path, proc):
+        return False
+    for name in os.listdir(path):
+        try:
+            os.remove(f"{path}/{name}")
+        except OSError:
+            pass
+    try:
+        os.rmdir(path)
+    except OSError:
+        return False
+    return True
+
+
 def _terminate_with_parent():
     """In the jackd child (Linux): ask the kernel to send SIGTERM when the parent process dies."""
     import ctypes
@@ -122,16 +172,14 @@ class JackTestServer:
         if self.proc:
             return
         reclaim_dead_test_servers()
+        reclaim_orphan_metadata_env()
         # Silence libjack errors while the server is starting
         jack.set_error_function(lambda msg: None)
         try:
-            # libjack keeps the JACK metadata in a Berkeley DB environment shared by every JACK process,
-            # /dev/shm/jack_db-<uid>: jackd opens it when it starts, and a process when it opens its first client,
-            # creating it if it does not exist. Two processes must not create it at the same time: where it does
-            # not exist yet (a fresh CI runner), jackd and the first probe below race to create it and both may
-            # fail ("BDB1546 unable to join the environment"), and then the server never answers and the probe
-            # blocks for some 18 s. A client opened before jackd is started (it fails: no server yet) creates the
-            # environment from this process alone; jackd and the probes then join it.
+            # Where the JACK metadata environment does not exist yet (see reclaim_orphan_metadata_env), jackd and
+            # the first probe below would both create it at once, and one waits for the other (a 3 s stall on a
+            # fresh CI runner). A client opened before jackd is started (it fails: no server yet) creates it from
+            # this process alone; jackd and the probes then join it.
             self._probe()
             # jackd's own output, kept so that a server that does not start says why (an unnamed file: no leftovers)
             self.log = tempfile.TemporaryFile()
