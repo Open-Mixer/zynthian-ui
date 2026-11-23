@@ -1,31 +1,48 @@
-"""pytest plugin (repro only): name the test after which libjack's metadata environment first exists, and who holds it."""
+"""pytest plugin (repro only): report every change of libjack's metadata environment, test by test, and who holds it."""
 import os
 import subprocess
 import time
 
 DB = f"/dev/shm/jack_db-{os.getuid()}"
-_seen = {"done": False}
+_last = {"state": None}
 
 
-def _report(when, nodeid):
+def _state():
+    if not os.path.isdir(DB):
+        return None
     files = []
-    for f in sorted(os.listdir(DB)) if os.path.isdir(DB) else []:
-        st = os.stat(os.path.join(DB, f))
-        files.append(f"{f} {st.st_size}B mtime={time.strftime('%H:%M:%S', time.localtime(st.st_mtime))}")
-    maps = [line.split()[-1] for line in open("/proc/self/maps") if "jack_db" in line]
-    holders = subprocess.run(["sh", "-c", f"lsof +D {DB} 2>/dev/null; ps -eo pid,ppid,comm,args | grep -i jack | grep -v grep"],
-                             capture_output=True, text=True).stdout
-    print(f"\n[jackdb-watch] {DB} exists {when} {nodeid} at {time.strftime('%H:%M:%S')}; files {files}; "
-          f"mapped here {sorted(set(maps))}; threads here {len(os.listdir('/proc/self/task'))}\n{holders}", flush=True)
+    for f in sorted(os.listdir(DB)):
+        try:
+            st = os.stat(os.path.join(DB, f))
+            files.append(f"{f}:{st.st_size}B@{time.strftime('%H:%M:%S', time.localtime(st.st_mtime))}")
+        except OSError:
+            files.append(f"{f}:gone")
+    return tuple(files)
+
+
+def _report(when, nodeid, state):
+    me = os.getpid()
+    out = subprocess.run(["sh", "-c", f"grep -l jack_db /proc/[0-9]*/maps 2>/dev/null; "
+                                      f"ps -o pid,ppid,stat,etime,args --ppid {me} 2>/dev/null"],
+                         capture_output=True, text=True).stdout
+    print(f"\n[jackdb-watch] {when} {nodeid} at {time.strftime('%H:%M:%S')}: {DB} "
+          f"{'absent' if state is None else list(state)}; threads here {len(os.listdir('/proc/self/task'))}\n{out}",
+          flush=True)
 
 
 def pytest_runtest_logfinish(nodeid, location):
-    if not _seen["done"] and os.path.isdir(DB):
-        _seen["done"] = True
-        _report("after", nodeid)
+    state = _state()
+    if state != _last["state"]:
+        _last["state"] = state
+        _report("changed after", nodeid, state)
+
+
+def pytest_runtest_setup(item):
+    if "native" in str(item.fspath) and not _last.get("native"):
+        _last["native"] = True
+        _report("before the first native test", item.nodeid, _state())
 
 
 def pytest_sessionstart(session):
-    if os.path.isdir(DB):
-        _seen["done"] = True
-        _report("at session start", "")
+    _last["state"] = _state()
+    _report("at session start", "", _last["state"])
