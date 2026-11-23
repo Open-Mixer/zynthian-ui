@@ -25,10 +25,10 @@ import math
 import tkinter
 import logging
 from datetime import datetime
-from time import monotonic
 import tkinter.font as tkfont
 
 # Zynthian specific modules
+from zyngine import zynthian_panel_gestures as pg
 from zyngui import zynthian_gui_config
 from zyngui.zynthian_gui_fullscreen_modal import zynthian_gui_fullscreen_modal
 
@@ -37,6 +37,11 @@ from zyngui.zynthian_gui_fullscreen_modal import zynthian_gui_fullscreen_modal
 # ------------------------------------------------------------------------------
 
 # TODO: Derive control_xy from gui base class?
+
+
+# How the screen is left, shown at its foot: a long press (the vocabulary's `more`, see on_word). A double-tap resets the
+# point, the old job of a tap, so the hint names no tap.
+EXIT_HINT = "Long press to exit"
 
 
 class zynthian_gui_control_xy(zynthian_gui_fullscreen_modal):
@@ -75,10 +80,11 @@ class zynthian_gui_control_xy(zynthian_gui_fullscreen_modal):
         self.canvas.grid(sticky="news")
 
         # Setup Canvas Callbacks
-        self.canvas.bind("<B1-Motion>", self.cb_canvas)
-        self.last_tap = 0
-        self.tap_count = 0
+        # the touches go through omx-panel's one gesture vocabulary as an xy (zynthian_panel_gestures.XY)
+        self.gestures = None
         self.canvas.bind("<Button-1>", self.cb_press)
+        self.canvas.bind("<B1-Motion>", self.cb_canvas)
+        self.canvas.bind("<ButtonRelease-1>", self.cb_release)
 
         # Create text
         self.text = self.canvas.create_text(
@@ -88,7 +94,7 @@ class zynthian_gui_control_xy(zynthian_gui_fullscreen_modal):
             justify=tkinter.CENTER,
             font=zynthian_gui_config.font_topbar,
             fill=zynthian_gui_config.color_ctrl_bg_off,
-            text="Tap 3 times to exit"
+            text=EXIT_HINT
         )
 
         self.text_x = self.canvas.create_text(
@@ -202,23 +208,39 @@ class zynthian_gui_control_xy(zynthian_gui_fullscreen_modal):
             self.zyngui.state_manager.zctrl_y.set_value(self.yvalue, True)
             self.canvas.itemconfig(self.text_y, text=f"{self.zyngui.state_manager.zctrl_y.name}: {self.yvalue:.3f}")
 
-    def cb_canvas(self, event):
-        # logging.debug("XY controller => %s, %s" % (event.x, event.y))
-        self.x = min(self.x1, max(self.x0, event.x))
-        self.y = min(self.y1, max(self.y0, event.y))
-        self.refresh()
+    def gesture_xy(self):
+        """The two controllers as an xy of the vocabulary over the canvas's travel (y grows downward, as drawn)."""
+        zx, zy = self.zyngui.state_manager.zctrl_x, self.zyngui.state_manager.zctrl_y
+        if self.gestures is None or self.gestures.zctrls != (zx, zy):
+            self.gestures = pg.XY(pg.Travel.of(zx), pg.Travel.of(zy), lambda: (zx.value, zy.value), self.put_xy,
+                                  (self.x0, self.y0, self.width, self.height), on_word=self.on_word)
+            self.gestures.zctrls = (zx, zy)
+        return self.gestures
+
+    def put_xy(self, xv, yv):
+        zx, zy = self.zyngui.state_manager.zctrl_x, self.zyngui.state_manager.zctrl_y
+        zx.set_value(xv, True)
+        zy.set_value(yv, True)
+        self.get_controller_values()
+        self.canvas.itemconfig(self.text_x, text=f"{zx.name}: {zx.value:.3f}")
+        self.canvas.itemconfig(self.text_y, text=f"{zy.name}: {zy.value:.3f}")
         self.last_motion_ts = datetime.now()
 
+    def on_word(self, word):
+        # `more` of a full-screen xy: back where it was opened from (the double tap's old job, now the reset's)
+        if word == "more":
+            self.zyngui.cuia_back()
+
     def cb_press(self, event):
-        now = monotonic()
-        if now > self.last_tap + 0.05 and now < self.last_tap + 0.5:
-            self.tap_count += 1
-            if self.tap_count > 1:
-                self.tap_count = 0
-                self.zyngui.cuia_back()
-        else:
-            self.tap_count = 0
-        self.last_tap = now
+        pg.tk_press(self.gesture_xy(), event)
+
+    def cb_canvas(self, event):
+        if self.gestures is not None:
+            pg.tk_motion(self.gestures, event)
+
+    def cb_release(self, event):
+        if self.gestures is not None:
+            pg.tk_release(self.gestures, event)
 
     def zynpot_cb(self, i, dval):
         # Wait 0.1 seconds after last motion for start reading encoders again

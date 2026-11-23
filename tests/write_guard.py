@@ -70,19 +70,29 @@ _installed = False
 _busy = threading.local()
 
 
-def _norm(path):
-    return os.path.realpath(os.path.abspath(path))
+# Events that change the directory ENTRY a path names, never what a symlink there points to: removing or renaming a
+# symlink, or making a link, writes the directory holding it. Their paths resolve the parent only, so removing a
+# temporary symlink to sys.executable is judged by the temporary directory, not by the interpreter it names.
+_ENTRY_EVENTS = {"os.remove", "os.rename", "os.link", "os.symlink"}
+
+
+def _norm(path, entry=False):
+    path = os.path.abspath(path)
+    if entry:
+        head, tail = os.path.split(path)
+        return os.path.join(os.path.realpath(head), tail)
+    return os.path.realpath(path)
 
 
 def _under(path, root):
     return path == root or path.startswith(root.rstrip("/") + "/")
 
 
-def is_protected(path):
+def is_protected(path, entry=False):
     """True when writing ``path`` must be refused: the longest matching root decides, so an
     allowed directory inside a protected one (the repo inside /zynthian) stays writable. On a tie the
     allowed root wins: on a device the inherited ZYNTHIAN_UI_DIR is protected and IS the repo root."""
-    path = _norm(path)
+    path = _norm(path, entry)
     best_len, best_allowed = -1, True
     for roots, allowed in ((_protected, False), (_allowed, True)):
         for root in roots:
@@ -117,9 +127,10 @@ def _check(event, path):
         return
     if event == "os.mkdir" and os.path.isdir(path):  # makedirs(exist_ok=True) on an existing dir
         return
-    if is_protected(path):
-        VIOLATIONS.append((event, _norm(path)))
-        raise WriteGuardError(f"tests/write_guard: refused {event} on {_norm(path)!r} "
+    entry = event in _ENTRY_EVENTS
+    if is_protected(path, entry):
+        VIOLATIONS.append((event, _norm(path, entry)))
+        raise WriteGuardError(f"tests/write_guard: refused {event} on {_norm(path, entry)!r} "
                               "(outside the test sandbox; would modify a real Zynthian)")
 
 

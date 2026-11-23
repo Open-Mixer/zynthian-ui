@@ -22,6 +22,7 @@ __all__ = [
     "zynthian_engine_clippy",
     "zynthian_engine_sysex",
     "zynthian_engine_midi_control",
+    "zynthian_engine_plugin_hostd",
     "zynthian_midi_filter",
     "zynthian_zcmidi",
 ]
@@ -48,5 +49,6 @@ from zyngine.zynthian_engine_inet_radio import *
 from zyngine.zynthian_engine_clippy import *
 from zyngine.zynthian_engine_sysex import *
 from zyngine.zynthian_engine_midi_control import *
+from zyngine.zynthian_engine_plugin_hostd import *
 from zyngine.zynthian_midi_filter import *
 from zyngine.zynthian_zcmidi import *

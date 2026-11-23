@@ -46,8 +46,14 @@ def zyncoder_dir():
 # So every inherited ZYNTHIAN_* variable is dropped (only the suite's own ZYNTHIAN_TEST_* switches
 # are kept), the directories are pinned to a throw-away sandbox, and tests/write_guard.py refuses
 # any write to the real locations (the inherited directories included).
+# The fork's tests read four inputs that come from OUTSIDE the repository (plugin-db's golden answers, omx-panel's
+# gesture table, its renderer library and its tools directory), named by these variables; CI exports them. They name
+# read-only fixtures, never a Zynthian location, so they are kept.
+FORK_TEST_INPUTS = ("ZYNTHIAN_PLUGIN_DB_GOLDEN", "ZYNTHIAN_OMX_GESTURES", "ZYNTHIAN_OMX_PANEL_RENDER",
+                    "ZYNTHIAN_OMX_PANEL_TOOLS")
 INHERITED_ZYNTHIAN_ENV = {k: os.environ.pop(k) for k in list(os.environ)
-                          if k.startswith("ZYNTHIAN_") and not k.startswith("ZYNTHIAN_TEST_")}
+                          if k.startswith("ZYNTHIAN_") and not k.startswith("ZYNTHIAN_TEST_")
+                          and k not in FORK_TEST_INPUTS}
 SANDBOX = Path(tempfile.mkdtemp(prefix="zynthian-tests-"))
 atexit.register(shutil.rmtree, SANDBOX, ignore_errors=True)
 

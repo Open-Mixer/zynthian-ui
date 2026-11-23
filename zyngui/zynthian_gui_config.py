@@ -571,6 +571,23 @@ color_status_play_seq = color_alt2
 color_status_error = color_error
 color_status_warn = color_warn
 
+# The main menu's grid (zynthian_gui_selector_grid): a look token per part. Unset, each is what upstream Zynthian
+# draws (stock's own main menu); a look sets them (zynthian-sys config/ui-looks).
+color_grid_bg = os.environ.get('ZYNTHIAN_UI_COLOR_GRID_BG', color_panel_bg)
+color_grid_tile = os.environ.get('ZYNTHIAN_UI_COLOR_GRID_TILE', "#666666")
+color_grid_tile_off = os.environ.get('ZYNTHIAN_UI_COLOR_GRID_TILE_OFF', "#444444")
+color_grid_tx = os.environ.get('ZYNTHIAN_UI_COLOR_GRID_TX', "#ffffff")
+color_grid_tx_off = os.environ.get('ZYNTHIAN_UI_COLOR_GRID_TX_OFF', "#aaaaaa")
+color_grid_sel = os.environ.get('ZYNTHIAN_UI_COLOR_GRID_SEL', "yellow")
+
+# How the controller widgets are drawn (docs/ui-look-drawn-widgets.md): `stock` is upstream Zynthian's drawing;
+# `vintage` draws them through omx-panel's renderer, in the colours above. A word that names no look is said and
+# draws stock, so the UI starts whatever the config says.
+ui_look = os.environ.get('ZYNTHIAN_UI_LOOK', "stock")
+if ui_look not in ("stock", "vintage"):
+    logging.warning("ZYNTHIAN_UI_LOOK='%s' names no look (stock, vintage): the controllers are drawn stock", ui_look)
+    ui_look = "stock"
+
 # ------------------------------------------------------------------------------
 # Font Family
 # ------------------------------------------------------------------------------

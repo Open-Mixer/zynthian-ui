@@ -1,5 +1,27 @@
 # Zynthian User Interface
 
+> **This is the FreeMixer fork** of [zynthian/zynthian-ui](https://github.com/zynthian/zynthian-ui), branch `vangelis`.
+> It adds an engine, `PH`, that runs a chain's LV2 and CLAP plugins through
+> [plugin-hostd](https://github.com/FreeMixer/plugin-hostd): the plugins of a chain that run in series in one worker process, a plugin qualified as not
+> real-time safe in a worker of its own, and a lost worker restarted; what a crash does through this engine is still to be measured. JACK stays as it is, and jalv stays
+> for what plugin-hostd refuses. Plugin menus are ordered from the measurements of
+> [plugin-qualify](https://github.com/FreeMixer/plugin-qualify), every plugin has a Factory and a User preset bank, and
+> controller pages follow the plugin's own sections. Its tests run in CI on every change.
+>
+> On this fork the engine is the default; in the series offered upstream it stays off until a user sets it, and
+> setting `ZYNTHIAN_PLUGIN_ENGINE=jalv` goes back. Whether plugins share a worker is plugin-hostd's `grouping`
+> setting in `/zynthian/config/plugin-hostd.conf`: with `grouping off` each plugin runs in a worker of its own, and
+> `grouping on` lets the daemon plan which neighbours in series share one. How to install and use it, the measurements and where it stands:
+> <https://openmixer.org/docs/zynthian>.
+> The changes are offered upstream one step at a time, starting with
+> [zynthian-sys#228](https://github.com/zynthian/zynthian-sys/pull/228); the companion fork is
+> [FreeMixer/zynthian-sys](https://github.com/FreeMixer/zynthian-sys). Install the daemon and the packages from the
+> [FreeMixer channel](https://www.openmixer.org).
+>
+> PRs merge into `openmixer`, not the default branch: close the issue by hand at merge.
+
+The text below is Zynthian's own.
+
 [Zynthian](http://zynthian.org) is an Open Synth Platform based on Raspberry Pi, Linux and Free Software Synthesizers.
 
 The [ZynthianOS SD-image](https://os.zynthian.org/zynthianos-last-stable.zip) has all the software you need for building a ZynthianBox, including a good amount of sound libraries and presets.

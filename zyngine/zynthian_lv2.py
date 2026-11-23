@@ -330,7 +330,8 @@ def save_engines():
     global engines_mtime
 
     # Make a deep copy and remove not serializable objects (ENGINE)
-    sengines = copy.deepcopy(engines)
+    # The PH entries are made from the jalv ones at every load: they are not saved
+    sengines = copy.deepcopy({k: v for k, v in engines.items() if not k.startswith("PH/")})
     for key, info in sengines.items():
         try:
             del info['ENGINE']
@@ -1361,6 +1362,7 @@ def get_plugin_ports(plugin_url):
             'is_integer': is_integer,
             'is_enumeration': is_enumeration,
             'is_logarithmic': is_logarithmic,
+            'uri': str(control),  # the patch property's URI, which patch_set names; a port has none
             'is_path': is_path,
             'path_file_types': path_file_types,
             'path_preload': path_preload,
