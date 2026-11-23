@@ -506,7 +506,8 @@ class TheRemovals(unittest.TestCase):
             self.assertNotIn(word, text)
 
     def test_ci_installs_what_the_tk_tests_import(self):
-        text = open(os.path.join(ROOT, ".github", "workflows", "tests.yml")).read()
+        # the fork's suite runs in openmixer-tests.yml (Debian trixie); tests.yml runs upstream's suites only
+        text = open(os.path.join(ROOT, ".github", "workflows", "openmixer-tests.yml")).read()
         self.assertIn("python3-pil", text)
         self.assertIn("no PIL", text, "a skipped Tk test ran nothing: CI refuses it")
         self.assertNotIn("drawn-controller", text, "the guard's words are the Tk look's")

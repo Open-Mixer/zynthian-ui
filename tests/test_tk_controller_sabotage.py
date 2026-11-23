@@ -42,7 +42,8 @@ ARMS = {
 
 def run_copy(mutation=None):
     with tempfile.TemporaryDirectory() as tmp:
-        for d in ("zyngine", "zyngui", "tests", ".github"):
+        # upstream's tests/conftest.py imports zyngine's state manager, which reads zynconf, zynautoconnect and zynlibs
+        for d in ("zyngine", "zyngui", "zynconf", "zynautoconnect", "zynlibs", "tests", ".github"):
             shutil.copytree(os.path.join(ROOT, d), os.path.join(tmp, d), ignore=shutil.ignore_patterns("__pycache__"))
         if mutation:
             old, new, *module = mutation
