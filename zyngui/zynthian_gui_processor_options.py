@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian GUI
 #
@@ -68,11 +66,16 @@ class zynthian_gui_processor_options(zynthian_gui_selector_info):
                 self.list_data.append((self.start_move, None, "Move",
                                        ["Move processor position within chain.\n\nUse knob 3 to nudge along chain, moving between parallel and serial positioning. Use knob 4 to move to another chain.", "move_up_down.png"]))
 
-        # Replace and Remove processor
+        # Reload, replace and Remove processor
         if self.processor.eng_code not in ("MI", "MR"):
             if (self.processor.type != "MIDI Synth" or self.processor.engine.get_options()['replace']) and self.processor.eng_code != "CL":
                 self.list_data.append((self.replace, None, f"Replace {self.processor.name}",
                                            ["Replace this processor with another of similar type.\n\nThe engine selection list will show, allowing selection of a new engine type.", "replace_processor.png"]))
+
+            # Reload LV2 plugin processor
+            if self.processor.eng_code.startswith("JV/") and self.processor.chain is not None:
+                self.list_data.append((self.reload, None, f"Reload {self.processor.name}",
+                                       ["Reload this processor, keeping its position, preset, parameters and MIDI-learn.\n\nUse it to load an updated plugin or widget, or to recover a plugin that stopped working.", "replace_processor.png"]))
 
             if self.processor.type in ("MIDI Tool", "Audio Effect"):
                 self.list_data.append((self.processor_remove, None, "Remove", ["Remove this processor from the chain.", "delete.png"]))
@@ -213,10 +216,25 @@ class zynthian_gui_processor_options(zynthian_gui_selector_info):
     def preset_list(self):
         self.zyngui.cuia_bank_preset(self.processor)
 
+    def reload(self):
+        chain_id = self.processor.chain.chain_id
+        processor = self.chain_manager.reload_processor(self.processor)
+        if processor:
+            zynautoconnect.request_audio_connect(True)
+            zynautoconnect.request_midi_connect(True)
+            self.processor = processor
+            self.zyngui.chain_control(chain_id, processor, reset=False)
+        else:
+            self.zyngui.show_info(f"Can't reload {self.processor.name}", 2000)
+            if self.processor.chain is None:
+                # Removed but not restarted => leave the options of the removed processor
+                self.processor = None
+                self.zyngui.prune_screen_history("processor_options", soft=False)
+
     def midi_clean(self):
         if self.processor:
             self.zyngui.show_confirm(f"Do you want to clean MIDI-learn for ALL controls in {self.processor.name}?",
-                                     self.chain_manager.clean_midi_learn, self.processor)
+                                     self.chain_manager.clean_midi_binding, self.processor)
 
     def control_view(self):
         self.zyngui.chain_control(hmode=self.zyngui.SCREEN_HMODE_REPLACE)

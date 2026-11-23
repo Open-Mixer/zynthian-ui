@@ -1,5 +1,4 @@
-﻿# -*- coding: utf-8 -*-
-# ******************************************************************************
+﻿# ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian Engine (zynthian_engine_linuxsampler)
 #
 # zynthian_engine implementation for Linux Sampler
@@ -232,8 +231,8 @@ class zynthian_engine_linuxsampler(zynthian_engine_sfz):
     # Preset Management
     # ---------------------------------------------------------------------------
 
-    @staticmethod
-    def _get_preset_list(bank):
+    @classmethod
+    def _get_preset_list(cls, bank):
         logging.info("Getting Preset List for %s" % bank[2])
         i = 0
         preset_list = []
@@ -242,10 +241,10 @@ class zynthian_engine_linuxsampler(zynthian_engine_sfz):
             exclude_sfz = re.compile(r"[MOPRSTV][1-9]?l?\.sfz")
             for sd in glob.glob(preset_dpath + "/*"):
                 if os.path.isdir(sd):
-                    if "sfz" not in preset_fexts:
+                    if "sfz" not in cls.preset_fexts:
                         continue
-                    cmd = f"find '{sd}' -maxdepth 1 -type f -name '*.sfz'"
-                    output = check_output(cmd, shell=True).decode('utf8')
+                    cmd = ["find", sd, "-maxdepth", "1", "-type", "f", "-name", "*.sfz"]
+                    output = check_output(cmd).decode('utf8')
                     flist = list(filter(None, output.split('\n')))
                     for f in flist:
                         filehead, filetail = os.path.split(f)
@@ -267,7 +266,7 @@ class zynthian_engine_linuxsampler(zynthian_engine_sfz):
                     filehead, filetail = os.path.split(f)
                     filename, filext = os.path.splitext(f)
                     if filext.lower() == ".sfz":
-                        if "sfz" not in preset_fexts or exclude_sfz.fullmatch(filetail):
+                        if "sfz" not in cls.preset_fexts or exclude_sfz.fullmatch(filetail):
                             continue
                         filename = filename[len(preset_dpath) + 1:]
                         title = filename.replace('_', ' ')
@@ -290,9 +289,8 @@ class zynthian_engine_linuxsampler(zynthian_engine_sfz):
                                 logging.error(f"Can't load instrument cache '{icache_fpath}'")
                         # If not cache, parse soundfont and cache info
                         if not inslist:
-                            cmd = f"gigdump --instrument-names \"{f}\""
-                            inslist = check_output(
-                                cmd, shell=True).decode('utf8')
+                            cmd = ["gigdump", "--instrument-names", f]
+                            inslist = check_output(cmd).decode('utf8')
                             try:
                                 with open(icache_fpath, "w") as fh:
                                     fh.write(inslist)
@@ -533,7 +531,7 @@ class zynthian_engine_linuxsampler(zynthian_engine_sfz):
             bank_name = bank_name[4:]
         else:
             bank_type = "sfz"
-        os.mkdir(zynthian_engine.my_data_dir + "/soundfonts/{}/{}".format(bank_type, bank_name))
+        os.mkdir(cls.my_data_dir + "/soundfonts/{}/{}".format(bank_type, bank_name))
 
     @classmethod
     def zynapi_rename_bank(cls, bank_path, new_bank_name):
@@ -581,9 +579,8 @@ class zynthian_engine_linuxsampler(zynthian_engine_sfz):
         if os.path.isdir(dpath) and "sfz" in cls.preset_fexts:
             # Locate sfz files and move all them to first level directory
             try:
-                cmd = "find \"{}\" -type f -iname *.sfz".format(dpath)
-                sfz_files = check_output(
-                    cmd, shell=True).decode("utf-8").split("\n")
+                cmd = ["find", dpath, "-type", "f", "-iname", "*.sfz"]
+                sfz_files = check_output(cmd).decode("utf-8").split("\n")
                 # Find the "shallower" SFZ file
                 shallower_sfz_file = sfz_files[0]
                 for f in sfz_files:

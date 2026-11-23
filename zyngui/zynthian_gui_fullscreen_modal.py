@@ -1,12 +1,10 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian GUI
 #
 # Zynthian GUI full screen modal
 #
 # Copyright (C) 2026 Fernando Moyano <jofemodo@zynthian.org>
-#                    Brian Walton <brian@riban.co.uk>
+#                    Brian Walton <riban@zynthian.org>
 #
 # ******************************************************************************
 #
@@ -71,6 +69,23 @@ class zynthian_gui_fullscreen_modal(tkinter.Frame):
             self.place(x=0, y=0)
             self.tkraise()
             self.shown = True
+
+    # --------------------------------------------------------------------------
+    # View state, reported by the "screen_state" websocket feedback
+    # --------------------------------------------------------------------------
+
+    # Key of the view state (None if the view reports no state). See zynthian_gui_base.
+    state_key = None
+
+    def get_state(self, what="all"):
+        """Return the view state as a JSON serializable dictionary. Called from the main (Tk) thread."""
+        return {}
+
+    def get_state_parent(self):
+        return None
+
+    def is_state_shown(self):
+        return self.shown
 
     # --------------------------------------------------------------------------
     # CUIA

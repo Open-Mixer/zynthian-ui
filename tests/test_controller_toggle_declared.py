@@ -14,6 +14,7 @@
 # version 2 of the License, or any later version. See the LICENSE.txt file.
 # ******************************************************************************
 
+import importlib
 import os
 import sys
 import types
@@ -35,7 +36,8 @@ if "zyngine" not in sys.modules:
     _pkg = types.ModuleType("zyngine")
     _pkg.__path__ = [os.path.join(ROOT, "zyngine")]
     sys.modules["zyngine"] = _pkg
-from zyngine import zynthian_controller as ctrl_mod  # noqa: E402
+# the module, not the class: zyngine/__init__'s star import binds zyngine.zynthian_controller to its class
+ctrl_mod = importlib.import_module("zyngine.zynthian_controller")
 
 
 def controller(**options):

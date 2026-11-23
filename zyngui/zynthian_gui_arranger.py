@@ -1,12 +1,10 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian GUI
 #
 # Zynthian GUI Step-Sequencer Arranger Class
 #
 # Copyright (C) 2015-2024 Fernando Moyano <jofemodo@zynthian.org>
-#                         Brian Walton <brian@riban.co.uk>
+#                         Brian Walton <riban@zynthian.org>
 #
 # ******************************************************************************
 #
@@ -704,7 +702,7 @@ class zynthian_gui_arranger(zynthian_gui_base.zynthian_gui_base):
             self.zyngui.screens['pattern_editor'].scene = 0
             self.zyngui.screens['pattern_editor'].sequence = 0
             self.zynseq.libseq.enableMidiRecord(False)
-            self.zyngui.show_screen("pattern_editor")
+            self.zyngui.show_screen("pated")
             return True
 
     # Function to handle pattern click
@@ -957,19 +955,19 @@ class zynthian_gui_arranger(zynthian_gui_base.zynthian_gui_base):
         # Timebase track
         self.timebase_track_canvas.delete('bpm')
         '''
-		#TODO: Implement timebase events - not yet implemented in library
-		for event in range(self.zynseq.libseq.getTimebaseEvents(self.zynseq.scene)):
-			time = self.zynseq.libseq.getTimebaseEventTime(self.zynseq.scene, event) / self.clocks_per_division
-			if time >= self.col_offset and time <= self.col_offset + self.horizontal_zoom:
-				command = self.zynseq.libseq.getTimebaseEventCommand(self.zynseq.scene, event)
-				if command == 1: # Tempo
-					tempoX = (time - self.col_offset) * self.column_width
-					data = self.zynseq.libseq.getTimebaseEventData(self.zynseq.scene, event)
-					if tempoX:
-						self.timebase_track_canvas.create_text(tempoX, tempo_y, fill='red', text=data, anchor='n', tags='bpm')
-					else:
-						self.timebase_track_canvas.create_text(tempoX, tempo_y, fill='red', text=data, anchor='nw', tags='bpm')
-		'''
+        #TODO: Implement timebase events - not yet implemented in library
+        for event in range(self.zynseq.libseq.getTimebaseEvents(self.zynseq.scene)):
+            time = self.zynseq.libseq.getTimebaseEventTime(self.zynseq.scene, event) / self.clocks_per_division
+            if time >= self.col_offset and time <= self.col_offset + self.horizontal_zoom:
+                command = self.zynseq.libseq.getTimebaseEventCommand(self.zynseq.scene, event)
+                if command == 1: # Tempo
+                    tempoX = (time - self.col_offset) * self.column_width
+                    data = self.zynseq.libseq.getTimebaseEventData(self.zynseq.scene, event)
+                    if tempoX:
+                        self.timebase_track_canvas.create_text(tempoX, tempo_y, fill='red', text=data, anchor='n', tags='bpm')
+                    else:
+                        self.timebase_track_canvas.create_text(tempoX, tempo_y, fill='red', text=data, anchor='nw', tags='bpm')
+        '''
         self.grid_canvas.tag_lower('barlines')
         self.select_cell()
 
@@ -1211,7 +1209,7 @@ class zynthian_gui_arranger(zynthian_gui_base.zynthian_gui_base):
     def zynpot_cb(self, i, dval):
         if super().zynpot_cb(i, dval):
             return
-        if i == self.ctrl_order[0] and zynthian_gui_config.transport_clock_source <= 1:
+        if i == self.ctrl_order[0] and zynthian_gui_config.transport_clock_source == "Internal":
             # Tempo change
             self.zynseq.nudge_tempo(dval)
             self.set_title("Tempo: {:.1f}".format(

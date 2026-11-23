@@ -1,10 +1,9 @@
-# -*- coding: utf-8 -*-
 # ****************************************************************************
 # ZYNTHIAN PROJECT: Zynthian Legacy Snapshots
 #
 # Legacy snapshots conversion
 #
-# Copyright (C) 2015-2025 Fernando Moyano <jofemodo@zynthian.org>
+# Copyright (C) 2015-2026 Fernando Moyano <jofemodo@zynthian.org>
 #                         Brian Walton <riban@zynthian.org>
 #
 # ****************************************************************************
@@ -24,14 +23,15 @@
 # ****************************************************************************
 
 import logging
-from math import ceil
+from math import ceil, log, log10
 from json import JSONDecoder, loads
 import base64
 
 from zyngine.zynthian_chain_manager import zynthian_chain_manager
 from zyngine import zynthian_state_manager
+from zyngui import zynthian_gui_config
 
-SNAPSHOT_SCHEMA_VERSION = 5
+SNAPSHOT_SCHEMA_VERSION = 6
 
 
 class zynthian_legacy_snapshot:
@@ -78,19 +78,94 @@ class zynthian_legacy_snapshot:
             getattr(self, f'version_{version}')()
         return self.snapshot
 
+    def version_5(self):
+        # Convert snapshot schema V5 to V6
+
+        # Convert MIDI CC binding
+        def add_binding(target, key, bindings):
+            # Merge bindings into target without sharing list references or adding duplicates
+            dest = target.setdefault(key, [])
+            for binding in bindings:
+                binding = list(binding)
+                if binding not in dest:
+                    dest.append(binding)
+
+        for zs3 in self.snapshot.get("zs3", {}).values():
+            # Collect chain bindings (and remove them from the chain config) using the new key format
+            chain_binding = {}
+            for chain_id, chain_cfg in zs3.get("chains", {}).items():
+                midi_learn = chain_cfg.pop("midi_learn", None)
+                if not midi_learn:
+                    continue
+                for key, bindings in midi_learn.items():
+                    try:
+                        new_key = f"{int(chain_id):02X}{int(key):04X}"
+                    except (ValueError, TypeError):
+                        logging.warning(f"Ignoring invalid MIDI learn key '{key}' in chain {chain_id}")
+                        continue
+                    add_binding(chain_binding, new_key, bindings)
+
+            for dev, dev_cfg in zs3.get("midi_capture", {}).items():
+                old_learn = dev_cfg.get("midi_learn", {})
+                new_learn = {}
+                for key, bindings in old_learn.items():
+                    try:
+                        new_key = f"ff{int(key):04X}"
+                    except (ValueError, TypeError):
+                        # Not a decimal int, so assume the key is already in the new hex format
+                        new_key = key
+                    add_binding(new_learn, new_key, bindings)
+                # Chain bindings applied to any device in the old model, so add them to every device
+                if dev not in ("zynseq:output", "CV/Gate", "zynmidi"):
+                    for key, bindings in chain_binding.items():
+                        add_binding(new_learn, key, bindings)
+                dev_cfg["midi_learn"] = new_learn
+
+        # Convert mixer fader law
+        fader_unity = 0.75  # Must match FADER_UNITY in mixer.c
+        fader_headroom_db = -zynthian_gui_config.fader_zero_db
+        fader_exp = fader_headroom_db / (1.0 - fader_unity) * fader_unity * log(10.0) / 20.0
+
+        def legacy_level_to_fader_level(level):
+            # Convert a legacy level (linear gain) to a fader position, i.e. gainToLevel() in mixer.c
+            try:
+                gain = float(level)
+            except (ValueError, TypeError):
+                return level
+            if gain <= 0.0:
+                fader_level = 0.0
+            elif gain >= 1.0:
+                # Not expected from legacy snapshots but handle it, clipped to top of throw
+                fader_level = min(1.0, fader_unity + (1.0 - fader_unity) * 20.0 * log10(gain) / fader_headroom_db)
+            else:
+                fader_level = fader_unity * gain ** (1.0 / fader_exp)
+            return round(fader_level, 6)
+
+        # Find the mixer processors (channel strips and mixbuses)
+        mixer_ids = {str(zynthian_state_manager.MAIN_MIXBUS_ID)}
+        for chain_cfg in self.snapshot.get("chains", {}).values():
+            for slot in chain_cfg.get("slots", []):
+                if not isinstance(slot, dict):
+                    continue
+                for proc_id, proc_type in slot.items():
+                    if proc_type in ("MI", "MR"):
+                        mixer_ids.add(str(proc_id))
+
+        for zs3 in self.snapshot.get("zs3", {}).values():
+            for proc_id, proc_cfg in zs3.get("processors", {}).items():
+                if str(proc_id) not in mixer_ids:
+                    continue
+                for symbol in ("level", "aux_level"):
+                    ctrl_cfg = proc_cfg.get("controllers", {}).get(symbol)
+                    if not isinstance(ctrl_cfg, dict):
+                        continue
+                    for key in ("value", "midi_cc_val1", "midi_cc_val2"):
+                        if key in ctrl_cfg:
+                            ctrl_cfg[key] = legacy_level_to_fader_level(ctrl_cfg[key])
+
     def version_4(self):
         # Convert snapshot from schema V4 to V5
 
-        self.snapshot.setdefault("midi", {"midi_capture": {}, "midi_playback": {}})
-        try:
-            names = self.snapshot["midi_profile_state"].pop("port_names")
-            for uid, name in names.items():
-                if name.lower().endswith("in"):
-                    self.snapshot["midi"]["midi_capture"][uid] = name
-                else:
-                    self.snapshot["midi"]["midi_playback"][uid] = name
-        except:
-            pass
         mixer_map = {16: zynthian_state_manager.MAIN_MIXBUS_ID} # Map of "MI" mixer proc id indexed by old mixer chan
         if "chains" in self.snapshot:
             # Get list of used processor ids:
@@ -134,10 +209,17 @@ class zynthian_legacy_snapshot:
                 except:
                     pass
                 if "midi_cc" in chain_config:
+                    # Chain MIDI CC mapping => base state (zs3-0) processor controllers.
+                    # Processor ids are converted to int below. Reuse the existing key, whatever its type, so
+                    # a processor is never duplicated. New keys are strings, as when loaded from JSON.
+                    zs3 = self.snapshot.setdefault("zs3", {}).setdefault("zs3-0", {})
+                    zs3.setdefault("processors", {})
                     for cc, cfg in chain_config["midi_cc"].items():
-                        proc_id = int(cfg[0])
+                        proc_id = str(int(cfg[0]))
+                        proc_id = next((k for k in zs3["processors"] if str(k) == proc_id), proc_id)
                         symbol = cfg[1]
                         zs3["processors"].setdefault(proc_id, {"controllers":{}})
+                        zs3["processors"][proc_id].setdefault("controllers", {})
                         zs3["processors"][proc_id]["controllers"].setdefault(symbol, {})
                         zs3["processors"][proc_id]["controllers"][symbol].setdefault("midi_cc", [chain_id, None, int(cc), 0])
 
@@ -736,7 +818,7 @@ class zynthian_legacy_snapshot:
                         try:
                             out.append(processors[aout]['id'])
                         except:
-                            if not aout.startswith("system:playback_"): 
+                            if not aout.startswith("system:playback_"):
                                 out.append(aout)
                             else:
                                 mout = True

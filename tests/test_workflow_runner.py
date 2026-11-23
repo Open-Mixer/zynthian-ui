@@ -9,7 +9,8 @@ import unittest
 
 import yaml
 
-WORKFLOW = pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "tests.yml"
+# the fork's suite is the openmixer-tests workflow; tests.yml is upstream's, and runs upstream's suites on its own runner
+WORKFLOW = pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "openmixer-tests.yml"
 ARM = "ubuntu-24.04-arm"
 
 

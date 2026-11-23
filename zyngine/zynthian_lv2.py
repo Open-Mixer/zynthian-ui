@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian LV2-plugin management
 #
@@ -194,19 +193,64 @@ except:
 ENGINE_DEFAULT_CONFIG_FILE = "{}/config/engine_config.json".format(os.environ.get('ZYNTHIAN_SYS_DIR'))
 ENGINE_CONFIG_FILE = "{}/engine_config.json".format(os.environ.get('ZYNTHIAN_CONFIG_DIR'))
 JALV_LV2_CONFIG_FILE = "{}/jalv/plugins.json".format(os.environ.get('ZYNTHIAN_CONFIG_DIR'))
+# Touch this file after updating files inside an existing LV2 bundle (e.g. a widget's manifest),
+# so the UI reloads the LV2 data. Adding or removing bundles is detected without it.
+LV2_STAMP_FILE = "{}/lv2.stamp".format(os.environ.get('ZYNTHIAN_CONFIG_DIR'))
 LV2_DIR = "/zynthian/zynthian-plugins/lv2"
 
 engines = None
 engines_by_type = None
 engines_mtime = None
 
+world = None
+lv2_signature = None   # Modification times of LV2_PATH folders & stamp file when LV2 data was loaded
+lv2_generation = 0     # Incremented each time LV2 data is (re)loaded
+zyngui_widget_cache = {}  # Widget lookups indexed by plugin URI, cleared when LV2 data is reloaded
+
+# ------------------------------------------------------------------------------
+# Zynthian widget UI (zyngui:widget). See lv2/zyngui.lv2/zyngui.ttl
+# ------------------------------------------------------------------------------
+
+ZYNGUI_NS = "http://zynthian.org/ns/lv2/zyngui#"
+ZYNGUI_WIDGET_UI = ZYNGUI_NS + "widget"
+ZYNGUI_WIDGET_API_VERSION = 1
+# Built-in widgets live inside zynthian-ui (bundles in lv2/, shared widgets in zyngui/).
+# Widgets from anywhere else (user widgets) take precedence.
+ZYNGUI_BUILTIN_WIDGETS_DIR = os.path.realpath(os.environ.get('ZYNTHIAN_UI_DIR', "/zynthian/zynthian-ui"))
+
 # ------------------------------------------------------------------------------
 # Lilv LV2 library initialization
 # ------------------------------------------------------------------------------
 
 
+def get_lv2_signature():
+    """Get a cheap signature of the LV2 data: modification times of the LV2_PATH folders
+    (changed by adding or removing bundles) and of the LV2 stamp file."""
+    lv2_path = os.environ.get('LV2_PATH', "/usr/lib/lv2:/usr/local/lib/lv2")
+    sig = []
+    for fpath in lv2_path.split(":") + [LV2_STAMP_FILE]:
+        try:
+            sig.append(os.stat(fpath).st_mtime_ns)
+        except OSError:
+            sig.append(None)
+    return tuple(sig)
+
+
+def check_lv2_changes():
+    """Reload LV2 data if bundles were added, removed or updated since last load.
+    Cheap (a few stat calls), so it can be called when the UI needs LV2 info.
+    Returns True if LV2 data was reloaded."""
+    if world is not None and get_lv2_signature() == lv2_signature:
+        return False
+    logging.info("LV2 data changed => reloading")
+    init_lilv()
+    return True
+
+
 def init_lilv():
-    global world
+    global world, lv2_signature, lv2_generation
+    # Get signature before loading, so changes done while loading are detected next time
+    lv2_signature = get_lv2_signature()
     world = lilv.World()
     # Disable language filtering
     # world.set_option(lilv.OPTION_FILTER_LANG, world.new_bool(False))
@@ -221,6 +265,9 @@ def init_lilv():
     world.ns.atom = lilv.Namespace(world, "http://lv2plug.in/ns/ext/atom#")
     world.ns.doap = lilv.Namespace(world, "http://usefulinc.com/ns/doap#")
     world.ns.mod = lilv.Namespace(world, "http://moddevices.com/ns/mod#")
+    world.ns.zyngui = lilv.Namespace(world, ZYNGUI_NS)
+    lv2_generation += 1
+    zyngui_widget_cache.clear()
 
 
 # ------------------------------------------------------------------------------
@@ -236,6 +283,7 @@ def get_engines():
     if not mtime or not engines_mtime or engines_mtime != mtime:
         return load_engines()
     else:
+        check_lv2_changes()
         return engines
 
 
@@ -362,7 +410,7 @@ def get_engine_description(key):
     return description[randrange(4)]
 
 def get_info_from_ttl(bundle_path):
-    """ Get a dictionary of info about each plugin from ttl files in a bundle 
+    """ Get a dictionary of info about each plugin from ttl files in a bundle
     Args:
         path: Path to .lv2 directory
     Returns: Dictionary of info, indexed by plugin uri
@@ -693,6 +741,88 @@ def get_plugin_ui(plugin):
     return None
 
 
+def get_plugin_zyngui_widget(plugin_url):
+    """Get the zynthian widget declared for a plugin as a zyngui:widget LV2 UI.
+
+    The UI can be declared in the plugin's bundle or in any other bundle
+    (extension bundle) on LV2_PATH. If several are declared, the one with the
+    highest supported zyngui:apiVersion wins and, with the same version, user
+    widgets (not in ZYNGUI_BUILTIN_WIDGETS_DIR) win over built-in widgets.
+
+    Results are cached until LV2 data is reloaded (see check_lv2_changes).
+
+    plugin_url : plugin URI
+    Returns a dict {'uri', 'fpath', 'bundle', 'api_version', 'help', 'user'} or None
+    """
+    try:
+        return zyngui_widget_cache[plugin_url]
+    except KeyError:
+        pass
+    res = _find_plugin_zyngui_widget(plugin_url)
+    zyngui_widget_cache[plugin_url] = res
+    return res
+
+
+def get_plugin_uis(plugin):
+    """Get the UIs of a plugin, or an empty list if it has none.
+
+    The python bindings' plugin.get_uis() raises AssertionError when the plugin has no UIs
+    (lilv returns NULL), leaving a broken object behind, so check the C result first.
+    """
+    try:
+        c_uis = lilv.c.plugin_get_uis(plugin.plugin)
+    except AttributeError:
+        # Bindings internals changed => use the public API
+        try:
+            return plugin.get_uis()
+        except AssertionError:
+            return []
+    if not c_uis:
+        return []
+    return lilv.UIs(plugin.world, c_uis)
+
+
+def _find_plugin_zyngui_widget(plugin_url):
+    try:
+        plugin = world.get_all_plugins()[world.new_uri(plugin_url)]
+    except Exception:
+        return None
+
+    res = None
+    uis = get_plugin_uis(plugin)
+    for ui in uis:
+        if not ui.is_a(world.ns.zyngui.widget):
+            continue
+        ui_uri = str(ui.get_uri())
+        try:
+            api_version = int(world.get(ui.get_uri(), world.ns.zyngui.apiVersion, None))
+        except Exception:
+            api_version = 1
+        if api_version > ZYNGUI_WIDGET_API_VERSION:
+            logging.warning(f"Zynthian widget <{ui_uri}> requires API version {api_version} (supported {ZYNGUI_WIDGET_API_VERSION}) => ignored")
+            continue
+        fpath = ui.get_binary_uri().get_path()
+        if not os.path.isfile(fpath):
+            logging.warning(f"Zynthian widget <{ui_uri}> module not found: {fpath}")
+            continue
+        help_node = world.get(ui.get_uri(), world.ns.zyngui.help, None)
+        bundle = ui.get_bundle_uri().get_path()
+        info = {
+            'uri': ui_uri,
+            'fpath': fpath,
+            'bundle': bundle,
+            'api_version': api_version,
+            'help': help_node.get_path() if help_node is not None and help_node.is_uri() else None,
+            'user': not os.path.realpath(fpath).startswith(ZYNGUI_BUILTIN_WIDGETS_DIR + os.sep)
+        }
+        if res:
+            logging.info(f"Plugin <{plugin_url}> has several zynthian widgets: <{res['uri']}>, <{ui_uri}>")
+            if (api_version, info['user']) <= (res['api_version'], res['user']):
+                continue
+        res = info
+    return res
+
+
 def get_plugin_type(plugin):
     # Try to determine the plugin type from the LV2 class ...
     try:
@@ -942,7 +1072,7 @@ def get_plugin_ports(plugin_url):
     wplugins = world.get_all_plugins()
     plugin = wplugins[plugin_url]
 
-    ports_info = {}
+    ports_info = []
     # Control ports
     for i in range(plugin.get_num_ports()):
         control = plugin.get_port_by_index(i)
@@ -1056,8 +1186,7 @@ def get_plugin_ports(plugin_url):
             except:
                 vdef = vmin
 
-            ports_info[i] = {
-                'index': i,
+            ports_info.append({
                 'symbol': symbol,
                 'name': name,
                 'group_index': group_index,
@@ -1086,7 +1215,7 @@ def get_plugin_ports(plugin_url):
                 'not_on_gui': not_on_gui,
                 'display_priority': display_priority,
                 'scale_points': sp
-            }
+            })
             #logging.debug("CONTROL PORT {} => {}".format(i, ports_info[i]))
 
     # Property parameters
@@ -1215,9 +1344,7 @@ def get_plugin_ports(plugin_url):
             group_display_priority = 0
             # logging.debug("Control <{}> has no group.".format(symbol))
 
-        i += 1
-        ports_info[i] = {
-            'index': i,
+        ports_info.append({
             'symbol': symbol,
             'name': name,
             'group_index': group_index,
@@ -1247,7 +1374,7 @@ def get_plugin_ports(plugin_url):
             'not_on_gui': not_on_gui,
             'display_priority': display_priority,
             'scale_points': sp
-        }
+        })
         #logging.debug("CONTROL PROPERTY {} => {}".format(i, ports_info[i]))
 
     return ports_info
@@ -1347,7 +1474,7 @@ if __name__ == '__main__':
 
         elif sys.argv[1] == "ports":
             if len(sys.argv) > 2:
-                print(get_plugin_ports(sys.argv[2]))
+                logging.info(get_plugin_ports(sys.argv[2]))
             else:
                 pass
 
@@ -1379,7 +1506,7 @@ if __name__ == '__main__':
     # get_plugin_ports("http://drumkv1.sourceforge.net/lv2")
 
     # generate_plugin_presets_cache("http://code.google.com/p/amsynth/amsynth")
-    # print(get_plugin_presets("Dexed"))
+    # logging.info(get_plugin_presets("Dexed"))
 
     logging.info('Command took {}s'.format(int(round(time.time())) - gstart))
 

@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
 # ********************************************************************
 # ZYNTHIAN PROJECT: Zynmixer Python Wrapper
 #
@@ -72,7 +70,7 @@ class zynthian_engine_audio_mixer(zynthian_engine):
                 'level': zynthian_controller(self, 'level', {
                     'is_integer': False,
                     'value_max': 1.0,
-                    'value_default': 0.8,
+                    'value_default': processor.zynmixer.db_to_level(0.0),
                     'value': processor.zynmixer.get_level(processor.mixer_chan),
                     'processor': processor
                 }),
@@ -123,7 +121,7 @@ class zynthian_engine_audio_mixer(zynthian_engine):
                     'labels': ['off', 'on']
                 }),
                 'ms': zynthian_controller(self, 'ms', {
-                    'name': "MS",
+                    'name': "M+S",
                     'short_name': "M+S",
                     'is_toggle': True,
                     'value_max': 1,
@@ -131,7 +129,6 @@ class zynthian_engine_audio_mixer(zynthian_engine):
                     'value': processor.zynmixer.get_ms(processor.mixer_chan),
                     'labels': ['off', 'on'],
                     'processor': processor,
-                    'name': "M+S"
                 }),
                 'phase': zynthian_controller(self, 'phase', {
                     'name': "Ø",
@@ -171,7 +168,7 @@ class zynthian_engine_audio_mixer(zynthian_engine):
                     'name': "aux level",
                     'is_integer': False,
                     'value_max': 1.0,
-                    'value_default': 0.8,
+                    'value_default': processor.zynmixer.db_to_level(0),
                     'value': processor.zynmixer.get_level(1),
                     'processor': processor
                 }),
@@ -257,6 +254,8 @@ class zynthian_engine_audio_mixer(zynthian_engine):
             processor.mixer_chan = self.state_manager.zynmixer_chan.add_strip()
             processor.name = f"Mixer Channel {processor.mixer_chan + 1}"
         processor.refresh_controllers()
+        for zctrl in processor.controllers_dict.values():
+            zctrl.reset_value()
         return
 
     def remove_processor(self, processor):
