@@ -7,6 +7,7 @@
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+import importlib
 import os
 import re
 import sys
@@ -61,7 +62,8 @@ sys.modules["zyngine"].zynthian_lv2 = _lv2
 LV2_PRESETS = {}
 _lv2.get_plugin_presets_cache = lambda name: LV2_PRESETS.get(name, {})
 
-from zyngine import zynthian_engine_plugin_hostd as ph  # noqa: E402
+# the module, not the class: zyngine/__init__'s star import binds zyngine.zynthian_engine_plugin_hostd to its class
+ph = importlib.import_module("zyngine.zynthian_engine_plugin_hostd")
 from zyngine import zynthian_plugin_hostd_catalogue as cat  # noqa: E402
 from zyngine import zynthian_plugin_hostd_grouping as grouping  # noqa: E402
 from zyngine.zynthian_chain import zynthian_chain  # noqa: E402

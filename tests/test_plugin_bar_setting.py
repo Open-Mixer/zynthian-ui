@@ -8,6 +8,7 @@
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+import importlib
 import os
 import sys
 import types
@@ -29,7 +30,8 @@ import importlib.util  # noqa: E402
 import test_engine_menu as menu  # noqa: E402  the engine screen with its stand-ins
 import test_engine_plugin_hostd as engine_tests  # noqa: E402  the engine and its fake daemon
 from fake_plugin_hostd import fake_plugin_hostd  # noqa: E402
-from zyngine import zynthian_engine_plugin_hostd as ph  # noqa: E402
+# the module, not the class: zyngine/__init__'s star import binds zyngine.zynthian_engine_plugin_hostd to its class
+ph = importlib.import_module("zyngine.zynthian_engine_plugin_hostd")
 from zyngine import zynthian_plugin_tiers as tiers  # noqa: E402
 
 

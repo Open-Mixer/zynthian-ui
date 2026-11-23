@@ -22,6 +22,8 @@ jobs:
   tests:
     name: python3 -m pytest tests/ (debian:trixie arm64)
     runs-on: ubuntu-24.04-arm
+    # the suite takes ~2 min here (100 s serial on trixie amd64); a run past this is a hang, never a slow pass
+    timeout-minutes: 20
     container:
       image: debian:trixie
       # an init that reaps: the engine tests stop the daemons they start and expect the processes gone
@@ -135,7 +137,10 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python3 -m pytest -q -rs tests/ | tee /tmp/pytest.log
+          # timeout_method=thread: a test stuck past the 60 s per-test timeout (pyproject.toml) inside a C call, where the
+          # default SIGALRM never lands, ends the run with every thread's stack and the test's name instead of hanging
+          # the job (a run sat in pytest 45 min, 2026-11-23); --durations names the slow ones on every run
+          python3 -m pytest -q -rs -o timeout_method=thread --durations=30 tests/ | tee /tmp/pytest.log
           # a test that needs the real omx-panel and skipped ran nothing: refused
           ! grep -q 'OMX_PANEL_REAL is' /tmp/pytest.log || { echo "::error::a test that needs the real omx-panel was skipped"; exit 1; }
           # the drawn-controller tests need PIL (python3-pil above) and omx-panel's tools directory: skipped, they ran nothing
