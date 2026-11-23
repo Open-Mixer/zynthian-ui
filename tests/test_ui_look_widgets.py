@@ -202,7 +202,7 @@ class FakeView:
         if FakeView.stop_at_draw:
             raise FakeView.module.RendererStopped("omx-panel's renderer stopped (SIGSEGV); the panel is drawn again when it is opened again")
         self.draws.append((w, h))
-        return frame(w, h)
+        return frame(w, h), None
 
 
 def frame(w, h):

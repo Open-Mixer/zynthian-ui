@@ -29,6 +29,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location("omx_panel_view", os.path.join(HERE, "..", "zyngine", "zynthian_omx_panel_view.py"))
 view = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(view)
+# PanelImage, the blit, is zyngui's (zyngine stays toolkit-free)
+_spec = importlib.util.spec_from_file_location("omx_panel_image", os.path.join(HERE, "..", "zyngui", "zynthian_gui_omx_panel_image.py"))
+panel_image = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(panel_image)
 
 try:
     from PIL import Image, ImageDraw
@@ -140,6 +144,7 @@ class ThreadHost(view._Host):
         self.process = self._Process()
         self.conn = connection.Connection(ours.detach())
         self.stopped = None
+        self.turn = threading.Lock()  # _Host's: one call and its answer at a time
         threading.Thread(target=view._serve, args=(theirs.detach(),), daemon=True).start()
 
 
@@ -150,7 +155,7 @@ class Recorder:
         self.blits, self.screen = [], None
         test = self
 
-        class Recorded(view.PanelImage):
+        class Recorded(panel_image.PanelImage):
             def _new(self, image):
                 test.screen = image.copy()
                 test.blits.append((0, 0) + image.size)
@@ -292,10 +297,10 @@ class TheWidget(unittest.TestCase):
         case = harness.WidgetOverAStoppedRenderer("test_the_next_open_draws_again")
         case.setUp()
         try:
-            panel_view = case.modules["zyngine.zynthian_omx_panel_view"]
+            image_module = case.modules["zyngui.zynthian_gui_omx_panel_image"]
             shows = []
 
-            class Recorded(panel_view.PanelImage):
+            class Recorded(image_module.PanelImage):
                 def show(self, pixels, width, height, dirty=None):
                     shows.append(dirty)
                     return super().show(pixels, width, height, dirty)
@@ -308,7 +313,7 @@ class TheWidget(unittest.TestCase):
 
             harness.FakeView.crash = False
             rects = [(7, 3, 20, 10)]
-            with mock.patch.object(panel_view, "PanelImage", Recorded), \
+            with mock.patch.object(image_module, "PanelImage", Recorded), \
                     mock.patch.object(harness.FakeView, "draw", lambda self, w, h: (bytes(w * h * 4), rects)):
                 case.w.set_processor(case.proc)
                 case.w.refresh_gui()

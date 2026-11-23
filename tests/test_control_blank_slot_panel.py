@@ -127,7 +127,7 @@ class FakeView:
 
     def draw(self, w, h):
         self.drew += 1
-        return bytes(w * h * 4)
+        return bytes(w * h * 4), None
 
 
 class BlankSlotPage(unittest.TestCase):
