@@ -122,46 +122,55 @@ class JackTestServer:
         if self.proc:
             return
         reclaim_dead_test_servers()
-        # jackd's own output is kept, so a server that does not come up says why
-        self.log = tempfile.NamedTemporaryFile(prefix=f"{self.name}-", suffix=".log", delete=False)
-        self.proc = subprocess.Popen(["jackd", "--no-realtime", "-n", self.name, "-d", "dummy",
-                                      "-r", str(self.rate), "-p", str(self.period)],
-                                     stdout=self.log, stderr=subprocess.STDOUT,
-                                     preexec_fn=_terminate_with_parent if self.die_with_parent else None)
-        os.environ["JACK_DEFAULT_SERVER"] = self.name
-        # Wait for server, silencing libjack errors while it is starting
+        # Silence libjack errors while the server is starting
         jack.set_error_function(lambda msg: None)
-        t0 = time.monotonic()
-        probes = []
         try:
-            tend = t0 + timeout
+            # libjack keeps the JACK metadata in a Berkeley DB environment shared by every JACK process,
+            # /dev/shm/jack_db-<uid>: jackd opens it when it starts, and a process when it opens its first client,
+            # creating it if it does not exist. Two processes must not create it at the same time: where it does
+            # not exist yet (a fresh CI runner), jackd and the first probe below race to create it and both may
+            # fail ("BDB1546 unable to join the environment"), and then the server never answers and the probe
+            # blocks for some 18 s. A client opened before jackd is started (it fails: no server yet) creates the
+            # environment from this process alone; jackd and the probes then join it.
+            self._probe()
+            # jackd's own output, kept so that a server that does not start says why (an unnamed file: no leftovers)
+            self.log = tempfile.TemporaryFile()
+            self.proc = subprocess.Popen(["jackd", "--no-realtime", "-n", self.name, "-d", "dummy",
+                                          "-r", str(self.rate), "-p", str(self.period)],
+                                         stdout=self.log, stderr=subprocess.STDOUT,
+                                         preexec_fn=_terminate_with_parent if self.die_with_parent else None)
+            os.environ["JACK_DEFAULT_SERVER"] = self.name
+            t0 = time.monotonic()
+            probes = []
             while True:
                 tp = time.monotonic()
-                try:
-                    jack.Client("zyntest_probe", servername=self.name, no_start_server=True).close()
+                failure = self._probe()
+                if failure is None:
                     return
-                except jack.JackError as e:
-                    probes.append((round(tp - t0, 2), round(time.monotonic() - tp, 2), str(e).split(": ", 1)[-1]))
-                    if self.proc.poll() is not None or time.monotonic() > tend:
-                        exited = self.proc.poll()
-                        self.stop()
-                        raise RuntimeError(self._start_failure(t0, exited, probes))
-                    time.sleep(0.05)
+                probes.append((round(tp - t0, 2), round(time.monotonic() - tp, 2), failure))
+                if self.proc.poll() is not None or time.monotonic() > t0 + timeout:
+                    exited = self.proc.poll()
+                    self.stop()
+                    raise RuntimeError(self._start_failure(t0, exited, probes))
+                time.sleep(0.05)
         finally:
             jack.set_error_function()
 
-    def _start_failure(self, t0, exited, probes):
-        """The reason a server did not start: what jackd said, how it ended and how the probes went"""
-        slow = [p for p in probes if p[1] >= 0.5]
+    def _probe(self):
+        """Open and close a client of this server: None if it answered, else libjack's failure status"""
         try:
-            with open(self.log.name, errors="replace") as f:
-                out = f.read()[-4000:]
-        except OSError as e:
-            out = f"(log unreadable: {e})"
+            jack.Client("zyntest_probe", servername=self.name, no_start_server=True).close()
+            return None
+        except jack.JackError as e:
+            return str(e).split(": ", 1)[-1]
+
+    def _start_failure(self, t0, exited, probes):
+        """Why the server did not start: what jackd said, how it ended, and when each probe ran and how long it took"""
+        out = os.pread(self.log.fileno(), 4000, max(0, os.fstat(self.log.fileno()).st_size - 4000))
         return (f"Can't start jackd server '{self.name}' after {time.monotonic() - t0:.1f}s: "
-                f"jackd {'exited ' + str(exited) if exited is not None else 'still running at the timeout'}; "
-                f"{len(probes)} probes, first {probes[:2]}, last {probes[-2:]}, slow (>=0.5s) {slow[:10]}\n"
-                f"jackd output:\n{out}")
+                f"jackd {'exited with ' + str(exited) if exited is not None else 'still running at the timeout'}; "
+                f"{len(probes)} probes (start s, duration s, status), first {probes[:2]}, last {probes[-2:]}\n"
+                f"jackd output:\n{out.decode(errors='replace')}")
 
     def stop(self):
         if self.proc:
