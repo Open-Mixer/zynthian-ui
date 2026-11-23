@@ -8,6 +8,7 @@
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+import importlib
 import math
 import os
 import sys
@@ -26,8 +27,10 @@ if "zyngine" not in sys.modules:
     _pkg.__path__ = [os.path.join(ROOT, "zyngine")]
     sys.modules["zyngine"] = _pkg
 from zyngine import zynthian_position_law as law  # noqa: E402
-from zyngine import zynthian_controller as ctrl_mod  # noqa: E402
-from zyngine import zynthian_engine_plugin_hostd as ph  # noqa: E402  (imported for the wiring test)
+# the module, not the class: zyngine/__init__'s star import binds zyngine.zynthian_controller to its class
+ctrl_mod = importlib.import_module("zyngine.zynthian_controller")
+# the module, not the class: zyngine/__init__'s star import binds zyngine.zynthian_engine_plugin_hostd to its class
+ph = importlib.import_module("zyngine.zynthian_engine_plugin_hostd")
 
 
 def _import_gui_controller():

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian Controller (zynthian_controller)
 #
@@ -117,7 +116,7 @@ class zynthian_controller:
         self.midi_cc_debounce_timer = None
         self.osc_path = None  # OSC path to send value to
         self.graph_path = None  # Complex map of control to engine parameter
-        self.send_value_cb = None  # Called when value changes to send feedback to MIDI controllers
+        self.feedback = None  # CC feedback broker (zynthian_cc_feedback) while bound to a device that wants feedback
 
         self.label2value = None  # Dictionary for fast conversion from discrete label to value
         self.value2label = None  # Dictionary for fast conversion from discrete value to label
@@ -137,7 +136,7 @@ class zynthian_controller:
                 self.short_name = self.name
         if 'short_name' in options:
             self.short_name = options['short_name']
-        if 'group_name' in options:
+        if 'group_name' in options and options['group_name']:
             self.group_name = options['group_name']
         if 'group_symbol' in options and options['group_symbol'] is not None:
             self.group_symbol = options['group_symbol']
@@ -181,6 +180,8 @@ class zynthian_controller:
             self.is_trigger = options['is_trigger']
         if 'midi_cc_momentary_switch' in options:
             self.midi_cc_momentary_switch = options['midi_cc_momentary_switch']
+        if 'midi_cc_mode' in options:
+            self.midi_cc_mode = options['midi_cc_mode']
         if 'midi_cc_debounce' in options:
             self.midi_cc_debounce = options['midi_cc_debounce']
         if 'is_integer' in options:
@@ -386,12 +387,6 @@ class zynthian_controller:
         else:
             return False
 
-    def set_send_value_cb(self, cb_func):
-        self.send_value_cb = cb_func
-
-    def reset_send_value_cb(self):
-        self.send_value_cb = None
-
     def get_path(self):
         if self.osc_path:
             return str(self.osc_path)
@@ -531,9 +526,14 @@ class zynthian_controller:
                 except Exception as e:
                     logging.warning("Can't send controller '{}' => {}".format(self.symbol, e))
 
-        if self.send_value_cb and callable(self.send_value_cb):
+        self.send_feedback()
+
+    def send_feedback(self):
+        """Send the value to the devices it is bound to, through the CC feedback broker"""
+
+        if self.feedback is not None:
             try:
-                self.send_value_cb(self)
+                self.feedback.value_changed(self)
             except Exception as e:
                 logging.warning(f"Can't send value change feedback for {self.symbol} => {e}")
 
@@ -654,6 +654,8 @@ class zynthian_controller:
             state['midi_cc_val2'] = self.midi_cc_val2
         if self.midi_cc_momentary_switch:
             state['midi_cc_momentary_switch'] = self.midi_cc_momentary_switch
+        if self.midi_cc_mode != -1:
+            state['midi_cc_mode'] = self.midi_cc_mode
         if self.midi_cc_debounce:
             state['midi_cc_debounce'] = self.midi_cc_debounce
         return state

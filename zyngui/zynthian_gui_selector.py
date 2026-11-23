@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian GUI
 #
@@ -29,6 +27,7 @@ from datetime import datetime
 
 # Zynthian specific modules
 from zyngine import zynthian_controller
+from zyngine.zynthian_signal_manager import zynsigman
 from zyngui import zynthian_gui_config
 from zyngui.zynthian_gui_base import zynthian_gui_base
 from zyngui.zynthian_gui_controller import zynthian_gui_controller
@@ -283,6 +282,7 @@ class zynthian_gui_selector(zynthian_gui_base):
         self.fill_listbox()
         self.select()
         self.last_index_change_ts = datetime.min
+        zynsigman.send(zynsigman.S_GUI, zynsigman.SS_GUI_VIEW_LIST, view=self)
 
     def update_list(self):
         if self.shown:
@@ -312,7 +312,10 @@ class zynthian_gui_selector(zynthian_gui_base):
         no_div = new_index == index
         self._select_listbox(new_index, see=see)
         if self.shown and self.zyngui.tts:
-            tts_text = self.list_data[new_index][2] + tts
+            try:
+                tts_text = self.list_data[new_index][2] + tts
+            except:
+                return
             if self.last_tts == tts_text:
                 return
             self.last_tts = tts_text
@@ -339,6 +342,7 @@ class zynthian_gui_selector(zynthian_gui_base):
         # Set index value
         self.index = index
         self.last_index_change_ts = datetime.now()
+        zynsigman.send(zynsigman.S_GUI, zynsigman.SS_GUI_VIEW_SELECT, view=self)
 
     def select_listbox_by_name(self, name):
         names = self.listbox.get(0, self.listbox.size())
@@ -541,6 +545,13 @@ class zynthian_gui_selector(zynthian_gui_base):
             elif dts >= zynthian_gui_config.zynswitch_long_seconds:
                 self.zyngui.zynswitch_defered('L', 2)
             """
+
+    state_key = "zyngui_selector"
+
+    def get_state(self, what="all"):
+        if what == "select":
+            return {"selected": self.index}
+        return {"items": [str(row[2]) for row in self.list_data], "selected": self.index}
 
     def get_help_fpath(self):
         if self.param_editor_zctrl:

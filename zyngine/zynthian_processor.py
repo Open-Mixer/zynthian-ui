@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # *****************************************************************************
 # ZYNTHIAN PROJECT: Zynthian processor (zynthian_processor)
 #
@@ -721,11 +720,7 @@ class zynthian_processor:
                 zctrl.send_midi_cc(mval)
                 # logging.debug("Sending MIDI CH{}#CC{}={} for {}".format(zctrl.midi_chan, zctrl.midi_cc, int(mval), k))
 
-            if zctrl.send_value_cb and callable(zctrl.send_value_cb):
-                try:
-                    zctrl.send_value_cb(zctrl)
-                except Exception as e:
-                    logging.warning(f"Can't send value feedback for {zctrl.symbol} => {e}")
+            zctrl.send_feedback()
 
     def send_ctrlfb_midi_cc(self):
         """Send MIDI CC feedback for all configured controllers
@@ -734,11 +729,7 @@ class zynthian_processor:
         """
 
         for k, zctrl in self.controllers_dict.items():
-            if zctrl.send_value_cb and callable(zctrl.send_value_cb):
-                try:
-                    zctrl.send_value_cb(zctrl)
-                except Exception as e:
-                    logging.warning(f"Can't send value feedback for {zctrl.symbol} => {e}")
+            zctrl.send_feedback()
 
     def get_group_zctrls(self, group):
         zctrls = []
@@ -825,20 +816,6 @@ class zynthian_processor:
     # ----------------------------------------------------------------------------
     # MIDI processing
     # ----------------------------------------------------------------------------
-
-    def midi_control_change(self, chan, ccnum, ccval):
-        """Handle MIDI CC message
-
-        chan : MIDI channel
-        ccnum : CC number
-         ccval : CC value
-        """
-
-        # logging.debug("Receving MIDI CH{}#CC{}={}".format(chan, ccnum, ccval))
-        try:
-            self.engine.midi_control_change(chan, ccnum, ccval)
-        except:
-            pass
 
     def midi_bank_msb(self, bank_msb):
         """Handle MIDI bank MSB message
@@ -951,6 +928,8 @@ class zynthian_processor:
                         zctrl.set_value(ctrl_state["value"], True)
                     if "midi_cc_momentary_switch" in ctrl_state:
                         zctrl.midi_cc_momentary_switch = ctrl_state['midi_cc_momentary_switch']
+                    if "midi_cc_mode" in ctrl_state:
+                        zctrl.midi_cc_mode = ctrl_state['midi_cc_mode']
                     if "midi_cc_debounce" in ctrl_state:
                         zctrl.midi_cc_debounce = ctrl_state['midi_cc_debounce']
                     if "midi_cc_val1" in ctrl_state:

@@ -7,6 +7,7 @@
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+import importlib
 import os
 import re
 import sys
@@ -58,7 +59,8 @@ sys.modules["zyngine"].zynthian_lv2 = _lv2
 LV2_PRESETS = {}
 _lv2.get_plugin_presets_cache = lambda name: LV2_PRESETS.get(name, {})
 
-from zyngine import zynthian_engine_plugin_hostd as ph  # noqa: E402
+# the module, not the class: zyngine/__init__'s star import binds zyngine.zynthian_engine_plugin_hostd to its class
+ph = importlib.import_module("zyngine.zynthian_engine_plugin_hostd")
 from zyngine import zynthian_plugin_hostd_catalogue as cat  # noqa: E402
 from zyngine import zynthian_plugin_hostd_grouping as grouping  # noqa: E402
 from zyngine.zynthian_chain import zynthian_chain  # noqa: E402
@@ -144,13 +146,35 @@ class plugin_hostd_case(unittest.TestCase):
         os.environ.pop("OMX_PANEL_STUB_OLD", None)
         ph.probe_cache.clear()
         ph.DESCRIPTOR_WAIT = 0.5
-        # The menus' lists by type start empty for every test, in place: the registry is shared
+        # zynthian_lv2 is the real module where the suite imported zyngine first (tests/conftest.py): its plugin ports
+        # and preset cache are this file's stand-ins for each test
+        lv2 = sys.modules["zyngine.zynthian_lv2"]
+        for name, value in (("get_plugin_ports", lambda uri: LV2_PORTS.get(uri, {})),
+                            ("get_plugin_presets_cache", lambda name: LV2_PRESETS.get(name, {}))):
+            patcher = mock.patch.object(lv2, name, value, create=True)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        # The menus' lists by type start empty for every test, in place: the registry is shared; what was there before
+        # (the real module's table) is put back after it
+        kept = dict(_lv2.engines_by_type)
+        self.addCleanup(lambda: (_lv2.engines_by_type.clear(), _lv2.engines_by_type.update(kept)))
         _lv2.engines_by_type.clear()
         _lv2.engines_by_type.update({"MIDI Synth": {}, "Audio Effect": {}})
         # The catalogue makes the PH entries the tests add, from jalv's LV2 ones and the CLAP scan
         self.info = {"JV/Amp": lv2_info("Amp", "urn:test:amp"), "JV/NoPin": lv2_info("NoPin", "urn:test:nopin"),
                      "JV/Big": lv2_info("Big", "urn:test:big")}
         cat.add_catalogue(self.info, clap=cat.scanned_plugins(CLAP_SCAN), binary=FAKE)
+        # zynautoconnect is the real package where the suite imported zyngine first (tests/conftest.py): every public
+        # function is a stand-in for each test, as tests/integration/conftest.py's fake_autoconnect does, so the graph
+        # is rebuilt without a JACK client (acquire_lock answers, where the real one has no lock before init) and the
+        # settings below reach the engine
+        ac = sys.modules["zynautoconnect"]
+        for name, value in list(vars(ac).items()):
+            if (isinstance(value, types.FunctionType) and value.__module__.startswith("zynautoconnect")
+                    and not name.startswith("_")):
+                patcher = mock.patch.object(ac, name, mock.MagicMock(name=f"zynautoconnect.{name}"))
+                patcher.start()
+                self.addCleanup(patcher.stop)
         # The graph as a worker leaves it after a chain: a member it runs in the head's client has no port
         sys.modules["zynautoconnect"].get_ports.return_value = []
         # a worker sets the instance key on its client, which is called effect_<instance> unless a test says otherwise

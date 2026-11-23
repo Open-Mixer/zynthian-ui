@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian GUI
 #
@@ -70,6 +68,7 @@ class zynthian_wsleds_base:
 
         self.wsled_state_enabled = True
         self.last_wsled_state = ""
+        self.wsled_state_changed = False
 
     def setup_colors(self):
         # Predefined colors
@@ -221,6 +220,7 @@ class zynthian_wsleds_base:
     def update(self):
         # Ignore refreshes once end() has lighted-off the LEDs, so a late call
         # from the status thread can't light them up again while exiting.
+        #TODO: Refactor to remove shadow of Tk update() method.
         if self.ended:
             return
 
@@ -247,7 +247,7 @@ class zynthian_wsleds_base:
                 logging.exception(traceback.format_exc())
             self.show()
 
-            if self.wsled_state_enabled and (self.zyngui.capture_log or self.ctrldev_manager.need_wsled_state()):
+            if self.wsled_state_enabled and (self.zyngui.capture_log or self.zyngui.websocket_clients or self.ctrldev_manager.need_wsled_state()):
                 try:
                     wsled_state = []
                     for i in range(self.num_leds):
@@ -259,6 +259,7 @@ class zynthian_wsleds_base:
                     wsled_state = ",".join(wsled_state)
                     if wsled_state != self.last_wsled_state:
                         self.last_wsled_state = wsled_state
+                        self.wsled_state_changed = True
                         if self.zyngui.capture_log:
                             self.zyngui.write_capture_log("LEDSTATE:" + wsled_state)
                             # logging.debug(f"Capturing LED state log => {wsled_state}")
@@ -269,6 +270,7 @@ class zynthian_wsleds_base:
 
     def reset_last_state(self):
         self.last_wsled_state = ""
+        self.wsled_state_changed = False
 
     def enable_wsled_state(self):
         self.wsled_state_enabled = True
@@ -276,6 +278,7 @@ class zynthian_wsleds_base:
     def disable_wsled_state(self):
         self.wsled_state_enabled = False
         self.last_wsled_state = ""
+        self.wsled_state_changed = False
 
     def update_wsleds(self):
         pass

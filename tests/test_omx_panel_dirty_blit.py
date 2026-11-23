@@ -6,7 +6,7 @@
 # the screen equals the whole draw over the background. The renderer's own dirty rectangles (Open-Mixer/omx-panel#78)
 # take the place of the compared rows when the renderer gives them.
 #
-# The panel view module's PanelImage, with real PIL and the Tk photo calls recorded into a PIL image that stands for
+# The panel image module's PanelImage (zyngui: zyngine stays toolkit-free), with real PIL and the Tk photo calls recorded into a PIL image that stands for
 # the photo on the screen.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
@@ -17,7 +17,8 @@ import os
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-_spec = importlib.util.spec_from_file_location("omx_panel_view", os.path.join(HERE, "..", "zyngine", "zynthian_omx_panel_view.py"))
+_spec = importlib.util.spec_from_file_location("omx_panel_image", os.path.join(HERE, "..", "zyngui",
+                                                                    "zynthian_gui_omx_panel_image.py"))
 view = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(view)
 
@@ -48,7 +49,7 @@ def shown(pixels, w=W, h=H, bg=BG):
 class DirtyBlit(unittest.TestCase):
     def setUp(self):
         if not hasattr(view, "PanelImage"):
-            self.fail("the panel view has no PanelImage: every frame converts and blits the whole panel")
+            self.fail("the panel image module has no PanelImage: every frame converts and blits the whole panel")
         test = self
 
         class Recorded(view.PanelImage):

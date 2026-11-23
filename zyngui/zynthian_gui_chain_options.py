@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian GUI
 #
@@ -91,7 +89,7 @@ class zynthian_gui_chain_options(zynthian_gui_selector_info):
                                    ["Remove all audio-FX processors from this chain.", "delete_audio_processors.png"]))
 
         if self.chain.get_processor_count():
-            self.list_data.append((self.clear_midi_learn, None, "Clean MIDI Learn",
+            self.list_data.append((self.clean_midi_learn, None, "Clean MIDI Learn",
                                    ["Remove CC bindings from all parameters of all processors in this chain.", "delete_presets.png"]))
         if len(self.list_data) == len_check:
             self.list_data.pop() # Remove section title for empty section
@@ -117,7 +115,7 @@ class zynthian_gui_chain_options(zynthian_gui_selector_info):
     def fill_listbox(self):
         super().fill_listbox()
         for i, val in enumerate(self.list_data):
-            if val[0] == None:
+            if val[0] is None:
                 self.listbox.itemconfig(
                     i, {'bg': zynthian_gui_config.color_panel_hl, 'fg': zynthian_gui_config.color_tx_off})
 
@@ -137,9 +135,9 @@ class zynthian_gui_chain_options(zynthian_gui_selector_info):
         else:
             self.zyngui.show_screen_reset('chain_manager')
 
-    def clear_midi_learn(self):
-        self.zyngui.show_confirm(f"Do you want to clean MIDI-learn for ALL controls in ALL processors within chain: {self.chain.get_name()}?",
-            self.zyngui.chain_manager.clean_midi_learn,
+    def clean_midi_learn(self):
+        self.zyngui.show_confirm(f"Do you want to clean MIDI CC bindings (learn) for ALL controls in ALL processors within chain: {self.chain.get_name()}?",
+            self.zyngui.chain_manager.clean_midi_binding,
             self.chain.chain_id)
 
     def move_chain(self):

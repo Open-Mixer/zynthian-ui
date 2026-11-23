@@ -33,6 +33,7 @@ from zyngine import zynthian_position_law as position_law
 from zyngine import zynthian_touch_layer as touch
 from zyngine import zynthian_ui_look as ui_look
 from zyngui import zynthian_gui_config
+from zyngui import zynthian_gui_omx_panel_image as panel_image
 from zyngui.zynthian_widget_base import zynthian_widget_base
 
 MARGIN = 10
@@ -64,7 +65,7 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         self.stopped = None  # how the renderer stopped: the panel is strips until it is opened again
         self.drawn_page = None
         self.drawn_state = None
-        self.panel_image = None  # the panel on the canvas, blitted where a draw changed (panel_view.PanelImage)
+        self.panel_image = None  # the panel on the canvas, blitted where a draw changed (panel_image.PanelImage)
         self.meter_at = {}
         try:  # Tk sees one pointer; a multi-touch screen's fingers come from the evdev slots (a pinch needs two)
             self.touch = touch.EvdevSource()
@@ -222,7 +223,7 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         """The draw on the canvas: only the rows it changed are converted and blitted."""
         w, h = self.width, self.height
         if self.panel_image is None:
-            self.panel_image = panel_view.PanelImage(zynthian_gui_config.color_bg, self.widget_canvas)
+            self.panel_image = panel_image.PanelImage(zynthian_gui_config.color_bg, self.widget_canvas)
         self.panel_image.background = zynthian_gui_config.color_bg
         self.panel_image.show(view.draw(w, h), w, h)
 

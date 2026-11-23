@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian Engine (zynthian_engine_jalv)
 #
@@ -329,7 +328,7 @@ class zynthian_engine_jalv_base(zynthian_engine):
         logging.info("Getting Controller List from LV2 Plugin ...")
         zctrls = {}
         self.bypass_zctrl = None
-        for i, info in zynthian_lv2.get_plugin_ports(self.plugin_url).items():
+        for info in zynthian_lv2.get_plugin_ports(self.plugin_url):
             symbol = info['symbol']
 
             if not self.customize_lv2_controller(info):
@@ -363,7 +362,6 @@ class zynthian_engine_jalv_base(zynthian_engine):
                         'name': info['name'],
                         'group_symbol': info['group_symbol'],
                         'group_name': info['group_name'],
-                        #'graph_path': info['index'],
                         'value': info['value'],
                         'labels': labels,
                         'ticks': values,
@@ -393,7 +391,6 @@ class zynthian_engine_jalv_base(zynthian_engine):
                             'name': info['name'],
                             'group_symbol': info['group_symbol'],
                             'group_name': info['group_name'],
-                            #'graph_path': info['index'],
                             'value': val,
                             'labels': ['off', 'on'],
                             'ticks': [int(info['range']['min']), int(info['range']['max'])],
@@ -416,7 +413,6 @@ class zynthian_engine_jalv_base(zynthian_engine):
                             'name': info['name'],
                             'group_symbol': info['group_symbol'],
                             'group_name': info['group_name'],
-                            #'graph_path': info['index'],
                             'value': int(info['value']),
                             'value_default': int(info['value']),
                             'value_min': int(info['range']['min']),
@@ -441,7 +437,6 @@ class zynthian_engine_jalv_base(zynthian_engine):
                         'name': info['name'],
                         'group_symbol': info['group_symbol'],
                         'group_name': info['group_name'],
-                        #'graph_path': info['index'],
                         'value': val,
                         'labels': ['off', 'on'],
                         'ticks': [info['range']['min'], info['range']['max']],
@@ -465,7 +460,6 @@ class zynthian_engine_jalv_base(zynthian_engine):
                         'name': info['name'],
                         'group_symbol': info['group_symbol'],
                         'group_name': info['group_name'],
-                        #'graph_path': info['index'],
                         'value': val,
                         'labels': ['trig'],
                         'value_default': val,
@@ -485,7 +479,6 @@ class zynthian_engine_jalv_base(zynthian_engine):
                         'name': info['name'],
                         'group_symbol': info['group_symbol'],
                         'group_name': info['group_name'],
-                        #'graph_path': info['index'],
                         'value': None,
                         'value_default': None,
                         'value_min': None,
@@ -505,7 +498,6 @@ class zynthian_engine_jalv_base(zynthian_engine):
                         'name': info['name'],
                         'group_symbol': info['group_symbol'],
                         'group_name': info['group_name'],
-                        #'graph_path': info['index'],
                         'value': float(info['value']),
                         'value_default': float(info['value']),
                         'value_min': float(info['range']['min']),
@@ -618,9 +610,10 @@ class zynthian_engine_jalv(zynthian_engine_jalv_base):
     # Custom plugin info
     # ------------------------------------------------------------------------------
 
-    if "Raspberry Pi 4" in os.environ.get('RBPI_VERSION'):
+    rbpi_version = os.environ.get('RBPI_VERSION', '')
+    if "Raspberry Pi 4" in rbpi_version:
         rpi = "RPi4"
-    elif "Raspberry Pi 3" in os.environ.get('RBPI_VERSION'):
+    elif "Raspberry Pi 3" in rbpi_version:
         rpi = "RPi3"
     else:
         rpi = "RPi2"
@@ -640,21 +633,6 @@ class zynthian_engine_jalv(zynthian_engine_jalv_base):
         'https://git.code.sf.net/p/qmidiarp/lfo': {"RPi5": "X11UI", "RPi4": "X11UI", "RPi3": "X11UI", "RPi2": "X11UI"},
         'https://git.code.sf.net/p/qmidiarp/seq': {"RPi5": "X11UI", "RPi4": "X11UI", "RPi3": "X11UI", "RPi2": "X11UI"},
         'http://distrho.sf.net/plugins/3BandEQ': {"RPi5": False, "RPi4": False, "RPi3": False, "RPi2": False}
-    }
-
-    plugins_custom_gui = {
-        'http://gareus.org/oss/lv2/meters#spectr30mono': zynthian_engine.ui_dir + "/zyngui/zynthian_widget_spectr30.py",
-        'http://gareus.org/oss/lv2/meters#spectr30stereo': zynthian_engine.ui_dir + "/zyngui/zynthian_widget_spectr30.py",
-        'http://gareus.org/oss/lv2/tuna#one': zynthian_engine.ui_dir + "/zyngui/zynthian_widget_tunaone.py",
-        'http://gareus.org/oss/lv2/tuna#mod': zynthian_engine.ui_dir + "/zyngui/zynthian_widget_tunaone.py",
-        'http://aidadsp.cc/plugins/aidadsp-bundle/rt-neural-loader': zynthian_engine.ui_dir + "/zyngui/zynthian_widget_aidax.py",
-        'http://github.com/mikeoliphant/neural-amp-modeler-lv2': zynthian_engine.ui_dir + "/zyngui/zynthian_widget_nam.py",
-        'http://guitarix.sourceforge.net/plugins/gx_graphiceq_#_graphiceq_': zynthian_engine.ui_dir + "/zyngui/zynthian_widget_GxGraphicEQ.py",
-        'http://guitarix.sourceforge.net/plugins/gx_barkgraphiceq_#_barkgraphiceq_': zynthian_engine.ui_dir + "/zyngui/zynthian_widget_GxGraphicEQ.py",
-        'https://dusk-audio.github.io/plugins/chord-analyzer-headless': zynthian_engine.ui_dir + "/zyngui/zynthian_widget_chord_analyzer.py",
-        'https://dusk-audio.github.io/plugins/chord-analyzer-midi': zynthian_engine.ui_dir + "/zyngui/zynthian_widget_chord_analyzer.py",
-        'https://dusk-audio.github.io/plugins/chord-analyzer': zynthian_engine.ui_dir + "/zyngui/zynthian_widget_chord_analyzer.py",
-        'http://samplv1.sourceforge.net/lv2': zynthian_engine.ui_dir + "/zyngui/zynthian_widget_audio_file.py"
     }
 
     # For certain plugins its beneficial to set parameters not set
@@ -704,7 +682,6 @@ class zynthian_engine_jalv(zynthian_engine_jalv_base):
             'breath': [2, 64],
             'volume': [7, 98],
             'panning': [10, 64],
-            'expression': [11, 127],
             'modulation wheel': [1, 0],
             'expression': [11, 64],
             'filter cutoff': [74, 64],
@@ -784,6 +761,8 @@ class zynthian_engine_jalv(zynthian_engine_jalv_base):
             self.ignore_not_on_gui = True
         else:
             self.ignore_not_on_gui = False
+
+        self.custom_gui_generation = None
 
         self.native_gui = False
         self.minimize_native_gui = False
@@ -869,18 +848,16 @@ class zynthian_engine_jalv(zynthian_engine_jalv_base):
             #logging.debug(f"CTRLS => {self._ctrls}")
             #logging.debug(f"CTRL_SCREENS => {self._ctrl_screens}")
 
+            # Reload LV2 data if bundles were added or updated
+            zynthian_lv2.check_lv2_changes()
+
             # Generate LV2-Plugin Controllers
             self.lv2_monitors_dict = {}
             self.lv2_zctrl_dict = self.get_lv2_controllers_dict()
             self.generate_ctrl_screens(self.lv2_zctrl_dict)
 
             # Look for a custom GUI
-            self.custom_gui_fpath = self.get_user_custom_gui()
-            if not self.custom_gui_fpath:
-                try:
-                    self.custom_gui_fpath = self.plugins_custom_gui[self.plugin_url]
-                except:
-                    self.custom_gui_fpath = None
+            self.custom_gui_fpath = self.get_custom_gui_fpath()
 
             # Instance jalv host with the plugin URI
             output = self.start()
@@ -900,15 +877,31 @@ class zynthian_engine_jalv(zynthian_engine_jalv_base):
     def load_preset_info(self):
         self.preset_info = zynthian_lv2.get_plugin_presets_cache(self.plugin_name)
 
-    def get_user_custom_gui(self):
-        pname = self.plugin_name.lower().replace(" ", "_")
-        fpath = self.ui_dir + "/zyngui/widgets_user/zynthian_widget_" + pname + ".py"
-        logging.debug(f"Looking for user custom widget '{fpath}' ...")
-        if os.path.isfile(fpath):
-            logging.debug(f"... found!")
-            return fpath
-        else:
+    def get_custom_gui_fpath(self):
+        """Find the zynthian widget for this plugin: a zyngui:widget UI declared
+        in the LV2 data (plugin bundle or extension bundle, built-in or user)."""
+        self.custom_gui_generation = zynthian_lv2.lv2_generation
+        self.custom_gui_help_fpath = None
+        try:
+            widget = zynthian_lv2.get_plugin_zyngui_widget(self.plugin_url)
+        except Exception as e:
+            # A widget problem must never prevent the plugin from loading
+            logging.error(f"Can't get zynthian widget for '{self.plugin_name}' => {e}")
             return None
+        if widget:
+            logging.info(f"Using {'user' if widget['user'] else 'built-in'} zynthian widget <{widget['uri']}> from '{widget['fpath']}'")
+            self.custom_gui_help_fpath = widget['help']
+            return widget['fpath']
+        return None
+
+    def refresh_custom_gui(self):
+        """Look for the widget again if LV2 data changed (widget bundle added, removed or updated)"""
+        zynthian_lv2.check_lv2_changes()
+        if self.custom_gui_generation != zynthian_lv2.lv2_generation:
+            fpath = self.get_custom_gui_fpath()
+            if fpath != self.custom_gui_fpath:
+                logging.info(f"Widget for '{self.plugin_name}' changed: {self.custom_gui_fpath} => {fpath}")
+                self.custom_gui_fpath = fpath
 
     # ---------------------------------------------------------------------------
     # Subprocess Management & IPC
@@ -1092,7 +1085,7 @@ class zynthian_engine_jalv(zynthian_engine_jalv_base):
         self.proc_cmd(cmd)
         # Wait for save preset feedback
         i = 0
-        while i < 20 and self.save_preset_uri == None:
+        while i < 20 and self.save_preset_uri is None:
             sleep(0.1)
             i += 1
         return self.save_preset_uri
@@ -1286,8 +1279,7 @@ class zynthian_engine_jalv(zynthian_engine_jalv_base):
         # Try to copy LV2 bundles ...
         if os.path.isdir(dpath):
             # Find manifest.ttl
-            manifest_files = check_output(f"find \"{dpath}\" -type f -iname manifest.ttl",
-                                          shell=True).decode("utf-8").split("\n")
+            manifest_files = check_output(["find", dpath, "-type", "f", "-iname", "manifest.ttl"]).decode("utf-8").split("\n")
             # Copy LV2 bundle directories to destiny ...
             count = 0
             for f in manifest_files:
@@ -1303,9 +1295,9 @@ class zynthian_engine_jalv(zynthian_engine_jalv_base):
 
         # Else, try to convert from native format ...
         if native_ext and (os.path.isdir(dpath) or ext[1:].lower() == native_ext):
-            preset2lv2_cmd = f"cd /tmp; preset2lv2 {cls.zynapi_get_preset2lv2_format()} \"{dpath}\""
+            preset2lv2_cmd = ["preset2lv2", cls.zynapi_get_preset2lv2_format(), dpath]
             try:
-                res = check_output(preset2lv2_cmd, stderr=STDOUT, shell=True).decode("utf-8")
+                res = check_output(preset2lv2_cmd, stderr=STDOUT, cwd="/tmp").decode("utf-8")
                 for bname in re.compile("Bundle '(.*)' generated").findall(res):
                     bpath = "/tmp/" + bname
                     logging.debug("Copying LV2-Bundle '{}' ...".format(bpath))
@@ -1322,7 +1314,7 @@ class zynthian_engine_jalv(zynthian_engine_jalv_base):
                 parts = os.path.split(dpath)
                 shutil.rmtree(native_presets_dir + "/" + parts[1], ignore_errors=True)
                 shutil.move(dpath, native_presets_dir)
-                check_output(f"regenerate_lv2_presets.sh \"{cls.zynapi_instance.plugin_url}\" NO_LV2_CACHE_REGENERATION", shell=True)
+                check_output(["regenerate_lv2_presets.sh", cls.zynapi_instance.plugin_url, "NO_LV2_CACHE_REGENERATION"])
                 cls.refresh_zynapi_instance()
             except:
                 raise Exception("Unknown preset format: {}".format(native_ext))
