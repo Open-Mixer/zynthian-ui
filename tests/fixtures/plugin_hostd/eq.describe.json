@@ -239,17 +239,73 @@
       {
         "key": "band_1",
         "labelKey": "",
-        "label": "Band 1"
-      },
-      {
-        "key": "band_2",
-        "labelKey": "",
-        "label": "Band 2"
-      },
-      {
-        "key": "band_3",
-        "labelKey": "",
-        "label": "Band 3"
+        "label": "Band",
+        "matrix": {
+          "orientation": "columns",
+          "title": "Band",
+          "heads": [
+            {
+              "label": "Band 1",
+              "on": null,
+              "edge": null
+            },
+            {
+              "label": "Band 2",
+              "on": null,
+              "edge": null
+            },
+            {
+              "label": "Band 3",
+              "on": null,
+              "edge": null
+            }
+          ],
+          "rows": [
+            {
+              "label": "Freq"
+            },
+            {
+              "label": "Gain"
+            },
+            {
+              "label": "Q"
+            },
+            {
+              "label": "Width"
+            },
+            {
+              "label": "",
+              "head": true
+            }
+          ],
+          "cells": [
+            [
+              "freq1",
+              "freq2",
+              "freq3"
+            ],
+            [
+              "gain1",
+              "gain2",
+              "gain3"
+            ],
+            [
+              "q1",
+              "q2",
+              "q3"
+            ],
+            [
+              "width1",
+              "width2",
+              "width3"
+            ],
+            [
+              null,
+              null,
+              null
+            ]
+          ]
+        }
       },
       {
         "key": "tone",
@@ -328,7 +384,7 @@
       },
       {
         "symbol": "freq2",
-        "section": "band_2",
+        "section": "band_1",
         "widget": "knob",
         "labelKey": "",
         "label": "Freq 2",
@@ -336,7 +392,7 @@
       },
       {
         "symbol": "gain2",
-        "section": "band_2",
+        "section": "band_1",
         "widget": "knob",
         "labelKey": "",
         "label": "Gain 2",
@@ -344,7 +400,7 @@
       },
       {
         "symbol": "q2",
-        "section": "band_2",
+        "section": "band_1",
         "widget": "knob",
         "labelKey": "",
         "label": "Q 2",
@@ -352,7 +408,7 @@
       },
       {
         "symbol": "width2",
-        "section": "band_2",
+        "section": "band_1",
         "widget": "knob",
         "labelKey": "",
         "label": "Width 2",
@@ -360,7 +416,7 @@
       },
       {
         "symbol": "freq3",
-        "section": "band_3",
+        "section": "band_1",
         "widget": "knob",
         "labelKey": "",
         "label": "Freq 3",
@@ -368,7 +424,7 @@
       },
       {
         "symbol": "gain3",
-        "section": "band_3",
+        "section": "band_1",
         "widget": "knob",
         "labelKey": "",
         "label": "Gain 3",
@@ -376,7 +432,7 @@
       },
       {
         "symbol": "q3",
-        "section": "band_3",
+        "section": "band_1",
         "widget": "knob",
         "labelKey": "",
         "label": "Q 3",
@@ -384,7 +440,7 @@
       },
       {
         "symbol": "width3",
-        "section": "band_3",
+        "section": "band_1",
         "widget": "knob",
         "labelKey": "",
         "label": "Width 3",
@@ -460,13 +516,13 @@
       },
       {
         "section": 1,
-        "sectionName": "Band 1",
-        "pageName": "Band 1",
+        "sectionName": "Band",
+        "pageName": "Band: Band 1",
         "ids": [
+          null,
+          null,
           "q1",
           "width1",
-          null,
-          null,
           null,
           null,
           null,
@@ -474,9 +530,9 @@
         ]
       },
       {
-        "section": 2,
-        "sectionName": "Band 2",
-        "pageName": "Band 2",
+        "section": 1,
+        "sectionName": "Band",
+        "pageName": "Band: Band 2",
         "ids": [
           "freq2",
           "gain2",
@@ -489,9 +545,9 @@
         ]
       },
       {
-        "section": 3,
-        "sectionName": "Band 3",
-        "pageName": "Band 3",
+        "section": 1,
+        "sectionName": "Band",
+        "pageName": "Band: Band 3",
         "ids": [
           "freq3",
           "gain3",
@@ -504,7 +560,7 @@
         ]
       },
       {
-        "section": 4,
+        "section": 2,
         "sectionName": "Tone",
         "pageName": "Tone",
         "ids": [

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian Engine (zynthian_engine_puredata)
 #
@@ -214,7 +213,7 @@ class zynthian_engine_puredata(zynthian_engine):
 
     def set_preset(self, processor, preset, preload=False):
         self.load_preset_config(preset)
-    
+
         # Set custom GUI path based on two conditions:
         # 1. Organelle is in the preset path, OR
         # 2. Preset config has an 'use_organelle_widget' flag set to True
@@ -247,7 +246,7 @@ class zynthian_engine_puredata(zynthian_engine):
             amidi_ports = self.get_amidi_clients()
             self.start()
             for symbol in processor.controllers_dict:
-                self.state_manager.chain_manager.remove_midi_learn(processor, symbol)
+                self.state_manager.chain_manager.clear_midi_binding(processor, symbol)
             processor.refresh_controllers()
             sleep(2.0)
             amidi_ports = list(set(self.get_amidi_clients()) - set(amidi_ports))

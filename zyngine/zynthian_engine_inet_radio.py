@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian Engine (zynthian_engine_inetradio)
 #
@@ -571,7 +570,6 @@ class zynthian_engine_inet_radio(zynthian_engine):
 
         # MIDI Controllers
         self._ctrls = [
-            ['volume', None, 80, 100],
             ['stream', None, 'streaming', ['stopped', 'streaming']],
             ['prev/next', None, '<>', ['<', '<>', '>']],
             ['pause', None, 'playing', ['paused', 'playing']],
@@ -580,7 +578,7 @@ class zynthian_engine_inet_radio(zynthian_engine):
 
         # Controller Screens
         self._ctrl_screens = [
-            ['main', ['volume', 'stream', 'prev/next', 'pause']]
+            ['main', ['stream', 'prev/next', 'pause']]
         ]
 
         udev_context = pyudev.Context()
@@ -619,7 +617,7 @@ class zynthian_engine_inet_radio(zynthian_engine):
                 self.client.send("zynthian\n".encode())
                 self.running= True
                 self.start_proc_poll_thread()
-                
+
             except Exception as err:
                 logging.error(
                     "Can't start engine {} => {}".format(self.name, err))
@@ -794,7 +792,7 @@ class zynthian_engine_inet_radio(zynthian_engine):
         for file in listdir(f"{self.my_data_dir}/capture"):
             if file[-4:].lower() in (".m3u", ".pls"):
                 self.presets["Playlists"].append([f"{self.my_data_dir}/capture/{file}", 1, file[:-4]])
-        
+
         if exists("/dev/sr0"):
             self.presets["Devices"] = [["cdda:///dev/sr0", 2, "CD"]]
             self.banks.append(["Devices", None, "Devices", None])
@@ -824,11 +822,11 @@ class zynthian_engine_inet_radio(zynthian_engine):
         self.monitors_dict['title'] = preset[2]
         if preset[1]:
             self._ctrl_screens = [
-                ['main', ['volume', 'stream', 'prev/next', 'pause']],
+                ['main', ['stream', 'prev/next', 'pause']],
                 ['playlist', ['random']]
             ]
         else:
-            self._ctrl_screens = [['main', ['volume', 'stream', 'prev/next']]]
+            self._ctrl_screens = [['main', ['stream', 'prev/next']]]
         processor.refresh_controllers()
         if preset[2] == "CD":
             processor.controllers_dict["stream"].set_value("stopped")
@@ -845,7 +843,7 @@ class zynthian_engine_inet_radio(zynthian_engine):
             self.connect_timer.cancel()
         self.connect_timer = Timer(2, zynautoconnect.audio_autoconnect)
         self.connect_timer.start()
-        
+
     # ----------------------------------------------------------------------------
     # Controllers Management
     # ----------------------------------------------------------------------------
@@ -853,9 +851,7 @@ class zynthian_engine_inet_radio(zynthian_engine):
     def send_controller_value(self, zctrl):
         if self.proc is None:
             return
-        if zctrl.symbol == "volume":
-                self.proc_cmd(f"volume {zctrl.value * 3}")
-        elif zctrl.symbol == "prev/next":
+        if zctrl.symbol == "prev/next":
             value = zctrl.value - 1
             zctrl.set_value(1, False)
             if self.preset:

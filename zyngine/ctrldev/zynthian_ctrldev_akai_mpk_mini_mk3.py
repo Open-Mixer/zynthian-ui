@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian Control Device Driver
 #
@@ -162,9 +160,8 @@ class SysExQueryProgram:
 #  SysEx command for updating a device program/settings
 # --------------------------------------------------------------------------
 class SysExSetProgram:
-    def __init__(self, program=0, name="Zynthian", channels={}, aftertouch=AFTERTOUCH_OFF,
-                 keybed_octave=4, arp={}, tempo_taps=3, tempo=90, joy={},
-                 pads={}, knobs={}, transpose=0x0c):
+    def __init__(self, name, channels, arp, joy, pads, knobs,aftertouch=AFTERTOUCH_OFF,
+                 keybed_octave=4, tempo_taps=3, tempo=90, transpose=0x0c, program=0):
 
         arp_swing = int(arp.get("swing", ARP_SWING_MIN))
         assert 0 <= program <= 8, "Invalid program number: {program} (valid: 0(RAM)-8)."
@@ -641,20 +638,19 @@ class MixerHandler(ModeHandlerBase):
         chain = self._chain_manager.get_chain_by_index(index)
         if chain is None or chain.chain_id == 0:
             return False
-        mixer_chan = chain.mixer_chan
 
-        if type == "level":
-            value = self._zynmixer.get_level(mixer_chan)
-            set_value = self._zynmixer.set_level
-        elif type == "balance":
-            value = self._zynmixer.get_balance(mixer_chan)
-            set_value = self._zynmixer.set_balance
+        zctrl = None
+        if type in ("level", "balance", "mute"):
+            zctrl = zynthian_ctrldev_zynmixer.get_chain_zctrl(chain, type)
+            if zctrl is None:
+                return False
+
+        if type in ("level", "balance"):
+            value = zctrl.value
         elif type == "mute":
-            value = ccval < 64
-            def set_value(c, v): return self._zynmixer.set_mute(c, v, True)
+            value = int(ccval < 64)
         elif type == "solo":
             value = ccval < 64
-            def set_value(c, v): return chain.set_solo(v)
         elif type == "select":
             return self._chain_manager.set_active_chain_by_id(chain.chain_id)
         else:
@@ -667,7 +663,10 @@ class MixerHandler(ModeHandlerBase):
             value = max(minv, min(value, maxv))
             value /= 100
 
-        set_value(mixer_chan, value)
+        if type == "solo":
+            chain.set_solo(value)
+        else:
+            zctrl.set_value(value)
         return True
 
 
@@ -1475,6 +1474,7 @@ class ConfigHandler(ModeHandlerBase):
                 "pc": range(16),
                 "cc": range(self.CC_PAD_START, self.CC_PAD_END + 1)
             },
+            joy = {},
             knobs={
                 "cc": range(self.CC_KNOB_START, self.CC_KNOB_END + 1),
                 "mode": [

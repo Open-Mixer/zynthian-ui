@@ -78,10 +78,14 @@ class ScreenPart(unittest.TestCase):
 
 class CurveBinding(unittest.TestCase):
 
-    def test_a_dynamics_curve_is_bound_by_its_gain_computer_roles_only(self):
+    def test_a_dynamics_curve_is_bound_by_the_roles_omx_dsp_names_only(self):
+        # CURVE_ROLES is one set for every family (0.32.4 added the drive's and the time family's, mix among them): a
+        # term the family's curve does not read is no term of it, so the compressor's mix is bound and draws nothing
         line = view.curve_bind_line(7, 0, fixture("omx-comp")["description"])
         self.assertEqual(line, "curve_bind 7 0 transfer_curve dynamics threshold=thresholdDb:db ratio=ratio:ratio "
-                               "knee=kneeDb:db makeup=makeupDb:db")
+                               "knee=kneeDb:db makeup=makeupDb:db mix=mixPct:pc")
+        self.assertNotIn("attack", line)
+        self.assertNotIn("release", line)
 
     def test_an_eq_curve_indexes_its_bands(self):
         line = view.curve_bind_line(3, 0, fixture("omx-eq8")["description"]).split()
@@ -149,13 +153,14 @@ class CurveBinding(unittest.TestCase):
             self.assertNotIn(f'"{word}"', source)
         self.assertFalse(hasattr(view, "WORDS"))
 
-    def test_a_renderer_without_the_word_names_is_refused_with_its_reason(self):
-        # any library that lacks the renderer's functions stands for a renderer older than the one that names its words
+    def test_a_library_that_is_not_the_renderer_is_refused_as_not_installed(self):
+        # any library that lacks the renderer's functions is no renderer here
         with mock.patch.dict(os.environ, {"ZYNTHIAN_OMX_PANEL_RENDER": "libm.so.6"}), \
                 mock.patch.object(view, "_lib", None), mock.patch.object(view, "_lib_error", None):
             with self.assertRaises(view.RendererAbsent) as refused:
                 view.library()
-            self.assertIn("older than this module needs", str(refused.exception))
+            self.assertIn("is not installed", str(refused.exception))
+            self.assertNotIn("older", str(refused.exception))
 
     def test_the_points_of_a_reply(self):
         self.assertEqual(view.curve_points("3 -80.00,-80.00 -16.00,-17.56 0,-13.50"),
@@ -260,7 +265,7 @@ def alive(pid):
 
 
 class SpectrumCall(unittest.TestCase):
-    """View.set_spectrum against omx-panel 0.14.0's entry: omx_panel_view_set_spectrum(view, display, hz, pre_db, post_db,
+    """_LibraryView.set_spectrum (what View.set_spectrum forwards to) against omx-panel 0.14.0's entry: omx_panel_view_set_spectrum(view, display, hz, pre_db, post_db,
     peak_db, n, mode, delta, db_min, db_max, grid_db), mode omx_panel_tap_mode_t (PRE 0, POST 1, BOTH 2), the delta only
     with both; the library is libomx-panel-render.so.1, the soname that signature moved to."""
 
@@ -281,7 +286,8 @@ class SpectrumCall(unittest.TestCase):
             pass
 
     def view(self):
-        v = view.View.__new__(view.View)
+        # the renderer process's side of View.set_spectrum (View forwards the call to it): the ctypes call itself
+        v = view._LibraryView.__new__(view._LibraryView)
         v.lib, v.view = self.Lib(), "the view"
         return v
 

@@ -244,6 +244,13 @@ class TheWidgetAndTheScreenGoThroughIt(unittest.TestCase):
         self.assertEqual((zx.value, zy.value), (50.0, 50.0))
         self.assertEqual(s.gestures.log[-1]["word"], "reset")
 
+    def test_the_xy_screen_says_it_is_left_by_a_long_press(self):
+        # the screen's hint is upstream's "Tap 3 times to exit", the old job of a tap: on the vocabulary a double-tap
+        # resets and a long press (more) leaves, so the hint says the long press
+        hint = XY_SCREEN.__init__.__globals__.get("EXIT_HINT", "Tap 3 times to exit")  # the module, as the stand-ins left it
+        self.assertIn("long press", hint.lower())
+        self.assertNotIn("tap", hint.lower())
+
 
 if __name__ == "__main__":
     unittest.main()
