@@ -33,6 +33,59 @@ jobs:
             libsndfile1-dev libsamplerate0-dev librubberband-dev nlohmann-json3-dev \
             python3-lilv liblilv-dev
 
+      # tests/conftest.py imports zyngine, which reads omx_contract.catalog and omx_contract.scale: omx-contract's Python
+      # package (python3-omx-contract, omx-contract#28). This runner is Ubuntu, not the Debian the channel serves, so the
+      # package is installed from the release tag with the repository's own `make install-python` (the files the .deb
+      # ships); the openmixer-tests workflow covers the real package on Debian trixie arm64.
+      - uses: actions/checkout@v5
+        with:
+          repository: Open-Mixer/omx-contract
+          ref: v3.20.2
+          path: omx-contract-src
+
+      - name: Install omx-contract's Python package (omx_contract)
+        run: |
+          make -C omx-contract-src install-python DESTDIR= PYTHONDIR="$RUNNER_TEMP/omx-py"
+          echo "PYTHONPATH=$RUNNER_TEMP/omx-py${PYTHONPATH:+:$PYTHONPATH}" >> "$GITHUB_ENV"
+          PYTHONPATH="$RUNNER_TEMP/omx-py" python -c "import omx_contract.catalog, omx_contract.scale"
+
+      # plugin_hostd_protocol, the client conftest imports (python3-plugin-hostd-protocol on the channel): its
+      # clients/python directory at a release tag
+      - uses: actions/checkout@v5
+        with:
+          repository: Open-Mixer/plugin-hostd
+          ref: v0.20.8
+          path: plugin-hostd-src
+          sparse-checkout: clients/python
+
+      - name: Put plugin_hostd_protocol on the path
+        run: |
+          echo "PYTHONPATH=$GITHUB_WORKSPACE/plugin-hostd-src/clients/python:$PYTHONPATH" >> "$GITHUB_ENV"
+          PYTHONPATH="$GITHUB_WORKSPACE/plugin-hostd-src/clients/python" python -c "from plugin_hostd_protocol import Protocol, ProtocolError"
+
+      # the fork's tests read plugin-db's reader and golden answers and omx-panel's gesture table (the openmixer-tests
+      # workflow builds the rest of omx-panel, the renderer and the real command, and runs them)
+      - uses: actions/checkout@v5
+        with:
+          repository: Open-Mixer/plugin-db
+          ref: 4a9d62dce6b64d6fe141880c63905ab8255a9219
+          path: plugin-db-src
+
+      - uses: actions/checkout@v5
+        with:
+          repository: Open-Mixer/omx-panel
+          ref: 3cace582d1da169fe3f6597e6574c3bc23a3cba2
+          path: omx-panel-src
+
+      - name: Name the fork's test inputs
+        run: |
+          {
+            echo "ZYNTHIAN_PLUGIN_DB_GOLDEN=$GITHUB_WORKSPACE/plugin-db-src/tests/golden"
+            echo "ZYNTHIAN_OMX_GESTURES=$GITHUB_WORKSPACE/omx-panel-src/schema/gestures.json"
+            echo "ZYNTHIAN_OMX_PANEL_TOOLS=$GITHUB_WORKSPACE/omx-panel-src/tools"
+            echo "PYTHONPATH=$GITHUB_WORKSPACE/plugin-db-src/python:$PYTHONPATH"
+          } >> "$GITHUB_ENV"
+
       - name: Python dependencies
         run: |
           python -m pip install -r requirements-dev.txt
