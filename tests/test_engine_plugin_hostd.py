@@ -156,6 +156,12 @@ class plugin_hostd_case(unittest.TestCase):
         self.info = {"JV/Amp": lv2_info("Amp", "urn:test:amp"), "JV/NoPin": lv2_info("NoPin", "urn:test:nopin"),
                      "JV/Big": lv2_info("Big", "urn:test:big")}
         cat.add_catalogue(self.info, clap=cat.scanned_plugins(CLAP_SCAN), binary=FAKE)
+        # zynautoconnect is the real package where the suite imported zyngine first (tests/conftest.py): its graph
+        # queries are stand-ins for each test, so the settings below reach the engine
+        for name in ("get_ports", "hosted_key", "hosted_client"):
+            patcher = mock.patch.object(sys.modules["zynautoconnect"], name, mock.MagicMock())
+            patcher.start()
+            self.addCleanup(patcher.stop)
         # The graph as a worker leaves it after a chain: a member it runs in the head's client has no port
         sys.modules["zynautoconnect"].get_ports.return_value = []
         # a worker sets the instance key on its client, which is called effect_<instance> unless a test says otherwise
