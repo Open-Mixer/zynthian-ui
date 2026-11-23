@@ -55,8 +55,13 @@ ARMS = {
 
 def run_copy(mutation=None):
     with tempfile.TemporaryDirectory() as tmp:
-        for d in ("zyngine", "tests"):
-            shutil.copytree(os.path.join(ROOT, d), os.path.join(tmp, d), ignore=shutil.ignore_patterns("__pycache__"))
+        # the Python core and its pytest configuration: tests/conftest.py imports the core (zyngine, zynautoconnect,
+        # zynconf, zyngui, zynlibs' bindings) and pyproject.toml carries the suite's options
+        for d in ("zyngine", "zyngui", "zynautoconnect", "zynconf", "zynlibs", "tests"):
+            shutil.copytree(os.path.join(ROOT, d), os.path.join(tmp, d),
+                            ignore=shutil.ignore_patterns("__pycache__", "build"))
+        for f in ("pyproject.toml", "zynthian_state_schema.py"):
+            shutil.copy(os.path.join(ROOT, f), tmp)
         if mutation:
             old, new, *module = mutation
             path = os.path.join(tmp, module[0] if module else MODULE)
