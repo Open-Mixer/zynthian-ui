@@ -1,0 +1,28 @@
+name: jackd-repro
+on:
+  push:
+    branches: [lane/jackd-start-cause-repro]
+jobs:
+  repro:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        vm: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libjack-jackd2-0 jackd2
+          python -m pip install JACK-Client numpy
+      - name: environment
+        run: |
+          jackd --version || true; uname -a; nproc; df -h /dev/shm; ulimit -a; ls -la /dev/shm
+          ps -eo pid,comm | grep -i -E 'jack|pipewire|pulse' || true
+      - name: start/stop 20 servers
+        run: python tests/native/jackd_start_repro.py 20
+      - if: always()
+        run: ls -la /dev/shm; cat /tmp/zyntest_*.log 2>/dev/null | tail -100
