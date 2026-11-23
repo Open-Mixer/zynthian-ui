@@ -27,6 +27,9 @@ jobs:
       # an init that reaps: the engine tests stop the daemons they start and expect the processes gone
       options: --init
     steps:
+      # the checkout first: the installs read requirements-dev.txt and tools/served_pair.py
+      - uses: actions/checkout@v4
+
       - name: Install Python, pytest and the modules the tests import
         run: |
           apt-get update -qq
@@ -36,9 +39,6 @@ jobs:
           apt-get install -y -qq --no-install-recommends python3-pip python3-dev build-essential pkgconf cython3 \
             liblo-dev libasound2-dev libjack-jackd2-dev
           pip install -q --break-system-packages -r requirements-dev.txt
-
-      # the checkout first: the install below reads tools/served_pair.py
-      - uses: actions/checkout@v4
 
       - name: Add the OpenMixer channel
         uses: Open-Mixer/.github/.github/actions/add-openmixer@openmixer-v1
