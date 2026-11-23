@@ -52,6 +52,9 @@ if _lv2 is None:
     _lv2 = types.ModuleType("zyngine.zynthian_lv2")
     _lv2.get_plugin_ports = lambda uri: LV2_PORTS.get(uri, {})
     _lv2.engines_by_type = {}
+    _lv2.lv2_generation = 0  # the stand-in declares no zyngui:widget for any plugin
+    _lv2.get_plugin_zyngui_widget = lambda uri: None
+    _lv2.check_lv2_changes = lambda: False
     sys.modules["zyngine.zynthian_lv2"] = _lv2
 sys.modules["zyngine"].zynthian_lv2 = _lv2
 # the presets Zynthian's cache holds for an LV2 plugin, by plugin name, as jalv reads them: a bank label to its URL and

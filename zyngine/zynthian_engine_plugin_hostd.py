@@ -1387,11 +1387,24 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
         meter, for CLAP and LV2 alike: what the plain controller screens cannot show. Any other keeps them alone."""
         path = self.descriptor_path()
         self.drawn = panel_drawn(path, self.own_panel()) if path else None
-        if self.drawn and panel_view.drawn_parts(self.drawn[0]):
-            self.custom_gui_fpath = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "zyngui",
-                                                 "zynthian_widget_omx_panel.py")
-        else:
-            self.custom_gui_fpath = None
+        self.custom_gui_fpath = self.get_custom_gui_fpath()
+
+    @property
+    def plugin_url(self):
+        """The plugin's URI under the name the base engine's zyngui:widget lookup keys on."""
+        return getattr(self, "plugin_uri", None)
+
+    def get_custom_gui_fpath(self):
+        """A zyngui:widget declared for the plugin wins (the base engine's lookup); without one, the panel's own
+        screen (zynthian_widget_omx_panel) when the panel has something to draw; else the plain controller screens."""
+        declared = super().get_custom_gui_fpath()
+        if declared:
+            return declared
+        drawn = getattr(self, "drawn", None)
+        if drawn and panel_view.drawn_parts(drawn[0]):
+            return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "zyngui",
+                                "zynthian_widget_omx_panel.py")
+        return None
 
     def curve(self, display):
         """The points of display `display` of the description, as plugin-hostd computes them from the plugin's values
