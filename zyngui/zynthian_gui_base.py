@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian GUI
 #
@@ -34,7 +32,7 @@ from tkinter import font as tkFont
 from zyngine import zynthian_controller
 from zyngine import zynthian_ui_look as ui_look
 from zyngui import zynthian_gui_config
-from zyngui.zynthian_gui_dpm import zynthian_gui_dpm
+from zyngui.zynthian_gui_dpm import zynthian_gui_dpm, run_script
 
 # ------------------------------------------------------------------------------
 # Zynthian Base GUI Class: Basic layout & events + Status Bar (optional!)
@@ -350,6 +348,26 @@ class zynthian_gui_base(tkinter.Frame):
     # Refresh & Update methods
     # -------------------------------------------------------------------------
 
+    def get_dpm_script(self):
+        """Build a Tcl script to draw the status bar DPM meters.
+        Optimisation abstraction reduces the quantity of tk.eval() methods.
+
+        Returns: Tcl script, or empty string if nothing needs drawing
+        """
+
+        if not (self.shown and self.topbar_allowed) or self.main_mute or not getattr(self, "dpm_a", None):
+            return ""
+        self.state_manager.zynmixer_bus.update_dpm_states(1)
+        dpm = self.state_manager.zynmixer_bus.dpm[0]
+        cmds = (self.dpm_a.get_script(dpm.a, dpm.a_hold, dpm.mono),
+                self.dpm_b.get_script(dpm.b, dpm.b_hold, dpm.mono))
+        return "\n".join(c for c in cmds if c)
+
+    def refresh_dpm(self):
+        """ Draw all DPM meters with a tcl single call. """
+
+        run_script(self, self.get_dpm_script())
+
     def refresh_status(self):
         if self.shown and self.topbar_allowed:
             mute = self.state_manager.zynmixer_bus.get_mute(0)
@@ -365,11 +383,6 @@ class zynthian_gui_base(tkinter.Frame):
                         self.status_mute, state=tkinter.HIDDEN)
                     self.status_canvas.itemconfigure(
                         'status_dpm', state=tkinter.NORMAL)
-            if not mute and self.dpm_a:
-                self.state_manager.zynmixer_bus.update_dpm_states(1)
-                dpm = self.state_manager.zynmixer_bus.dpm[0]
-                self.dpm_a.refresh(dpm.a, dpm.a_hold, dpm.mono)
-                self.dpm_b.refresh(dpm.b, dpm.b_hold, dpm.mono)
 
             # status['xrun'] = True;
 
@@ -536,6 +549,27 @@ class zynthian_gui_base(tkinter.Frame):
 
     def set_select_path(self):
         pass
+
+    # --------------------------------------------------------------------------
+    # View state, reported by the "screen_state" websocket feedback
+    # --------------------------------------------------------------------------
+
+    # Key of the view state (None if the view reports no state)
+    state_key = None
+
+    def get_state(self, what="all"):
+        """Return the view state as a JSON serializable dictionary. Called from the main (Tk) thread.
+
+        what: "all" for the full state, "list" for the item list and selection, "select" for the selection only
+        """
+        return {}
+
+    def get_state_parent(self):
+        """Return the view embedding this one, or None"""
+        return self.parent
+
+    def is_state_shown(self):
+        return self.shown
 
     def tts_info(self):
         """ Narrate view status - override to provide more context"""

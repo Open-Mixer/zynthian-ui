@@ -1,0 +1,9 @@
+# Upstream's own suites (zynthian/zynthian-ui tomita's tests/ subdirectories), the selection upstream's tests workflow
+# (.github/workflows/tests.yml) runs in this fork. The fork's tests (tests/test_*.py, with their stubs and fixtures)
+# need the OpenMixer channel's packages and run in the openmixer-tests workflow on Debian trixie arm64.
+# tests/test_upstream_suites.py keeps this list equal to the subdirectories that hold tests.
+tests/architecture
+tests/gui
+tests/integration
+tests/native
+tests/unit

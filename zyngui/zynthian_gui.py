@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
 # ******************************************************************************
 # ZYNTHIAN PROJECT: Zynthian GUI
 #
@@ -24,16 +22,21 @@
 # ******************************************************************************
 
 import os
+import sys
+import json
 import ffmpeg
 import logging
 import traceback
+import threading
+import subprocess
 import pyliblo3 as liblo
 from time import sleep
-from queue import Empty
+from queue import Empty, SimpleQueue
 from pathlib import Path
 from time import monotonic
 from datetime import datetime
 from threading import Thread, Lock, Event
+from websocket_server import WebsocketServer
 
 # Zynthian specific modules
 import zynconf
@@ -129,6 +132,33 @@ class DebugLock():
         traceback.print_stack(limit=2)
         self.lock.release()
 
+# OSC mixer control names (upper case) mapped to mixer controller symbol and value type
+OSC_MIXER_PARAMS = {
+    "VOLUME": ("level", float),
+    "FADER": ("level", float),
+    "LEVEL": ("level", float),
+    "BALANCE": ("balance", float),
+    "MUTE": ("mute", int),
+    "SOLO": ("solo", int),
+    "MONO": ("mono", int)
+}
+
+
+class zynthian_websocket_server(WebsocketServer):
+    """Websocket server that doesn't print a traceback for connections failing the handshake.
+
+    Port probes (e.g. webconf checking if the UI websocket is up) and scanners connect and close without
+    sending a request, and websocket_server fails with an AssertionError or a socket error.
+    """
+
+    def handle_error(self, request, client_address):
+        err = sys.exc_info()[1]
+        if isinstance(err, (AssertionError, OSError)):
+            logging.debug(f"Websocket connection from {client_address} failed => {type(err).__name__}: {err}")
+        else:
+            logging.error(f"Websocket connection from {client_address} failed => {type(err).__name__}: {err}", exc_info=True)
+
+
 class zynthian_gui:
 
     # Screen Modes
@@ -205,6 +235,44 @@ class zynthian_gui:
         self.osc_clients = {}
         self.osc_heartbeat_timeout = 120  # Heartbeat timeout period
 
+        # Websocket config
+        self.websocket_port = zynconf.ServerPort['websocket']
+        self.websocket_server = None
+        self.websocket_engine_thread = None
+        self.websocket_server_thread = None
+        self.websocket_sender_thread = None
+        self.websocket_clients = {}
+        # Feedback streams clients can subscribe to: {name: function returning the current value (None if no value yet)}
+        self.websocket_feedback_streams = {
+            "wsled_state": lambda: self.wsleds.last_wsled_state,
+            "screen_state": lambda: None,  # The full state is sent by the main thread after subscribing
+            "dpm_global": lambda: None,  # Sent by the DPM sampling task after subscribing
+            "dpm_state": lambda: None,
+            "chain_state": lambda: self.get_chain_state()
+        }
+        # Feedback queued for the websocket sender thread: (stream, JSON message)
+        self.websocket_queue = SimpleQueue()
+        # Serialize the writes to the websocket connections, done from several threads
+        self.websocket_send_lock = threading.Lock()
+        # "screen_state" feedback: signals are registered only while someone is subscribed
+        self.screen_state_active = False
+        self.screen_state_full = 0  # Send the full state on next update: 1 => if it changed, 2 => always
+        self.screen_state_parts = {}  # Views (or view parts) with changes to send => "list" or "select"
+        self.screen_state_title = False  # Title changed
+        self.screen_state_pending = False  # Update scheduled
+        self.screen_state_traces = []  # Title (breadcrumb) traces => (StringVar, trace id)
+        self.screen_state_sent = {}  # Last state sent, to send only what changes
+        # DPM feedback ("dpm_global", "dpm_state"): sampled only while someone is subscribed
+        self.dpm_feedback_active = False
+        self.dpm_global_sent = None  # Last main bus levels sent
+        self.dpm_state_sent = {}  # Last levels sent for each chain => {chain_id: [a, b, a_hold, b_hold]}
+        # Chain feedback ("chain_state"): signals are registered only while someone is subscribed
+        self.chain_state_active = False
+        self.chain_state_pending = False  # Update queued for the sender thread
+        self.chain_state_json = ""  # Last chain state sent
+        # Feedback streams subscribed by each client: {client id: set of stream names}
+        self.websocket_subscriptions = {}
+
         self.prog_change = [0] * 16 # Track last program change for each MIDI channel
 
         # Restore ZynVoice TTS
@@ -275,6 +343,8 @@ class zynthian_gui:
 
     def init_wsleds(self):
         # Initialize physical LED controller as master LED controller
+        # The wsleds modules are imported here, only for the detected hardware, because they import
+        # board and neopixel_spi (CircuitPython), which are only usable on the supported boards.
         if zynthian_gui_config.check_wiring_layout(["V5"]):
             from zyngui.zynthian_wsleds_v5 import zynthian_wsleds_v5
             self.wsleds = zynthian_wsleds_v5(self)
@@ -288,6 +358,7 @@ class zynthian_gui:
 
         # Initialize virtual touch keyboard LED controller
         if zynthian_gui_config.touch_keypad:
+            # Imported here for the same reason as above
             from zyngui.zynthian_wsleds_v5touch import zynthian_wsleds_v5touch
             wsleds_v5touch = zynthian_wsleds_v5touch(self)
             if self.wsleds:
@@ -414,6 +485,28 @@ class zynthian_gui:
         while self.osc_server and self.osc_server.recv(0):
             pass
 
+    def osc_mixer_control(self, part2, args):
+        """ Handle an OSC mixer control message by setting the strip's mixer controller.
+
+        part2 - Path after "/MIXER/" (upper case)
+        args - OSC arguments
+        """
+
+        try:
+            mixer, _, param = part2.rpartition("/")
+            name = param.rstrip("0123456789")
+            symbol, convert = OSC_MIXER_PARAMS[name]
+            chan = int(param[len(name):])
+            value = convert(args[0])
+        except (KeyError, ValueError, IndexError):
+            logging.warning(f"Invalid OSC mixer control '{part2}' {args}")
+            return
+        zctrl = self.state_manager.chain_manager.get_mixer_zctrl(chan, symbol, mixer == "BUS")
+        if zctrl is None:
+            logging.debug(f"OSC mixer control '{part2}': no such mixer strip or control")
+            return
+        zctrl.set_value(value)
+
     # @liblo.make_method("RELOAD_MIDI_CONFIG", None)
     # @liblo.make_method(None, None)
     def osc_cb_all(self, path, args, types, src):
@@ -433,9 +526,11 @@ class zynthian_gui:
                 logging.debug("BUSY! Ignoring OSC CUIA '{}' => {}".format(cuia, args))
                 return
             self.cuia_queue.put_nowait((cuia, args, src))
-            # Run autoconnect if needed # TODO: It is wasteful to run autoconnect after every CUIA message. The action should trigger if necessary
-            zynautoconnect.request_audio_connect()
-            zynautoconnect.request_midi_connect()
+            # Run autoconnect if needed:
+            # It is wasteful to run autoconnect after every CUIA message. The action should trigger if necessary
+            # => NOOOOO!! Each CUIA should call autoconnect when needed
+            #zynautoconnect.request_audio_connect()
+            #zynautoconnect.request_midi_connect()
         elif parts[1] in ("MIXER", "DAWOSC"):
             #TODO: Fix OSC control of zynmixer
             self.state_manager.set_event_flag()
@@ -456,32 +551,7 @@ class zynthian_gui:
                 self.state_manager.zynmixer_chan.enable_dpm(True)
                 self.state_manager.zynmixer_bus.enable_dpm(True)
             else:
-                mixer, param = part2.split("/")
-                if mixer == "bus":
-                    zynmixer = self.state_manager.zynmixer_bus
-                else:
-                    zynmixer = self.state_manager.zynmixer_chan
-                if param[:6] == "VOLUME":
-                    zynmixer.set_level(
-                        int(part2[6:]), float(args[0]))
-                if param[:5] == "FADER":
-                    zynmixer.set_level(
-                        int(part2[5:]), float(args[0]))
-                if param[:5] == "LEVEL":
-                    zynmixer.set_level(
-                        int(part2[5:]), float(args[0]))
-                elif param[:7] == "BALANCE":
-                    zynmixer.set_balance(
-                        int(part2[7:]), float(args[0]))
-                elif param[:4] == "MUTE":
-                    zynmixer.set_mute(
-                        int(part2[4:]), int(args[0]))
-                elif param[:4] == "SOLO":
-                    zynmixer.set_solo(
-                        int(part2[4:]), int(args[0]))
-                elif param[:4] == "MONO":
-                    zynmixer.set_mono(
-                        int(part2[4:]), int(args[0]))
+                self.osc_mixer_control(part2, args)
         else:
             logging.warning(f"Not supported OSC call '{path}'")
 
@@ -575,6 +645,9 @@ class zynthian_gui:
 
         # Initialize OSC
         self.osc_init()
+
+        # Initialize WebSocket
+        self.websocket_init()
 
         # Run debug thread
         if zynthian_gui_config.debug_thread:
@@ -675,6 +748,8 @@ class zynthian_gui:
             except:
                 logging.warning("Mixer view not yet created!")
                 screen = "mixer"
+        elif screen == "pated":
+            screen = self.screens["pattern_editor"].get_editor_screen()
         elif screen == "mixer":
             self.screens[screen].set_launcher_mode(False)
         elif screen == "launcher":
@@ -827,6 +902,7 @@ class zynthian_gui:
         self.current_screen = 'confirm'
         self.hide_screens(exclude='confirm')
         self.screen_lock.release()
+        zynsigman.send(zynsigman.S_GUI, zynsigman.SS_GUI_VIEW_STATE, view=self.screens['confirm'])
 
     def show_keyboard(self, callback, text="", max_chars=None):
         self.screens['keyboard'].set_mode(OSK_QWERTY)
@@ -946,6 +1022,9 @@ class zynthian_gui:
         """
 
         def get_fpath(fpath):
+            # Existing absolute paths (e.g. help pages inside LV2 widget bundles) are used as they are
+            if os.path.isabs(fpath) and os.path.isfile(fpath):
+                return fpath
             html_root = self.screens["help"].help_dir
             for b in ("/", "./"):
                 if fpath.startswith(b):
@@ -1302,11 +1381,21 @@ class zynthian_gui:
 
     def cuia_help(self, params=None):
         """Show the contextual help screen.
+
+        Category: screens
         """
 
         self.show_help(params)
 
     def cuia_power_save(self, params=None):
+        """Enter or leave the power save mode (screen and LEDs off).
+
+        Category: system
+
+        Keyword Args:
+            mode (int): 0 to leave the power save mode. Any other value, or none, enters the power save mode.
+        """
+
         if params != [0]:
             self.state_manager.reset_event_flag()
             self.state_manager.last_event_ts = monotonic() - zynthian_gui_config.power_save_secs
@@ -1315,6 +1404,8 @@ class zynthian_gui:
 
     def cuia_power(self, params=None):
         """Poweroff the zynthian device.
+
+        Category: system
 
         AI Context:
             Only call this tool with the 'CONFIRM' param when user's command explicitly confirms the action.
@@ -1332,6 +1423,8 @@ class zynthian_gui:
     def cuia_reboot(self, params=None):
         """Reboot the zynthian device.
 
+        Category: system
+
         AI Context:
             Only call this tool with the 'CONFIRM' param when user's command explicitly confirms the action.
             If not sure, call the action without the confirm parameter to ask for confirmation.
@@ -1346,25 +1439,85 @@ class zynthian_gui:
             self.screens['admin'].power()
 
     def cuia_restart_ui(self, params=None):
+        """Restart the zynthian user interface.
+
+        Category: system
+
+        AI Context:
+            Audio is interrupted while the UI restarts. Only call it when the user explicitly asks for it.
+        """
+
         self.screens['admin'].restart_gui()
 
     def cuia_exit_ui(self, params=None):
+        """Exit the zynthian user interface to the console.
+
+        Category: system
+
+        AI Context:
+            The UI stops and is not restarted. Only call it when the user explicitly asks for it.
+        """
+
         self.screens['admin'].exit_to_console()
 
     def cuia_reload_wiring_layout(self, params=None):
+        """Reload the wiring layout (buttons, encoders) from the configuration.
+
+        Category: system
+        """
+
         self.reload_wiring_layout()
 
     def cuia_reload_midi_config(self, params=None):
+        """Reload the MIDI configuration.
+
+        Category: system
+        """
+
         self.state_manager.reload_midi_config()
 
     def cuia_reload_key_binding(self, params=None):
+        """Reload the keyboard bindings from the configuration.
+
+        Category: system
+        """
+
         zynthian_gui_keybinding.load()
 
     def cuia_last_state_action(self, params=None):
+        """Save the last state snapshot, if "restore last state" is enabled, or delete it otherwise.
+
+        Category: system
+
+        It also saves the touch navigation setting and silences the TTS announcements. It's used before powering off or rebooting.
+        """
+
         self.screens['admin'].last_state_action()
+
+    def cuia_vnc_start(self, params=None):
+        """Start the VNC service for zynthian UI and processor GUIs.
+
+        Category: system
+
+        In virtualized zynthians it only starts the VNC service for processor's GUIs.
+        """
+
+        self.state_manager.start_vncserver()
+
+    def cuia_vnc_stop(self, params=None):
+        """Stop the VNC service for zynthian UI and processor GUIs.
+
+        Category: system
+
+        In virtualized zynthians it only stops the VNC service for processor's GUIs.
+        """
+
+        self.state_manager.stop_vncserver()
 
     def cuia_workflow_capture_start(self, params=None):
         """Starts capturing workflow.
+
+        Category: system
         """
 
         if params:
@@ -1375,12 +1528,16 @@ class zynthian_gui:
 
     def cuia_workflow_capture_stop(self, params=None):
         """Stops capturing workflow.
+
+        Category: system
         """
 
         self.stop_capture_log()
 
     def cuia_workflow_capture_text(self, params=None):
         """Includes a text note into the on-going workflow capture.
+
+        Category: system
         """
 
         self.write_capture_log(f"TEXT: {params[0]}")
@@ -1388,6 +1545,8 @@ class zynthian_gui:
     # ZynVoice TTS actions
     def cuia_tts_announce(self, params=["", True, False, True]):
         """ Announce a TTS message
+
+        Category: tts
 
         Kwywords Args:
             text (str) [REQUIRED]: Text to announce.
@@ -1399,27 +1558,42 @@ class zynthian_gui:
             self.tts.announce(*params)
 
     def cuia_tts_stop(self, params=None):
-        """ Stop current TTS announcement. Clear queue. """
+        """ Stop current TTS announcement. Clear queue. 
+
+        Category: tts
+        """
         if self.tts:
             self.tts._tts.stop()
 
     def cuia_tts_pause(self, params=None):
-        """ Pause current TTS announcement. Do not clear queue. """
+        """ Pause current TTS announcement. Do not clear queue. 
+
+        Category: tts
+        """
         if self.tts:
             self.tts._tts.pause(True)
 
     def cuia_tts_resume(self, params=None):
-        """ Resume paused TTS queue. """
+        """ Resume paused TTS queue. 
+
+        Category: tts
+        """
         if self.tts:
             self.tts._tts.pause(False)
 
     def cuia_tts_toggle_pause(self, params=None):
-        """ Toggle TTS pause """
+        """ Toggle TTS pause 
+
+        Category: tts
+        """
         if self.tts:
             self.tts._tts.pause()
 
     def cuia_tts_toggle_enable(self, params=None):
-        """ Toggle the TTS enabled state """
+        """ Toggle the TTS enabled state 
+
+        Category: tts
+        """
 
         if self.tts:
             zynthian_gui_config.tts_enabled = 0
@@ -1433,7 +1607,10 @@ class zynthian_gui:
             self.screens["tts"].update_list()
 
     def cuia_tts_toggle_playback(self, params=None):
-        """ Stop TTS if playing, else announce context info """
+        """ Stop TTS if playing, else announce context info 
+
+        Category: tts
+        """
         if self.tts:
             if self.tts._tts.playing:
                 self.tts._tts.stop()
@@ -1445,6 +1622,16 @@ class zynthian_gui:
                     self.tts.announce(f"View: {self.current_screen}", replace=True, interrupt=True)
 
     def cuia_tts_register(self, params=None):
+        """Send the TTS announcements to a remote host via OSC.
+
+        Category: tts
+
+        Keyword Args:
+            host (str): IP address of the remote host. Omit all parameters to stop sending.
+            port (int): OSC port of the remote host.
+            path (str): OSC path (default "/tts").
+        """
+
         if self.tts:
             self.tts._tts.register_osc(params)
 
@@ -1452,6 +1639,8 @@ class zynthian_gui:
 
     def cuia_all_notes_off(self, params=None):
         """Stop all playing notes.
+
+        Category: midi
 
 
         AI Context:
@@ -1468,6 +1657,8 @@ class zynthian_gui:
 
     def cuia_all_sounds_off(self, params=None):
         """Stop all playing notes, sequences and audio playback.
+
+        Category: midi
 
         AI Context:
             Call this action when the user say 'silence', 'shut up' or 'stop everything'.
@@ -1486,6 +1677,8 @@ class zynthian_gui:
     def cuia_clean_all(self, params=None):
         """Remove all chains and sequences.
 
+        Category: system
+
         AI Context:
             Only call this tool with confirm='CONFIRM' when user's command explicitly confirms the action.
             If not sure, call the action without the confirm parameter to ask for confirmation.
@@ -1503,41 +1696,58 @@ class zynthian_gui:
 
     def cuia_start_audio_record(self, params=None):
         """Starts the global audio recording.
+
+        Category: transport
         """
 
         self.state_manager.audio_recorder.start_recording()
 
     def cuia_stop_audio_record(self, params=None):
         """Stops the global audio recording.
+
+        Category: transport
         """
 
         self.state_manager.audio_recorder.stop_recording()
 
     def cuia_toggle_audio_record(self, params=None):
         """Toggles the global audio recording.
+
+        Category: transport
         """
 
         self.state_manager.audio_recorder.toggle_recording()
 
     def cuia_start_audio_play(self, params=None):
         """Starts the global audio playback.
+
+        Category: transport
         """
 
         self.state_manager.start_audio_player()
 
     def cuia_stop_audio_play(self, params=None):
         """Stops the global audio playback.
+
+        Category: transport
         """
 
         self.state_manager.stop_audio_player(reset_pos=True)
 
     def cuia_toggle_audio_play(self, params=None):
         """Toggles the global audio playback.
+
+        Category: transport
         """
 
         self.state_manager.toggle_audio_player()
 
     def cuia_audio_file_list(self, params=None):
+        """Show the global audio player view. Same as SCREEN_AUDIO_PLAYER.
+
+        Category: screens
+        """
+
         self.show_screen("audio_player")
         return
 
@@ -1552,12 +1762,16 @@ class zynthian_gui:
 
     def cuia_start_midi_record(self, params=None):
         """Starts the MIDI (SMF) recording.
+
+        Category: transport
         """
 
         self.state_manager.start_midi_record()
 
     def cuia_stop_midi_record(self, params=None):
         """Stops the MIDI (SMF) recording.
+
+        Category: transport
         """
 
         self.state_manager.stop_midi_record()
@@ -1567,6 +1781,8 @@ class zynthian_gui:
 
     def cuia_toggle_midi_record(self, params=None):
         """Toggles the MIDI (SMF) recording.
+
+        Category: transport
         """
 
         self.state_manager.toggle_midi_record()
@@ -1576,18 +1792,24 @@ class zynthian_gui:
 
     def cuia_start_midi_play(self, params=None):
         """Starts the MIDI (SMF) playback.
+
+        Category: transport
         """
 
         self.state_manager.start_midi_playback()
 
     def cuia_stop_midi_play(self, params=None):
         """Stops the MIDI (SMF) playback.
+
+        Category: transport
         """
 
         self.state_manager.stop_midi_playback()
 
     def cuia_toggle_midi_play(self, params=None):
         """Toggles the MIDI (SMF) playback.
+
+        Category: transport
 
         The played SMF file is the currently selected one.
         """
@@ -1596,6 +1818,8 @@ class zynthian_gui:
 
     def cuia_toggle_record(self, params=None):
         """Toggles the contextual recording action.
+
+        Category: transport
 
         The contextual recording action depends of the current screen and the ALT mode status.
         Default is global audio recording. When ALT mode is enabled, the action is MIDI recording (SMF).
@@ -1610,6 +1834,8 @@ class zynthian_gui:
     def cuia_stop(self, params=None):
         """Stops the contextual playback action.
 
+        Category: transport
+
         The contextual playback action depends of the current screen and the ALT mode status.
         Default is global audio playback. When ALT mode is enabled, the action is MIDI playback (SMF).
         If current screen is audio-clip control or pattern editor, playback action is specific.
@@ -1623,6 +1849,8 @@ class zynthian_gui:
     def cuia_toggle_play(self, params=None):
         """Toggles the contextual playback action.
 
+        Category: transport
+
         The contextual playback action depends of the current screen and the ALT mode status.
         Default is global audio playback. When ALT mode is enabled, the action is SMF playback.
         If current screen is audio-clip control or pattern editor, playback action is specific.
@@ -1635,6 +1863,8 @@ class zynthian_gui:
 
     def cuia_tempo(self, params=None):
         """Show the tempo screen.
+
+        Category: screens
         """
 
         self.state_manager.zynseq.tap_tempo()
@@ -1643,6 +1873,8 @@ class zynthian_gui:
 
     def cuia_set_tempo(self, params=None):
         """Sets the global clock tempo (BPM) for the Zynthian framework.
+
+        Category: tempo
 
         AI Context:
             This tool is critical for timing. If the user mentions terms like
@@ -1660,12 +1892,29 @@ class zynthian_gui:
             pass
 
     def cuia_toggle_seq(self, params=None):
+        """Toggle the play state of a sequence (launcher pad) in the current scene.
+
+        Category: transport
+
+        Keyword Args:
+            phrase (int) [REQUIRED]: Index of the phrase containing the sequence.
+            sequence (int) [REQUIRED]: Index of the sequence within the phrase.
+        """
+
         try:
             self.state_manager.zynseq.libseq.togglePlayState(self.state_manager.zynseq.scene, int(params[0]), int(params[1]))
         except (AttributeError, TypeError):
             pass
 
     def cuia_tempo_up(self, params=None):
+        """Increase the global clock tempo (BPM).
+
+        Category: tempo
+
+        Keyword Args:
+            delta (number): BPM to add (default 1).
+        """
+
         if params:
             try:
                 self.state_manager.zynseq.set_tempo(self.state_manager.zynseq.get_tempo() + params[0])
@@ -1676,6 +1925,14 @@ class zynthian_gui:
                 self.state_manager.zynseq.get_tempo() + 1)
 
     def cuia_tempo_down(self, params=None):
+        """Decrease the global clock tempo (BPM).
+
+        Category: tempo
+
+        Keyword Args:
+            delta (number): BPM to subtract (default 1).
+        """
+
         if params:
             try:
                 self.state_manager.zynseq.set_tempo(self.state_manager.zynseq.get_tempo() - params[0])
@@ -1685,6 +1942,11 @@ class zynthian_gui:
             self.state_manager.zynseq.set_tempo(self.state_manager.zynseq.get_tempo() - 1)
 
     def cuia_tap_tempo(self, params=None):
+        """Tap tempo: call it repeatedly, on the beat, to set the global clock tempo.
+
+        Category: tempo
+        """
+
         self.state_manager.zynseq.tap_tempo()
 
     def cuia_copy(self, params=None):
@@ -1695,6 +1957,19 @@ class zynthian_gui:
 
     # Zynpot & Zynswitch emulation CUIAs (low level)
     def cuia_zynpot(self, params=None):
+        """Turn an encoder (zynpot) by a relative amount.
+
+        Category: navigation
+
+        AI Context:
+            This action emulates turning an encoder knob. Encoder 3 is the select encoder: on list views it moves the selection.
+            The other encoders change the controllers shown on the current view.
+
+        Keyword Args:
+            index (int) [REQUIRED]: Encoder index (0-3).
+            delta (int) [REQUIRED]: Relative change, positive (clockwise) or negative.
+        """
+
         try:
             i = int(params[0])
             d = int(params[1])
@@ -1708,6 +1983,15 @@ class zynthian_gui:
             logging.error(e)
 
     def cuia_zynpot_abs(self, params=None):
+        """Set the controller of an encoder (zynpot) to an absolute value, if the current view supports it.
+
+        Category: navigation
+
+        Keyword Args:
+            index (int) [REQUIRED]: Encoder index (0-3).
+            value (number) [REQUIRED]: Normalized value, from 0.0 to 1.0.
+        """
+
         try:
             self.get_current_screen_obj().zynpot_abs(*params)
         except AttributeError:
@@ -1716,6 +2000,19 @@ class zynthian_gui:
             logging.error(e)
 
     def cuia_zynswitch(self, params=None):
+        """Push a switch (button).
+
+        Category: navigation
+
+        AI Context:
+            This action emulates pushing a hardware button. Switches 0-3 are: 0 -> Menu/Layer, 1 -> Back, 2 -> Snapshot, 3 -> Select.
+            Higher indexes are device specific. Prefer the specific CUIAs (BACK, SELECT_ACTION, MENU, ...) when they exist.
+
+        Keyword Args:
+            index (int) [REQUIRED]: Switch index.
+            action (str) [REQUIRED] enum['S', 'B', 'L', 'P', 'R']: 'S' -> short push, 'B' -> bold push, 'L' -> long push, 'P' -> pressed, 'R' -> released.
+        """
+
         try:
             i = params[0]
             d = params[1]
@@ -1731,6 +2028,8 @@ class zynthian_gui:
     def cuia_arrow_up(self, params=None):
         """Arrow Up action.
 
+        Category: navigation
+
         AI Context:
             This action emulates pushing the UP arrow button.
         """
@@ -1741,6 +2040,8 @@ class zynthian_gui:
 
     def cuia_arrow_down(self, params=None):
         """Arrow Down action.
+
+        Category: navigation
 
         AI Context:
             This action emulates pushing the DOWN arrow button.
@@ -1754,6 +2055,8 @@ class zynthian_gui:
     def cuia_arrow_right(self, params=None):
         """Arrow Right action.
 
+        Category: navigation
+
         AI Context:
             This action emulates pushing the RIGHT arrow button.
         """
@@ -1764,7 +2067,9 @@ class zynthian_gui:
             pass
 
     def cuia_arrow_left(self, params=None):
-        """Arrow Up action.
+        """Arrow Left action.
+
+        Category: navigation
 
         AI Context:
             This action emulates pushing the LEFT arrow button.
@@ -1781,6 +2086,8 @@ class zynthian_gui:
 
     def cuia_back(self, params=None):
         """Back action.
+
+        Category: navigation
 
         Normally closes the current view and showing the previous one.
         If param editor is enabled, exits and back to normal mode.
@@ -1799,10 +2106,13 @@ class zynthian_gui:
     def cuia_select_action(self, params=None):
         """Select action.
 
+        Category: navigation
+
         The select actions normally refers to the selected item.
 
         AI Context:
-            This action emulates pushing the SEL button.
+            This action emulates pushing the SEL button. It performs the action of the selected item,
+            same as ZYNSWITCH 3 with the same action type. Use SELECT to highlight an item before.
             It can be used to confirm actions.
 
         Keyword Args:
@@ -1822,6 +2132,8 @@ class zynthian_gui:
     def cuia_bold_select_action(self, params=None):
         """Bold select action.
 
+        Category: navigation
+
         The bold select actions normally refers to the selected item.
 
         AI Context:
@@ -1833,6 +2145,18 @@ class zynthian_gui:
 
     # Select element in list => it receives an integer parameter!
     def cuia_select(self, params=None):
+        """Highlight an item in the list of the current view, without performing its action.
+
+        Category: navigation
+
+        AI Context:
+            This only moves the selection. Call SELECT_ACTION afterwards to perform the action of the selected item.
+            The item indexes are the positions in the "items" list reported by the "screen_state" websocket feedback.
+
+        Keyword Args:
+            index (int) [REQUIRED]: Index of the item to highlight.
+        """
+
         try:
             self.get_current_screen_obj().select(params[0])
         except (AttributeError, TypeError):
@@ -1840,6 +2164,8 @@ class zynthian_gui:
 
     def cuia_mixer(self, params):
         """ Set the specified mixer parameter to a given value.
+
+        Category: mixer
 
         AI Context:
             This function is used for changing a mixer parameter value in a chain.
@@ -1870,42 +2196,73 @@ class zynthian_gui:
     # -------------------------------------------------------------------
 
     def cuia_toggle_screen(self, params=None):
+        """Show a view, or close it if it's already shown.
+
+        Category: screens
+
+        Keyword Args:
+            screen (str) [REQUIRED]: View name, like the "screen" reported by the "screen_state" websocket feedback (mixer, admin, chain_manager, snapshot, zs3, ...).
+        """
+
         if params:
             self.toggle_screen(params[0])
 
     def cuia_show_screen(self, params=None):
+        """Show a view, resetting the view history (BACK won't return to the previous view).
+
+        Category: screens
+
+        Keyword Args:
+            screen (str) [REQUIRED]: View name, like the "screen" reported by the "screen_state" websocket feedback (mixer, admin, chain_manager, snapshot, zs3, ...).
+        """
+
         if params:
             self.show_screen_reset(params[0])
 
     def cuia_screen_admin(self, params=None):
         """Show the admin view.
+
+        Category: screens
         """
 
         self.show_screen("admin")
 
     def cuia_screen_mixer(self, params=None):
+        """Show the mixer view, resetting the view history.
+
+        Category: screens
+        """
+
         self.show_screen_reset("mixer")
 
     def cuia_screen_chain_manager(self, params=None):
         """Show the chain manager view.
+
+        Category: screens
         """
 
         self.show_screen("chain_manager")
 
     def cuia_screen_audio_mixer(self, params=None):
         """Show the audio mixer view.
+
+        Category: screens
         """
 
         self.show_screen_reset("mixer")
 
     def cuia_screen_snapshot(self, params=None):
         """Show the snapshots view.
+
+        Category: screens
         """
 
         self.show_screen("snapshot")
 
     def cuia_screen_zs3(self, params=None):
         """Show the subsnapshots (ZS3) view.
+
+        Category: screens
         """
 
         self.screens["zs3"].enable_midi_learn()
@@ -1913,36 +2270,51 @@ class zynthian_gui:
 
     def cuia_screen_midi_recorder(self, params=None):
         """Show the MIDI recorder/player view.
+
+        Category: screens
         """
 
         self.show_screen("midi_recorder")
 
     def cuia_screen_audio_player(self, params=None):
         """Show the global audio player view.
+
+        Category: screens
         """
 
         self.show_screen("audio_player")
 
     def cuia_screen_alsa_mixer(self, params=None):
         """Show the audio levels (ALSA levels) view.
+
+        Category: screens
         """
 
         self.show_screen("alsa_mixer")
 
     def cuia_screen_launcher(self, params=None):
         """Show the launcher view.
+
+        Category: screens
         """
 
         if self.current_screen == "mixer" and self.screens["mixer"].launcher_mode:
-            self.show_screen("pattern_editor")
+            self.show_screen("pated")
         else:
             self.show_screen_reset("launcher")
 
     def cuia_screen_zynpad(self, params=None):
+        """Show the launcher (zynpad) view.
+
+        Category: screens
+        """
+
         self.show_screen("launcher")
 
     def cuia_screen_pattern_editor(self, params=None):
         """Show the pattern editor view.
+
+        Category: screens
         """
 
         if self.current_screen == "launcher":
@@ -1968,9 +2340,22 @@ class zynthian_gui:
                 pass
 
     def cuia_screen_calibrate(self, params=None):
+        """Show the touchscreen calibration view.
+
+        Category: display
+        """
+
         self.calibrate_touchscreen()
 
     def cuia_screen_clean(self, params=None):
+        """Lock the touchscreen for 10 seconds, so it can be cleaned.
+
+        Category: display
+
+        AI Context:
+            The UI doesn't respond during 10 seconds. Only call it when the user asks for it.
+        """
+
         self.state_manager.start_busy("clean_screen", "Clean screen")
         for i in range(10, 0, -1):
             self.state_manager.set_busy_details(f"Closing in {i}s")
@@ -1978,6 +2363,14 @@ class zynthian_gui:
         self.state_manager.end_busy("clean_screen")
 
     def cuia_refresh_screen(self, params=None):
+        """Rebuild and redraw the current view.
+
+        Category: display
+
+        Keyword Args:
+            screen (str): Only refresh if this is the current view. Omit it to refresh any view.
+        """
+
         if params is None or self.current_screen in params:
             self.screens[self.current_screen].build_view()
             self.screen_lock.acquire()
@@ -1989,18 +2382,34 @@ class zynthian_gui:
     # -------------------------------------------------------------------
 
     def cuia_show_navigation_grid(self, params):
+        """Show a grid of buttons, configured by the caller.
+
+        Category: display
+
+        AI Context:
+            Intended for key bindings and internal use. The config parameter is a list of button descriptions.
+
+        Keyword Args:
+            title (str) [REQUIRED]: Title shown in the topbar.
+            config (str) [REQUIRED]: List of dictionaries, each one describing a button.
+        """
+
         if params and len(params) >= 2:
             self.screens["grid_sel"].setup(params[0], params[1])
             self.show_screen("grid_sel")
 
     def cuia_main_menu(self, params=None):
         """Show the main menu.
+
+        Category: screens
         """
 
         self.show_screen("main_menu")
 
     def cuia_add_chain(self, params=None):
         """Show add chain menu.
+
+        Category: screens
         """
 
         pos = self.chain_manager.get_active_chain_index() + 1
@@ -2011,6 +2420,8 @@ class zynthian_gui:
 
     def cuia_chain_control(self, params=None):
         """Show chain control view.
+
+        Category: screens
         """
 
         try:
@@ -2032,6 +2443,8 @@ class zynthian_gui:
 
     def cuia_chain_options(self, params=None):
         """Show chain options.
+
+        Category: screens
         """
 
         if self.is_shown_alsa_mixer():
@@ -2060,6 +2473,8 @@ class zynthian_gui:
 
     def cuia_menu(self, params=None):
         """Show contextual menu.
+
+        Category: navigation
         """
 
         show_menu_func = getattr(self.screens[self.current_screen], "show_menu", None)
@@ -2070,6 +2485,8 @@ class zynthian_gui:
 
     def cuia_bank_preset(self, params=None):
         """Show presets selection view.
+
+        Category: screens
         """
 
         if self.is_shown_alsa_mixer():
@@ -2116,6 +2533,8 @@ class zynthian_gui:
 
     def cuia_preset_fav(self, params=None):
         """Show the favorite presets.
+
+        Category: screens
         """
 
         self.show_favorites()
@@ -2125,6 +2544,17 @@ class zynthian_gui:
     # -------------------------------------------------------------------
 
     def cuia_zs3_save(self, params=None):
+        """Save the current state into a subsnapshot (ZS3), overwriting it.
+
+        Category: zs3
+
+        AI Context:
+            This overwrites the ZS3. Only call it when the user explicitly asks to save it.
+
+        Keyword Args:
+            zs3 (int) [REQUIRED]: ZS3 index, as listed in the subsnapshots (ZS3) view. Key bindings may pass a ZS3 id (str) instead.
+        """
+
         if params and len(params) >= 1:
             if isinstance(params[0], int):
                 self.state_manager.save_zs3_by_index(params[0])
@@ -2132,6 +2562,14 @@ class zynthian_gui:
                 self.state_manager.save_zs3(params[0])
 
     def cuia_zs3_load(self, params=None):
+        """Load a subsnapshot (ZS3).
+
+        Category: zs3
+
+        Keyword Args:
+            zs3 (int) [REQUIRED]: ZS3 index, as listed in the subsnapshots (ZS3) view. Key bindings may pass a ZS3 id (str) instead.
+        """
+
         if params and len(params) >= 1:
             if isinstance(params[0], int):
                 self.state_manager.load_zs3_by_index(params[0])
@@ -2139,6 +2577,14 @@ class zynthian_gui:
                 self.state_manager.load_zs3(params[0])
 
     def cuia_zs3_next(self, params=None):
+        """Load the next subsnapshot (ZS3), or the first one if none is loaded.
+
+        Category: zs3
+
+        Keyword Args:
+            cycle (bool): True to go back to the first ZS3 after the last one.
+        """
+
         if params and len(params) >= 1:
             cycle = bool(params[0])
         else:
@@ -2146,6 +2592,14 @@ class zynthian_gui:
         self.state_manager.load_next_zs3(cycle)
 
     def cuia_zs3_prev(self, params=None):
+        """Load the previous subsnapshot (ZS3).
+
+        Category: zs3
+
+        Keyword Args:
+            cycle (bool): True to go to the last ZS3 after the first one.
+        """
+
         if params and len(params) >= 1:
             cycle = bool(params[0])
         else:
@@ -2168,18 +2622,41 @@ class zynthian_gui:
             self.state_manager.enable_learn_cc(params[0], params[1])
 
     def cuia_disable_midi_learn_cc(self, params=None):
+        """Disable the MIDI CC learning.
+
+        Category: midi
+        """
+
         self.state_manager.disable_learn_cc()
 
     def cuia_enable_midi_learn_pc(self, params=None):
+        """Enable the MIDI program change learning, to bind a program change to a subsnapshot (ZS3).
+
+        Category: midi
+
+        Keyword Args:
+            zs3_name (str): Name of the ZS3 to bind. Omit it to learn into a new ZS3.
+        """
+
         if params and len(params) > 0:
             self.state_manager.enable_learn_pc(params[0])
         else:
             self.state_manager.enable_learn_pc("")
 
     def cuia_disable_midi_learn_pc(self, params=None):
+        """Disable the MIDI program change learning.
+
+        Category: midi
+        """
+
         self.state_manager.disable_learn_pc()
 
     def cuia_enable_midi_learn(self, params=None):
+        """Enter the MIDI learn mode on the current view.
+
+        Category: midi
+        """
+
         self.state_manager.set_midi_learn(True)
         try:
             self.get_midi_learn_screen_obj().enter_midi_learn()
@@ -2187,6 +2664,11 @@ class zynthian_gui:
             pass
 
     def cuia_disable_midi_learn(self, params=None):
+        """Leave the MIDI learn mode.
+
+        Category: midi
+        """
+
         self.state_manager.set_midi_learn(False)
         try:
             self.get_midi_learn_screen_obj().exit_midi_learn()
@@ -2194,6 +2676,11 @@ class zynthian_gui:
             pass
 
     def cuia_toggle_midi_learn(self, params=None):
+        """Toggle the MIDI learn mode on the current view.
+
+        Category: midi
+        """
+
         try:
             state = self.get_midi_learn_screen_obj().toggle_midi_learn()
             self.state_manager.set_midi_learn(state)
@@ -2204,6 +2691,14 @@ class zynthian_gui:
                 self.cuia_enable_midi_learn(params)
 
     def cuia_action_midi_unlearn(self, params=None):
+        """Remove the MIDI bindings (MIDI learn) of the current view's selection.
+
+        Category: midi
+
+        AI Context:
+            MIDI bindings are lost. Only call it when the user explicitly asks for it.
+        """
+
         try:
             self.get_midi_learn_screen_obj().midi_unlearn_action()
         except (AttributeError, TypeError):
@@ -2211,18 +2706,45 @@ class zynthian_gui:
 
     # Learn control options
     def cuia_midi_learn_control_options(self, params=None):
+        """Show the options (MIDI learn, unlearn, ...) of a controller of the current view.
+
+        Category: midi
+
+        Keyword Args:
+            index (int) [REQUIRED]: Controller index on the view (0-3).
+        """
+
         scrobj = self.get_midi_learn_screen_obj()
         if scrobj and params and len(params) > 0:
             scrobj.controller_options(params[0])
 
     # Learn control
     def cuia_midi_learn_control(self, params=None):
+        """Start MIDI learning for a controller of the current view: the next MIDI CC received is bound to it.
+
+        Category: midi
+
+        Keyword Args:
+            index (int) [REQUIRED]: Controller index on the view (0-3).
+        """
+
         scrobj = self.get_midi_learn_screen_obj()
         if scrobj and params and len(params) > 0:
             scrobj.midi_learn(params[0])
 
     # Unlearn control
     def cuia_midi_unlearn_control(self, params=None):
+        """Remove the MIDI bindings of a controller of the current view.
+
+        Category: midi
+
+        AI Context:
+            MIDI bindings are lost. Only call it when the user explicitly asks for it.
+
+        Keyword Args:
+            index (int): Controller index on the view (0-3). Omit it to unlearn the controller being learned.
+        """
+
         scrobj = self.get_midi_learn_screen_obj()
         if scrobj:
             if params and len(params) > 0:
@@ -2233,24 +2755,51 @@ class zynthian_gui:
 
     # Unlearn all mixer controls
     def cuia_midi_unlearn_mixer(self, params=None):
+        """Remove the MIDI bindings of all the mixer controls.
+
+        Category: midi
+
+        AI Context:
+            MIDI bindings are lost. Only call it when the user explicitly asks for it.
+        """
+
         for chain in self.chain_manager.chains.values():
             if chain.zynmixer_proc:
-                self.chain_manager.clean_midi_learn(chain.zynmixer_proc)
+                self.chain_manager.clean_midi_binding(chain.zynmixer_proc)
 
     def cuia_midi_unlearn_node(self, params=None):
         if params and len(params) > 1:
-            self.chain_manager.remove_midi_learn([params[0], params[1]])
+            self.chain_manager.clear_midi_binding([params[0], params[1]])
 
     def cuia_midi_unlearn_chain(self, params=None):
+        """Remove all the MIDI bindings of a chain.
+
+        Category: midi
+
+        AI Context:
+            MIDI bindings are lost. Only call it when the user explicitly asks for it.
+
+        Keyword Args:
+            chain_id (int): Chain id. Omit it for the active chain.
+        """
+
         if params and len(params) > 0:
-            self.chain_manager.clean_midi_learn(params[0])
+            self.chain_manager.clean_midi_binding(params[0])
         else:
-            self.chain_manager.clean_midi_learn(self.chain_manager.active_chain.chain_id)
+            self.chain_manager.clean_midi_binding(self.chain_manager.active_chain.chain_id)
 
     # -------------------------------------------------------------------
     # Z2 knob touch
     # -------------------------------------------------------------------
     def cuia_z2_zynpot_touch(self, params=None):
+        """Touch an encoder (Z2 hardware). While MIDI learning, it selects the controller to learn.
+
+        Category: navigation
+
+        Keyword Args:
+            index (int) [REQUIRED]: Encoder index (0-3).
+        """
+
         if params and len(params) > 0:
             try:
                 self.screens[self.current_screen].zctrl_touch(params[0])
@@ -2262,6 +2811,15 @@ class zynthian_gui:
     # V5 knob's switch action defaults
     # -------------------------------------------------------------------
     def cuia_v5_zynpot_switch(self, params):
+        """Push an encoder's switch (V5 hardware).
+
+        Category: navigation
+
+        Keyword Args:
+            index (int) [REQUIRED]: Encoder index (0-3).
+            action (str) [REQUIRED] enum['S', 'B', 'L']: 'S' -> short push, 'B' -> bold push, 'L' -> long push.
+        """
+
         try:
             if self.get_current_screen_obj().cuia_v5_zynpot_switch(params):
                 return True
@@ -2287,6 +2845,15 @@ class zynthian_gui:
     # -------------------------------------------------------------------
 
     def cuia_program_change(self, params=None):
+        """Send a MIDI program change.
+
+        Category: midi
+
+        Keyword Args:
+            program (str) [REQUIRED]: Program number (0-127), or "+"/"-" for the next/previous program.
+            chan (int): MIDI channel (0-15). Omit it for the active chain's channel.
+        """
+
         if params and len(params) > 0:
             if len(params) > 1:
                 chan = int(params[1])
@@ -2308,6 +2875,19 @@ class zynthian_gui:
                 self.prog_change[chan] = pgm
 
     def cuia_zyn_cc(self, params=None):
+        """Send a MIDI CC message.
+
+        Category: midi
+
+        AI Context:
+            Intended for key bindings: when the last parameter is 'R' (key released), the release value is sent.
+
+        Keyword Args:
+            chan (int) [REQUIRED]: MIDI channel (0-15).
+            cc (int) [REQUIRED]: CC number (0-127).
+            value (int) [REQUIRED]: CC value (0-127).
+        """
+
         if params and len(params) > 2:
             chan = int(params[0])
             cc = int(params[1])
@@ -2321,30 +2901,55 @@ class zynthian_gui:
     # Common methods to control views derived from zynthian_gui_base
     # -------------------------------------------------------------------
     def cuia_show_cursor(self, params=None):
+        """Show the mouse cursor.
+
+        Category: display
+        """
+
         try:
             zynthian_gui_config.top.config(cursor="arrow")
         except (AttributeError, TypeError):
             pass
 
     def cuia_hide_cursor(self, params=None):
+        """Hide the mouse cursor.
+
+        Category: display
+        """
+
         try:
             zynthian_gui_config.top.config(cursor="none")
         except (AttributeError, TypeError):
             pass
 
     def cuia_show_topbar(self, params=None):
+        """Show the topbar of the current view.
+
+        Category: display
+        """
+
         try:
             self.screens[self.current_screen].show_topbar(True)
         except (AttributeError, TypeError):
             pass
 
     def cuia_hide_topbar(self, params=None):
+        """Hide the topbar of the current view.
+
+        Category: display
+        """
+
         try:
             self.screens[self.current_screen].show_topbar(False)
         except (AttributeError, TypeError):
             pass
 
     def cuia_show_sidebar(self, params=None):
+        """Show the sidebar (controllers) of the current view.
+
+        Category: display
+        """
+
         try:
             self.screens[self.current_screen].show_sidebar(True)
             zynsigman.send_queued(zynsigman.S_GUI, zynsigman.SS_GUI_SHOW_SIDEBAR, shown=True)
@@ -2352,6 +2957,11 @@ class zynthian_gui:
             pass
 
     def cuia_hide_sidebar(self, params=None):
+        """Hide the sidebar (controllers) of the current view.
+
+        Category: display
+        """
+
         try:
             self.screens[self.current_screen].show_sidebar(False)
             zynsigman.send_queued(zynsigman.S_GUI, zynsigman.SS_GUI_SHOW_SIDEBAR, shown=False)
@@ -2359,6 +2969,11 @@ class zynthian_gui:
             pass
 
     def cuia_toggle_sidebar(self, params=None):
+        """Toggle the sidebar (controllers) of the current view.
+
+        Category: display
+        """
+
         try:
             show = not self.screens[self.current_screen].sidebar_shown
             self.screens[self.current_screen].show_sidebar(show)
@@ -2371,24 +2986,56 @@ class zynthian_gui:
     # -------------------------------------------------------------------
 
     def cuia_zynaptik_cvin_set_volts_octave(self, params):
+        """Set the volts per octave of the zynaptik CV inputs.
+
+        Category: hardware
+
+        Keyword Args:
+            volts (number) [REQUIRED]: Volts per octave.
+        """
+
         try:
             lib_zyncore.zynaptik_cvin_set_volts_octave(float(params[0]))
         except Exception as err:
             logging.debug(err)
 
     def cuia_zynaptik_cvin_set_note0(self, params):
+        """Set the MIDI note of the zynaptik CV inputs for 0 volts.
+
+        Category: hardware
+
+        Keyword Args:
+            note (int) [REQUIRED]: MIDI note number (0-127).
+        """
+
         try:
             lib_zyncore.zynaptik_cvin_set_note0(int(params[0]))
         except Exception as err:
             logging.debug(err)
 
     def cuia_zynaptik_cvout_set_volts_octave(self, params):
+        """Set the volts per octave of the zynaptik CV outputs.
+
+        Category: hardware
+
+        Keyword Args:
+            volts (number) [REQUIRED]: Volts per octave.
+        """
+
         try:
             lib_zyncore.zynaptik_cvout_set_volts_octave(float(params[0]))
         except Exception as err:
             logging.debug(err)
 
     def cuia_zynaptik_cvout_set_note0(self, params):
+        """Set the MIDI note of the zynaptik CV outputs for 0 volts.
+
+        Category: hardware
+
+        Keyword Args:
+            note (int) [REQUIRED]: MIDI note number (0-127).
+        """
+
         try:
             lib_zyncore.zynaptik_cvout_set_note0(int(params[0]))
         except Exception as err:
@@ -2404,6 +3051,8 @@ class zynthian_gui:
             api: Which api to access: "sm" for state manager, "cm" for chain manager
             method: Name of method to call
             params: comma separated list of method parameters
+
+        Category: system
         """
 
         try:
@@ -2883,7 +3532,7 @@ class zynthian_gui:
 
 
     def plot_zctrls_task(self):
-        # Refresh GUI Controllers & Widgets
+        # Refresh GUI Controllers, Widgets & DPM
         screen_obj = self.get_current_screen_obj()
         if screen_obj:
             plot_zctrls_func = getattr(screen_obj, "plot_zctrls", None)
@@ -2892,6 +3541,14 @@ class zynthian_gui:
                     plot_zctrls_func()
                 except Exception as e:
                     logging.error(e)
+            # Refresh DPM meters here to share process in main thread
+            if not self.state_manager.power_save_mode:
+                refresh_dpm_func = getattr(screen_obj, "refresh_dpm", None)
+                if refresh_dpm_func:
+                    try:
+                        refresh_dpm_func()
+                    except Exception as e:
+                        logging.error(e)
 
         if not self.exit_flag:
             zynthian_gui_config.top.after(32, self.plot_zctrls_task)
@@ -3138,6 +3795,8 @@ class zynthian_gui:
                             self.zynswitch_long(i)
                         elif t == 'PR':
                             zynswitch_cuia_ts[i] = None
+                        elif t == 'X':
+                            zynswitch_cuia_ts[i] = None
                         else:
                             zynswitch_cuia_ts[i] = None
                             logging.warning("Unknown Action Type: {}".format(t))
@@ -3192,12 +3851,554 @@ class zynthian_gui:
                 self.state_manager.clear_busy()
 
     # ------------------------------------------------------------------
+    # Websocket Management
+    # ------------------------------------------------------------------
+
+    # Map HTML KeyboardEvent.code => X11 keysym name (for xdotool)
+    ws_xkeys = {
+        "Enter": "Return", "NumpadEnter": "KP_Enter", "Escape": "Escape", "Tab": "Tab",
+        "Backspace": "BackSpace", "Delete": "Delete", "Insert": "Insert", "Space": "space",
+        "ArrowUp": "Up", "ArrowDown": "Down", "ArrowLeft": "Left", "ArrowRight": "Right",
+        "Home": "Home", "End": "End", "PageUp": "Prior", "PageDown": "Next",
+        "ShiftLeft": "Shift_L", "ShiftRight": "Shift_R",
+        "ControlLeft": "Control_L", "ControlRight": "Control_R",
+        "AltLeft": "Alt_L", "AltRight": "Alt_R", "MetaLeft": "Super_L", "MetaRight": "Super_R",
+        "CapsLock": "Caps_Lock", "Minus": "minus", "Equal": "equal",
+        "BracketLeft": "bracketleft", "BracketRight": "bracketright", "Backslash": "backslash",
+        "Semicolon": "semicolon", "Quote": "apostrophe", "Backquote": "grave",
+        "Comma": "comma", "Period": "period", "Slash": "slash", "IntlBackslash": "less",
+        "ContextMenu": "Menu"
+    }
+
+    def websocket_key_event(self, action, code):
+        """Inject a keyboard event, coming from a websocket client, into the X display"""
+        if action not in ("down", "up") or not isinstance(code, str):
+            return
+        if code in self.ws_xkeys:
+            keysym = self.ws_xkeys[code]
+        elif len(code) == 4 and code.startswith("Key") and code[3].isalpha():
+            keysym = code[3].lower()
+        elif len(code) == 6 and code.startswith("Digit") and code[5].isdigit():
+            keysym = code[5]
+        elif code.startswith("Numpad") and len(code) == 7 and code[6].isdigit():
+            keysym = "KP_" + code[6]
+        elif code[1:].isdigit() and code[0] == "F" and 1 <= int(code[1:]) <= 24:
+            keysym = code
+        else:
+            logging.debug(f"Unsupported websocket key code '{code}'")
+            return
+        try:
+            subprocess.run(["xdotool", "key" + action, keysym],
+                           timeout=2, check=False,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            logging.error(f"Can't inject websocket key '{code}': {e}")
+
+    def websocket_send(self, client, data):
+        """Send a JSON message to a websocket client. Returns False if it can't be sent."""
+        try:
+            payload = json.dumps(data)
+            with self.websocket_send_lock:
+                self.websocket_server.send_message(client, payload)
+            return True
+        except Exception:
+            return False  # Ignore broken or dropped socket links
+
+    def websocket_command(self, client, message):
+        """Handle a text command from a websocket client: /subscribe <stream> ... or /unsubscribe <stream|*> ..."""
+        words = message.split()
+        cmd, streams = words[0], words[1:]
+        subs = self.websocket_subscriptions.setdefault(client['id'], set())
+        if cmd not in ("/subscribe", "/unsubscribe") or not streams:
+            self.websocket_send(client, {"error": f"Bad command '{message}'. Use '/subscribe <stream>' or '/unsubscribe <stream|*>'"})
+            return
+        if cmd == "/subscribe":
+            unknown = [n for n in streams if n not in self.websocket_feedback_streams]
+            new_dpm = []
+            for name in streams:
+                if name in self.websocket_feedback_streams and name not in subs:
+                    subs.add(name)
+                    if name == "screen_state":
+                        zynthian_gui_config.top.after_idle(self.screen_state_sync, True)
+                    elif name in ("dpm_global", "dpm_state"):
+                        new_dpm.append(name)
+                    elif name == "chain_state":
+                        self.chain_state_sync()
+                    # Send the current value, so the client doesn't have to wait for a change
+                    value = self.websocket_feedback_streams[name]()
+                    if value:
+                        self.websocket_send(client, {name: value})
+            if new_dpm:
+                zynthian_gui_config.top.after_idle(self.dpm_feedback_sync, new_dpm)
+        else:
+            unknown = [n for n in streams if n != "*" and n not in self.websocket_feedback_streams]
+            if "*" in streams:
+                subs.clear()
+            else:
+                subs.difference_update(streams)
+            zynthian_gui_config.top.after_idle(self.screen_state_sync)
+            zynthian_gui_config.top.after_idle(self.dpm_feedback_sync)
+            self.chain_state_sync()
+        if unknown:
+            self.websocket_send(client, {"error": f"Unknown feedback stream(s): {' '.join(unknown)}. Available: {' '.join(self.websocket_feedback_streams)}"})
+        self.websocket_send(client, {"subscriptions": sorted(subs)})
+
+    def websocket_has_subscribers(self, stream):
+        return any(stream in subs for subs in list(self.websocket_subscriptions.values()))
+
+    def websocket_broadcast(self, stream, value):
+        """Send the value of a feedback stream to the clients subscribed to it"""
+        if self.websocket_has_subscribers(stream):
+            self.websocket_broadcast_payload(stream, json.dumps({stream: value}))
+
+    def websocket_broadcast_payload(self, stream, payload):
+        """Send a JSON message to the clients subscribed to a feedback stream"""
+        for client_id, subs in list(self.websocket_subscriptions.items()):
+            client = self.websocket_clients.get(client_id)
+            if client and stream in subs:
+                try:
+                    with self.websocket_send_lock:
+                        self.websocket_server.send_message(client, payload)
+                except Exception:
+                    pass  # Ignore broken or dropped socket links
+
+    # --------------------------------------------------------------------------
+    # "screen_state" websocket feedback
+    #
+    # The full state is sent after subscribing and when the screen or the layout of a view changes:
+    #   {"screen": "control", "title": "...", "zyngui_chain_control": {"chain_blocks": {...}, "zyngui_selector": {...}}}
+    # Otherwise, only the changed parts are sent, to be merged with the previous state:
+    #   {"zyngui_chain_control": {"zyngui_selector": {"selected": 4}}}
+    # The views send zynsigman signals when their state changes. Callbacks are registered only while someone is
+    # subscribed, so there is no cost otherwise.
+    # --------------------------------------------------------------------------
+
+    def screen_state_sync(self, full=False):
+        """Main thread: start/stop the screen state feedback, depending on the subscriptions"""
+        active = self.websocket_has_subscribers("screen_state")
+        if active and not self.screen_state_active:
+            self.screen_state_active = True
+            zynsigman.register(zynsigman.S_GUI, zynsigman.SS_GUI_SHOW_SCREEN, self.cb_screen_state_full)
+            zynsigman.register(zynsigman.S_GUI, zynsigman.SS_GUI_VIEW_STATE, self.cb_screen_state_view)
+            zynsigman.register(zynsigman.S_GUI, zynsigman.SS_GUI_VIEW_LIST, self.cb_screen_state_list)
+            zynsigman.register(zynsigman.S_GUI, zynsigman.SS_GUI_VIEW_SELECT, self.cb_screen_state_select)
+            for screen_obj in self.screens.values():
+                select_path = getattr(screen_obj, "select_path", None)
+                if select_path is not None and not getattr(screen_obj, "parent", None):
+                    tid = select_path.trace_add("write", self.cb_screen_state_title)
+                    self.screen_state_traces.append((select_path, tid))
+        elif not active and self.screen_state_active:
+            self.screen_state_active = False
+            zynsigman.unregister(zynsigman.S_GUI, zynsigman.SS_GUI_SHOW_SCREEN, self.cb_screen_state_full)
+            zynsigman.unregister(zynsigman.S_GUI, zynsigman.SS_GUI_VIEW_STATE, self.cb_screen_state_view)
+            zynsigman.unregister(zynsigman.S_GUI, zynsigman.SS_GUI_VIEW_LIST, self.cb_screen_state_list)
+            zynsigman.unregister(zynsigman.S_GUI, zynsigman.SS_GUI_VIEW_SELECT, self.cb_screen_state_select)
+            for select_path, tid in self.screen_state_traces:
+                select_path.trace_remove("write", tid)
+            self.screen_state_traces = []
+            self.screen_state_parts = {}
+            self.screen_state_sent = {}
+        if active and full:
+            # New subscriber => always send the full state
+            self.screen_state_full = 2
+            self.screen_state_schedule()
+
+    def cb_screen_state_full(self, **kwargs):
+        self.screen_state_full = max(self.screen_state_full, 1)
+        self.screen_state_schedule()
+
+    def cb_screen_state_view(self, view):
+        if self.get_state_path(view) is not None:
+            self.cb_screen_state_full()
+
+    def cb_screen_state_list(self, view):
+        self.screen_state_parts[view] = "list"
+        self.screen_state_schedule()
+
+    def cb_screen_state_select(self, view):
+        if view not in self.screen_state_parts:
+            self.screen_state_parts[view] = "select"
+            self.screen_state_schedule()
+
+    def cb_screen_state_title(self, *args):
+        self.screen_state_title = True
+        self.screen_state_schedule()
+
+    def screen_state_schedule(self):
+        # Defer the update, so a burst of changes is sent as one message
+        if not self.screen_state_pending:
+            self.screen_state_pending = True
+            zynthian_gui_config.top.after(20, self.screen_state_update)
+
+    @staticmethod
+    def get_screen_title(screen_obj):
+        """Title (breadcrumb) of a view. Fullscreen modals have none."""
+        select_path = getattr(screen_obj, "select_path", None)
+        return select_path.get() if select_path is not None else ""
+
+    def get_state_path(self, view):
+        """Return the list of keys locating the state of a view (or view part), or None if it's not shown"""
+        path = []
+        root = None
+        while view:
+            if not view.state_key or not view.is_state_shown():
+                return None
+            path.insert(0, view.state_key)
+            root = view
+            view = view.get_state_parent()
+        if root is not self.get_current_screen_obj():
+            return None
+        return path
+
+    @staticmethod
+    def get_state_diff(old, new):
+        """Return the values of new that differ from old (nested), or None if some key of old is missing in new"""
+        if old.keys() - new.keys():
+            return None
+        diff = {}
+        for key, value in new.items():
+            old_value = old.get(key)
+            if isinstance(value, dict) and isinstance(old_value, dict):
+                d = zynthian_gui.get_state_diff(old_value, value)
+                if d is None:
+                    return None
+                if d:
+                    diff[key] = d
+            elif old_value != value:
+                diff[key] = value
+        return diff
+
+    def screen_state_update(self):
+        """Main thread: queue the screen state changes for the subscribers"""
+        self.screen_state_pending = False
+        parts, self.screen_state_parts = self.screen_state_parts, {}
+        title, self.screen_state_title = self.screen_state_title, False
+        full, self.screen_state_full = self.screen_state_full, 0
+        if not self.screen_state_active:
+            return
+        try:
+            screen_obj = self.get_current_screen_obj()
+            # The screen may change before its signal arrives (views are filled while showing them)
+            if self.current_screen != self.screen_state_sent.get("screen"):
+                full = max(full, 1)
+            if full:
+                state = {"screen": self.current_screen}
+                if screen_obj:
+                    state["title"] = self.get_screen_title(screen_obj)
+                    if screen_obj.state_key:
+                        state[screen_obj.state_key] = screen_obj.get_state()
+                sent, self.screen_state_sent = self.screen_state_sent, state
+                if full == 1:
+                    # Send only the differences, unless the screen changed or some key was removed
+                    diff = self.get_state_diff(sent, state)
+                    if diff is not None and "screen" not in diff:
+                        state = diff
+            else:
+                # Send only the values that differ from the last sent ones
+                state = {}
+                if title and screen_obj:
+                    title = self.get_screen_title(screen_obj)
+                    if title != self.screen_state_sent.get("title"):
+                        state["title"] = self.screen_state_sent["title"] = title
+                for view, what in parts.items():
+                    path = self.get_state_path(view)
+                    if not path:
+                        continue
+                    node = None
+                    sent = self.screen_state_sent
+                    for key in path:
+                        sent = sent.setdefault(key, {})
+                    for key, value in view.get_state(what).items():
+                        if sent.get(key) != value:
+                            sent[key] = value
+                            if node is None:
+                                node = state
+                                for k in path:
+                                    node = node.setdefault(k, {})
+                            node[key] = value
+            if state:
+                # Serialized here, as later updates modify the dictionaries
+                self.websocket_queue.put(("screen_state", json.dumps({"screen_state": state})))
+        except Exception as e:
+            logging.error(f"Can't get screen state => {e}")
+
+    # --------------------------------------------------------------------------
+    # DPM websocket feedback
+    #
+    # "dpm_global": main bus levels => {"dpm_global": [a, b, a_hold, b_hold]}
+    # "dpm_state": levels of every chain with audio => {"dpm_state": {chain_id: [a, b, a_hold, b_hold], ...}}
+    # Levels go from 0.0 (silence, -72dBFS or less) to 1.0 (0dBFS), linear in dB, rounded to 2 decimals.
+    # Peak meters change every audio period, so they are sampled (10Hz), but only while someone is subscribed,
+    # and only the changes are sent: nothing is sent while levels don't change (e.g. silence).
+    # "dpm_state" sends all the chains after subscribing, then only the changed ones (null for removed chains).
+    # --------------------------------------------------------------------------
+
+    dpm_feedback_period_ms = 100
+
+    def dpm_feedback_sync(self, new_subscriptions=()):
+        """Main thread: start/stop the DPM sampling, depending on the subscriptions
+
+        new_subscriptions: DPM streams just subscribed, to send them the full levels on next sample
+        """
+        active = self.websocket_has_subscribers("dpm_global") or self.websocket_has_subscribers("dpm_state")
+        if "dpm_global" in new_subscriptions:
+            self.dpm_global_sent = None
+        if "dpm_state" in new_subscriptions:
+            self.dpm_state_sent = {}
+        if self.websocket_has_subscribers("dpm_state"):
+            self.state_manager.zynmixer_chan.enable_dpm(True)
+            self.state_manager.zynmixer_bus.enable_dpm(True)
+        if active and not self.dpm_feedback_active:
+            self.dpm_feedback_active = True
+            self.dpm_feedback_task()
+        elif not active:
+            self.dpm_feedback_active = False
+            self.dpm_global_sent = None
+            self.dpm_state_sent = {}
+
+    @staticmethod
+    def get_dpm_levels(dpm):
+        return [round(1.0 - dpm.a, 2), round(1.0 - dpm.b, 2), round(1.0 - dpm.a_hold, 2), round(1.0 - dpm.b_hold, 2)]
+
+    def dpm_feedback_task(self):
+        """Main thread task: sample the DPMs and queue the changes for the subscribers"""
+        if not self.dpm_feedback_active or self.exit_flag:
+            return
+        try:
+            zynmixer_bus = self.state_manager.zynmixer_bus
+            if self.websocket_has_subscribers("dpm_state"):
+                self.state_manager.zynmixer_chan.update_dpm_states()
+                zynmixer_bus.update_dpm_states()
+                levels = {}
+                for chain_id, chain in list(self.chain_manager.chains.items()):
+                    proc = chain.zynmixer_proc
+                    if proc is not None and proc.mixer_chan is not None:
+                        levels[str(chain_id)] = self.get_dpm_levels(proc.zynmixer.dpm[proc.mixer_chan])
+                changes = {k: v for k, v in levels.items() if self.dpm_state_sent.get(k) != v}
+                for k in self.dpm_state_sent.keys() - levels.keys():
+                    changes[k] = None  # Removed chain
+                if changes:
+                    self.dpm_state_sent = levels
+                    self.websocket_queue.put(("dpm_state", json.dumps({"dpm_state": changes})))
+            elif self.websocket_has_subscribers("dpm_global"):
+                zynmixer_bus.update_dpm_states(1)
+            if self.websocket_has_subscribers("dpm_global"):
+                levels = self.get_dpm_levels(zynmixer_bus.dpm[0])
+                if levels != self.dpm_global_sent:
+                    self.dpm_global_sent = levels
+                    self.websocket_queue.put(("dpm_global", json.dumps({"dpm_global": levels})))
+        except Exception as e:
+            logging.error(f"Can't get DPM feedback => {e}")
+        zynthian_gui_config.top.after(self.dpm_feedback_period_ms, self.dpm_feedback_task)
+
+    # --------------------------------------------------------------------------
+    # Chain manager websocket feedback ("chain_state")
+    #
+    # The full chain list is sent after subscribing and on every change (it's small and changes are rare):
+    #   {"chain_state": {"active": 1, "chains": [{"id": 0, "index": 0, "name": "Main", ...}, ...]}}
+    # The chain manager signals are registered only while someone is subscribed. Loading a snapshot or a ZS3
+    # sends a single signal at the end. Some user actions send several (e.g. adding a chain: active chain, add
+    # chain, add processor), so the state is built by the websocket sender thread after a short delay, to
+    # report them once. It's only sent if it changed.
+    # --------------------------------------------------------------------------
+
+    chain_state_signals = (
+        (zynsigman.S_CHAIN_MAN, zynsigman.SS_SET_ACTIVE_CHAIN),
+        (zynsigman.S_CHAIN_MAN, zynsigman.SS_MOVE_CHAIN),
+        (zynsigman.S_CHAIN_MAN, zynsigman.SS_ADD_CHAIN),
+        (zynsigman.S_CHAIN_MAN, zynsigman.SS_REMOVE_CHAIN),
+        (zynsigman.S_CHAIN_MAN, zynsigman.SS_REMOVE_ALL_CHAINS),
+        (zynsigman.S_CHAIN_MAN, zynsigman.SS_RENAME_CHAIN),
+        (zynsigman.S_CHAIN_MAN, zynsigman.SS_ADD_PROCESSOR),
+        (zynsigman.S_CHAIN_MAN, zynsigman.SS_REMOVE_PROCESSOR),
+        (zynsigman.S_CHAIN_MAN, zynsigman.SS_SET_MIDI_CHAN),
+        (zynsigman.S_STATE_MAN, zynsigman.SS_LOAD_SNAPSHOT),
+        (zynsigman.S_STATE_MAN, zynsigman.SS_LOAD_ZS3),
+    )
+
+    def chain_state_sync(self):
+        """Register/unregister the chain manager signals, depending on the subscriptions"""
+        active = self.websocket_has_subscribers("chain_state")
+        if active and not self.chain_state_active:
+            self.chain_state_active = True
+            for signal, subsignal in self.chain_state_signals:
+                zynsigman.register(signal, subsignal, self.cb_chain_state)
+        elif not active and self.chain_state_active:
+            self.chain_state_active = False
+            for signal, subsignal in self.chain_state_signals:
+                zynsigman.unregister(signal, subsignal, self.cb_chain_state)
+            self.chain_state_json = ""
+
+    def cb_chain_state(self, **kwargs):
+        # Queue one update for the sender thread, whatever the quantity of signals
+        if not self.chain_state_pending:
+            self.chain_state_pending = True
+            self.websocket_queue.put(("chain_state", None))
+
+    def send_chain_state(self):
+        """Sender thread: send the chain state to the subscribers, if it changed"""
+        sleep(0.05)  # Report the signals of a single action once
+        self.chain_state_pending = False
+        try:
+            state_json = json.dumps({"chain_state": self.get_chain_state()})
+        except Exception as e:
+            logging.error(f"Can't get chain state => {e}")
+            return
+        if state_json != self.chain_state_json:
+            self.chain_state_json = state_json
+            self.websocket_broadcast_payload("chain_state", state_json)
+
+    def get_chain_state(self):
+        """Return the chain manager state as a JSON serializable dictionary"""
+        chains = []
+        for index, (chain_id, chain) in enumerate(list(self.chain_manager.chains.items())):
+            midi_chan = chain.midi_chan
+            if isinstance(midi_chan, int) and 0 <= midi_chan < 16:
+                midi_chan += 1
+            elif midi_chan == 0xffff:
+                midi_chan = "all"
+            else:
+                midi_chan = None
+            proc = chain.zynmixer_proc
+            if proc is not None and proc.mixer_chan is not None:
+                mixer = {"bus": proc.zynmixer is self.state_manager.zynmixer_bus, "strip": proc.mixer_chan}
+            else:
+                mixer = None
+            chains.append({
+                "id": chain_id,
+                "index": index,  # Position in the mixer (display order), as used by the MIXER CUIA
+                "name": chain.get_name(),
+                "title": chain.title or "",
+                "type": chain.get_type(),
+                "midi_chan": midi_chan,  # 1-16, "all" or None
+                "zmop_index": chain.zmop_index,
+                "mixer": mixer,
+                "audio_thru": bool(chain.audio_thru),
+                "midi_thru": bool(chain.midi_thru)
+            })
+        active = self.chain_manager.active_chain
+        return {"active": active.chain_id if active else None, "chains": chains}
+
+    def websocket_init(self):
+        ws_note_chans = {}  # (client id, note) => MIDI channel of the note_on sent by that client (piano, controller)
+
+        def ws_midi_chan():
+            """MIDI channel of the active chain (None if it has none). The channel sent by clients is ignored."""
+            try:
+                chan = int(self.chain_manager.get_active_chain().midi_chan)
+            except Exception:
+                return None
+            return chan if 0 <= chan <= 15 else None
+
+        # Define callback functions for server events
+        def client_left(client, server):
+            if client:  # None when a connection closes before the websocket handshake (port probes)
+                self.websocket_clients.pop(client['id'], None)
+                self.websocket_subscriptions.pop(client['id'], None)
+                zynthian_gui_config.top.after_idle(self.screen_state_sync)
+                zynthian_gui_config.top.after_idle(self.dpm_feedback_sync)
+                self.chain_state_sync()
+                # Release the notes this client left held
+                for key in [k for k in ws_note_chans if k[0] == client['id']]:
+                    self.state_manager.zynmidi.note_off(ws_note_chans.pop(key), key[1])
+            logging.debug(f"Websocket disconnected! Total active connections: {len(self.websocket_clients)}")
+
+        def new_client(client, server):
+            self.websocket_clients[client['id']] = client
+            self.websocket_subscriptions[client['id']] = set()
+            logging.debug(f"Websocket connected! Total active connections: {len(self.websocket_clients)}")
+
+        def message_received(client, server, message):
+            try:
+                if message.lstrip().startswith("/"):
+                    self.websocket_command(client, message.strip())
+                    return
+                data = json.loads(message)
+                #logging.info(f"Received from WebSocket client #{client['id']}: {data}")
+                if "cuia" in data:
+                    self.cuia_queue.put_nowait((data['cuia'], data['args'], f"WS#{client['id']}"))
+                elif "key" in data:
+                    self.websocket_key_event(data["key"], data.get("code", ""))
+                elif "midi" in data:
+                    # MIDI from the browser (virtual piano, local MIDI controllers). The MIDI channel sent by the
+                    # client is ignored: everything goes to the active chain's channel. The channel used by each
+                    # note_on is remembered so its note_off matches even if the active chain changes meanwhile.
+                    kind = data["midi"]
+                    zynmidi = self.state_manager.zynmidi
+                    if kind == "note_on":
+                        chan = ws_midi_chan()
+                        if chan is not None:
+                            note = int(data["note"]) & 0x7F
+                            ws_note_chans[(client['id'], note)] = chan
+                            lib_zyncore.ui_send_note_on(chan, note, int(data.get("vel", 100)) & 0x7F)
+                    elif kind == "note_off":
+                        note = int(data["note"]) & 0x7F
+                        chan = ws_note_chans.pop((client['id'], note), None)
+                        if chan is not None:
+                            lib_zyncore.ui_send_note_on(chan, note, 0)
+                    else:
+                        chan = ws_midi_chan()
+                        if chan is not None:
+                            val = int(data.get("val", 0))
+                            if kind == "cc":
+                                lib_zyncore.ui_send_ccontrol_change(chan, int(data["ctrl"]) & 0x7F, val & 0x7F)
+                            elif kind == "pitch_bend":      # 14 bit, 8192 = centre
+                                lib_zyncore.ui_send_pitchbend_change(chan, val & 0x3FFF)
+                            elif kind == "program":
+                                zynmidi.set_midi_prg(chan, val & 0x7F)
+                            elif kind == "chan_pressure":
+                                lib_zyncore.ui_send_chan_press(chan, val & 0x7F)
+            except json.JSONDecodeError:
+                # Fallback handler if the browser sends plain unformatted text instead of JSON
+                logging.warning(f"Non-JSON string received from WebSocket client {client['id']}: {message}")
+            except Exception as e:
+                logging.error(f"Error handling browser WebSocket request: {e}")
+
+
+        # Websocket worker thread
+        def worker_thread():
+            # Loop watching wsled state changes, ...
+            while not self.exit_flag:
+                if self.wsleds.wsled_state_changed:
+                    self.wsleds.wsled_state_changed = False
+                    self.websocket_broadcast("wsled_state", self.wsleds.last_wsled_state)
+                # 50ms sleep keeps CPU overhead at near 0%
+                sleep(0.05)
+
+        # Websocket sender thread: sends the queued feedback. Blocks (no CPU) until there is something to send
+        def sender_thread():
+            while True:
+                item = self.websocket_queue.get()
+                if item is None:
+                    break
+                if item[0] == "chain_state":
+                    self.send_chain_state()
+                else:
+                    self.websocket_broadcast_payload(*item)
+
+        self.websocket_server = zynthian_websocket_server(host="0.0.0.0", port=self.websocket_port)
+        self.websocket_server.set_fn_client_left(client_left)
+        self.websocket_server.set_fn_new_client(new_client)
+        self.websocket_server.set_fn_message_received(message_received)
+        # Without run_forever, the network port remains totally closed!
+        self.websocket_engine_thread = threading.Thread(target=self.websocket_server.run_forever, name="ZynWSEngine", daemon=True)
+        self.websocket_engine_thread.start()
+        # Worker thread
+        self.websocket_server_thread = threading.Thread(target=worker_thread, name="ZynWSWorker", daemon=True)
+        self.websocket_server_thread.start()
+        # Sender thread
+        self.websocket_sender_thread = threading.Thread(target=sender_thread, name="ZynWSSender", daemon=True)
+        self.websocket_sender_thread.start()
+        logging.info(f"ZYNTHIAN-UI WebSocket server running on port {self.websocket_port}")
+
+    # ------------------------------------------------------------------
     # Thread ending on Exit
     # ------------------------------------------------------------------
 
     def exit(self, code=0):
         self.exit_code = code
         self.exit_flag = True
+        self.websocket_queue.put(None)  # Ends the websocket sender thread
         self.exit_wait_count = 0
         logging.info("STOPPING ZYNTHIAN-UI...")
         zynthian_gui_config.top.after(1, self.do_exit)
@@ -3283,7 +4484,7 @@ class zynthian_gui:
                     except:
                         pass
 
-            if not self.osc_clients and self.current_screen not in ("root", "mixer", "launcher"):
+            if not self.osc_clients and self.current_screen not in ("root", "mixer", "launcher") and not self.websocket_has_subscribers("dpm_state"):
                 self.state_manager.zynmixer_chan.enable_dpm(False)
                 self.state_manager.zynmixer_bus.enable_dpm(False)
 
@@ -3296,6 +4497,6 @@ class zynthian_gui:
 
     # This should be removed!!
     def get_zynthian_config(self, varname):
-        return eval("zynthian_gui_config.{}".format(varname))
+        return getattr(zynthian_gui_config, varname)
 
 # ------------------------------------------------------------------------------

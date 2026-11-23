@@ -162,6 +162,7 @@ class Zctrl:
         self.position_law = None
         self.toggle_declared = None  # the engine's own word on toggles (zynthian_controller): None where it said none
         self.nudge_factor = self.nudge_factor_fine = 0.01
+        self.midi_cc_mode = -1  # zynthian_controller's default: no CC mode detected (the learn indicator reads it)
         self.__dict__.update(kw)
         self.value_range = self.value_max - self.value_min
 
