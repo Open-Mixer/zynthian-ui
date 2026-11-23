@@ -150,12 +150,16 @@ class drawn_view(plugin_hostd_case):
         self.assertTrue(os.path.exists(proc.engine.custom_gui_fpath))
 
     def declare_widget(self, fpath):
-        """A zyngui:widget declared for every plugin by zynthian_lv2 (its lookup replaced for the test)."""
+        """A zyngui:widget declared for every plugin by zynthian_lv2 (its lookup replaced for the test).
+
+        The lookup lives in the base engine (zynthian_engine.get_custom_gui_fpath), which calls the zynthian_lv2 module:
+        the module itself is patched, not a name the plugin-hostd engine would import."""
         from unittest import mock
+        import zyngine.zynthian_lv2 as lv2
         widget = {"uri": "urn:test:widget", "fpath": fpath, "help": None, "user": False}
         for target, value in (("get_plugin_zyngui_widget", mock.Mock(return_value=widget)),
                               ("check_lv2_changes", mock.Mock(return_value=False))):
-            patcher = mock.patch.object(ph.zynthian_lv2, target, value)
+            patcher = mock.patch.object(lv2, target, value)
             patcher.start()
             self.addCleanup(patcher.stop)
 
@@ -167,7 +171,8 @@ class drawn_view(plugin_hostd_case):
 
     def test_the_panels_own_screen_stays_when_no_widget_is_declared(self):
         from unittest import mock
-        with mock.patch.object(ph.zynthian_lv2, "get_plugin_zyngui_widget", return_value=None):
+        import zyngine.zynthian_lv2 as lv2
+        with mock.patch.object(lv2, "get_plugin_zyngui_widget", return_value=None):
             _, proc = self.drawn_plugin()
         self.assertEqual(os.path.basename(proc.engine.custom_gui_fpath), "zynthian_widget_omx_panel.py")
 
