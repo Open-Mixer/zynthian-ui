@@ -14,6 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.13"]
+        vm: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@v5
 
@@ -112,3 +113,5 @@ jobs:
       # tests/test_upstream_suites.py): the fork's tests/test_*.py run in the openmixer-tests workflow
       - name: Tests
         run: xvfb-run -a python -m pytest -ra $(grep -v '^#' tests/upstream-suites.txt)
+      - if: always()
+        run: ls -la /dev/shm /tmp; for f in /tmp/zyntest_*.log; do echo "== $f"; cat "$f"; done
