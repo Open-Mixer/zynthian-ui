@@ -112,6 +112,6 @@ jobs:
       # Upstream's suites only (tests/upstream-suites.txt, kept equal to the subdirectories of tests/ by
       # tests/test_upstream_suites.py): the fork's tests/test_*.py run in the openmixer-tests workflow
       - name: Tests
-        run: xvfb-run -a python -m pytest -ra $(grep -v '^#' tests/upstream-suites.txt)
+        run: xvfb-run -a python -m pytest -s -p tests.native.jackdb_watch -ra $(grep -v '^#' tests/upstream-suites.txt)
       - if: always()
-        run: ls -la /dev/shm /tmp; for f in /tmp/zyntest_*.log; do echo "== $f"; cat "$f"; done
+        run: ls -la /dev/shm; ls -la --full-time /dev/shm/jack_db-* || true
