@@ -148,7 +148,9 @@ class BlankSlotPage(unittest.TestCase):
         control = load_control()
         screen = object.__new__(control)
         screen.mode, screen.widgets, screen.current_widget, screen.widget_zctrl = "control", {}, None, None
-        screen.modules = {"zynthian_widget_omx_panel": self.module}
+        # zynthian_gui_control's widget cache: by file path, with the file's (mtime_ns, size), so this stub is the one used
+        st = os.stat(WIDGET)
+        screen.modules = {WIDGET: (self.module, (st.st_mtime_ns, st.st_size))}
         screen.zyngui = mock.MagicMock()
         screen.zyngui.get_current_processor.return_value = self.proc
         screen.chain_manager = types.SimpleNamespace(processors={1: self.proc})
