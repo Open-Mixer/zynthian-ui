@@ -14,7 +14,9 @@
 # UI's View sends each call to it over a socket and reads the drawn pixels from shared memory; when the renderer
 # stops, the call raises RendererStopped, saying how, and the next View starts it again, up to STOPS_IN_A_ROW starts
 # without a draw. The socket carries one call at a time, whatever thread makes it (zynthian-ui#79); a view's calls
-# belong to Tk's thread (in_owner_thread), where the widgets make them. This file is that process too (run as
+# belong to Tk's thread (in_owner_thread), where the widgets make them. That shared memory is the one buffer every draw
+# of a view goes into (zynthian-ui#59): with omx-panel#78's omx_panel_view_draw_dirty the renderer repaints only the
+# cells that changed in it and says where, and PanelImage blits only those. This file is that process too (run as
 # `python3 zynthian_omx_panel_view.py --serve <fd>`): it imports nothing but the standard library.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
@@ -43,6 +45,8 @@ LIBRARY = "libomx-panel-render.so.0"
 TOOLS_DIR = "/usr/share/omx-panel/tools"
 
 PIXEL_RGBA8_STRAIGHT = 2
+# the most rectangles one dirty draw reports; the renderer merges what is over it, never drops one (omx_panel_view_draw_dirty)
+RECTS = 32
 
 # omx_panel_event_kind_t, omx_panel_key_t, omx_panel_pointer_t; the gesture words (omx_panel_word_t) are not listed
 # here: word_name() asks the library for the name of the one an answer carries
@@ -64,6 +68,11 @@ class RendererStopped(RendererAbsent):
 class _Buffer(ctypes.Structure):
     _fields_ = [("pixels", ctypes.c_void_p), ("width", ctypes.c_uint32), ("height", ctypes.c_uint32),
                 ("stride", ctypes.c_uint32), ("scale", ctypes.c_double), ("format", ctypes.c_int)]
+
+
+class _Rect(ctypes.Structure):
+    """omx_panel_rect_t: a rectangle of a buffer, in device px."""
+    _fields_ = [("x", ctypes.c_uint32), ("y", ctypes.c_uint32), ("width", ctypes.c_uint32), ("height", ctypes.c_uint32)]
 
 
 class _Event(ctypes.Structure):
@@ -139,6 +148,12 @@ def _declare(lib):
             ("omx_panel_word_name", S, [ctypes.c_int])):
         f = getattr(lib, name)
         f.restype, f.argtypes = res, args
+    # the dirty draw (omx-panel#78): a renderer released before it has no such symbol, and the full draw is then the only
+    # draw; no other shape of it is taken
+    dirty = getattr(lib, "omx_panel_view_draw_dirty", None)
+    if dirty is not None:
+        dirty.restype = B
+        dirty.argtypes = [P, ctypes.POINTER(_Buffer), ctypes.POINTER(_Rect), ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
 
 
 def _word_name(word):
@@ -197,6 +212,7 @@ class _LibraryView:
         self.symbols = [lib.omx_panel_view_symbol(self.view, i).decode() for i in range(lib.omx_panel_view_count(self.view))]
         self.meters = [m["symbol"] for m in layout.get("meters") or []]
         self.size = None
+        self.buffer = None  # the buffer the last draw went into, kept: the renderer repaints only what changed in it
 
     def close(self):
         if getattr(self, "view", None):  # none yet when the library refused the panel, or it could not be written
@@ -261,12 +277,34 @@ class _LibraryView:
         return [(c.control, c.fraction, c.value) for c in changes[:k]], _word_name(a.word), a.selected
 
     def draw(self, width, height, scale=1.0):
-        """The panel drawn into width x height pixels: RGBA, straight alpha, rows of width * 4 bytes."""
-        pixels = ctypes.create_string_buffer(width * height * 4)
-        buf = _Buffer(ctypes.cast(pixels, ctypes.c_void_p), width, height, width * 4, scale, PIXEL_RGBA8_STRAIGHT)
-        if not self.lib.omx_panel_view_draw(self.view, ctypes.byref(buf)):
+        """The panel drawn into width x height pixels (RGBA, straight alpha, rows of width * 4 bytes), and where that draw
+        changed them: (pixels, rects). The rects are (x, y, w, h) in device px, the renderer's own (zynthian-ui#59,
+        omx-panel#78): the first draw and a new size are the whole panel as one, an unchanged panel none; None when the
+        renderer has no dirty draw and drew the whole panel. The buffer is this view's own, kept between draws."""
+        size = width * height * 4
+        if self.buffer is None or len(self.buffer) != size:
+            self.buffer = ctypes.create_string_buffer(size)
+        rects = self.draw_into(self.buffer, width, height, scale)
+        return self.buffer.raw, rects
+
+    def draw_into(self, pixels, width, height, scale=1.0):
+        """Draw into `pixels` (a writable buffer of width * height * 4 bytes: this view's own, or the UI's shared memory);
+        the rects the draw changed, as draw() answers them. The renderer repaints only what changed when `pixels` is the
+        buffer its last draw went into, still holding that draw: the caller keeps ONE buffer between draws, never a new
+        one per draw, else every draw is the whole panel."""
+        size = width * height * 4
+        pixels = (ctypes.c_char * size).from_buffer(pixels)
+        buf = _Buffer(ctypes.addressof(pixels), width, height, width * 4, scale, PIXEL_RGBA8_STRAIGHT)
+        dirty = getattr(self.lib, "omx_panel_view_draw_dirty", None)
+        if dirty is None:
+            ok, rects = self.lib.omx_panel_view_draw(self.view, ctypes.byref(buf)), None
+        else:
+            found, count = (_Rect * RECTS)(), ctypes.c_size_t()
+            ok = dirty(self.view, ctypes.byref(buf), found, RECTS, ctypes.byref(count))
+            rects = [(r.x, r.y, r.width, r.height) for r in found[:count.value]]
+        if not ok:
             raise RendererAbsent(f"omx-panel's renderer did not draw a {width} x {height} panel")
-        return pixels.raw
+        return rects
 
 
 # ---- The renderer's process ----
@@ -327,13 +365,15 @@ def _serve(fd):
             elif op == "word":
                 value = _word_name(*args)
             elif op == "draw":
+                # drawn straight into the UI's shared memory: the one buffer kept between draws, so the renderer repaints
+                # only what changed in it (the UI reads it, never writes it)
                 name, width, height, scale = args
-                pixels = views[vid].draw(width, height, scale)
+                name, width, height, scale = args
                 if vid not in memory or memory[vid][0] != name:
                     let_go(vid)
                     memory[vid] = (name, _attach(name))
-                memory[vid][1].buf[:len(pixels)] = pixels
-                value = len(pixels)
+                rects = views[vid].draw_into(memory[vid][1].buf, width, height, scale)
+                value = (width * height * 4, rects)
             else:
                 value = getattr(views[vid], op)(*args)
             conn.send(("ok", value))
@@ -492,16 +532,18 @@ class View:
         return self._call("tick", t_ms)
 
     def draw(self, width, height, scale=1.0):
-        """The panel drawn into width x height pixels: RGBA, straight alpha, rows of width * 4 bytes."""
+        """The panel drawn into width x height pixels (RGBA, straight alpha, rows of width * 4 bytes), and where that draw
+        changed them: (pixels, rects), as _LibraryView.draw answers them. The renderer's process draws into this view's
+        shared memory, the one buffer kept between draws; it is made anew only when a draw needs more of it."""
         size = width * height * 4
         if self.memory is None or self.memory.size < size:
             if self.memory:
                 self.memory.close()
                 self.memory.unlink()
             self.memory = shared_memory.SharedMemory(create=True, size=size)
-        n = self._call("draw", self.memory.name, width, height, scale)
+        n, rects = self._call("draw", self.memory.name, width, height, scale)
         _drew()
-        return bytes(self.memory.buf[:n])
+        return bytes(self.memory.buf[:n]), rects
 
 
 # ---- What a screen shows of the panel ----

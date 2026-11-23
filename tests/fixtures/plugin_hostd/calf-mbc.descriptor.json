@@ -1,0 +1,399 @@
+{
+  "origin": "authored",
+  "plugin": {
+    "id": "urn:omx-panel:test:mbc",
+    "format": "lv2",
+    "uri": "urn:omx-panel:test:mbc",
+    "name": "Test MBC",
+    "vendor": "omx-panel tests",
+    "features": [
+      "audio-effect"
+    ]
+  },
+  "controls": [
+    {
+      "id": "b1_bypass",
+      "symbol": "b1_bypass",
+      "name": "Band 1 Bypass",
+      "label": "Band 1 Bypass",
+      "group": [
+        "Band 1"
+      ],
+      "kind": "toggle",
+      "default": false
+    },
+    {
+      "id": "b1_thresh",
+      "symbol": "b1_thresh",
+      "name": "Band 1 Threshold",
+      "label": "Band 1 Threshold",
+      "group": [
+        "Band 1"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": -60,
+        "max": 0,
+        "unit": "dB",
+        "scale": "linear",
+        "default": -18
+      }
+    },
+    {
+      "id": "b1_ratio",
+      "symbol": "b1_ratio",
+      "name": "Band 1 Ratio",
+      "label": "Band 1 Ratio",
+      "group": [
+        "Band 1"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": 1,
+        "max": 20,
+        "unit": "unknown",
+        "scale": "linear",
+        "default": 4
+      }
+    },
+    {
+      "id": "b1_attack",
+      "symbol": "b1_attack",
+      "name": "Band 1 Attack",
+      "label": "Band 1 Attack",
+      "group": [
+        "Band 1"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": 0.1,
+        "max": 100,
+        "unit": "ms",
+        "scale": "linear",
+        "default": 10
+      }
+    },
+    {
+      "id": "b1_release",
+      "symbol": "b1_release",
+      "name": "Band 1 Release",
+      "label": "Band 1 Release",
+      "group": [
+        "Band 1"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": 5,
+        "max": 1000,
+        "unit": "ms",
+        "scale": "linear",
+        "default": 120
+      }
+    },
+    {
+      "id": "b1_makeup",
+      "symbol": "b1_makeup",
+      "name": "Band 1 Makeup",
+      "label": "Band 1 Makeup",
+      "group": [
+        "Band 1"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": 0,
+        "max": 24,
+        "unit": "dB",
+        "scale": "linear",
+        "default": 0
+      }
+    },
+    {
+      "id": "b2_bypass",
+      "symbol": "b2_bypass",
+      "name": "Band 2 Bypass",
+      "label": "Band 2 Bypass",
+      "group": [
+        "Band 2"
+      ],
+      "kind": "toggle",
+      "default": false
+    },
+    {
+      "id": "b2_thresh",
+      "symbol": "b2_thresh",
+      "name": "Band 2 Threshold",
+      "label": "Band 2 Threshold",
+      "group": [
+        "Band 2"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": -60,
+        "max": 0,
+        "unit": "dB",
+        "scale": "linear",
+        "default": -18
+      }
+    },
+    {
+      "id": "b2_ratio",
+      "symbol": "b2_ratio",
+      "name": "Band 2 Ratio",
+      "label": "Band 2 Ratio",
+      "group": [
+        "Band 2"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": 1,
+        "max": 20,
+        "unit": "unknown",
+        "scale": "linear",
+        "default": 4
+      }
+    },
+    {
+      "id": "b2_attack",
+      "symbol": "b2_attack",
+      "name": "Band 2 Attack",
+      "label": "Band 2 Attack",
+      "group": [
+        "Band 2"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": 0.1,
+        "max": 100,
+        "unit": "ms",
+        "scale": "linear",
+        "default": 10
+      }
+    },
+    {
+      "id": "b2_release",
+      "symbol": "b2_release",
+      "name": "Band 2 Release",
+      "label": "Band 2 Release",
+      "group": [
+        "Band 2"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": 5,
+        "max": 1000,
+        "unit": "ms",
+        "scale": "linear",
+        "default": 120
+      }
+    },
+    {
+      "id": "b2_makeup",
+      "symbol": "b2_makeup",
+      "name": "Band 2 Makeup",
+      "label": "Band 2 Makeup",
+      "group": [
+        "Band 2"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": 0,
+        "max": 24,
+        "unit": "dB",
+        "scale": "linear",
+        "default": 0
+      }
+    },
+    {
+      "id": "b3_bypass",
+      "symbol": "b3_bypass",
+      "name": "Band 3 Bypass",
+      "label": "Band 3 Bypass",
+      "group": [
+        "Band 3"
+      ],
+      "kind": "toggle",
+      "default": false
+    },
+    {
+      "id": "b3_thresh",
+      "symbol": "b3_thresh",
+      "name": "Band 3 Threshold",
+      "label": "Band 3 Threshold",
+      "group": [
+        "Band 3"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": -60,
+        "max": 0,
+        "unit": "dB",
+        "scale": "linear",
+        "default": -18
+      }
+    },
+    {
+      "id": "b3_ratio",
+      "symbol": "b3_ratio",
+      "name": "Band 3 Ratio",
+      "label": "Band 3 Ratio",
+      "group": [
+        "Band 3"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": 1,
+        "max": 20,
+        "unit": "unknown",
+        "scale": "linear",
+        "default": 4
+      }
+    },
+    {
+      "id": "b3_attack",
+      "symbol": "b3_attack",
+      "name": "Band 3 Attack",
+      "label": "Band 3 Attack",
+      "group": [
+        "Band 3"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": 0.1,
+        "max": 100,
+        "unit": "ms",
+        "scale": "linear",
+        "default": 10
+      }
+    },
+    {
+      "id": "b3_release",
+      "symbol": "b3_release",
+      "name": "Band 3 Release",
+      "label": "Band 3 Release",
+      "group": [
+        "Band 3"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": 5,
+        "max": 1000,
+        "unit": "ms",
+        "scale": "linear",
+        "default": 120
+      }
+    },
+    {
+      "id": "b3_makeup",
+      "symbol": "b3_makeup",
+      "name": "Band 3 Makeup",
+      "label": "Band 3 Makeup",
+      "group": [
+        "Band 3"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": 0,
+        "max": 24,
+        "unit": "dB",
+        "scale": "linear",
+        "default": 0
+      }
+    },
+    {
+      "id": "b4_bypass",
+      "symbol": "b4_bypass",
+      "name": "Band 4 Bypass",
+      "label": "Band 4 Bypass",
+      "group": [
+        "Band 4"
+      ],
+      "kind": "toggle",
+      "default": false
+    },
+    {
+      "id": "b4_thresh",
+      "symbol": "b4_thresh",
+      "name": "Band 4 Threshold",
+      "label": "Band 4 Threshold",
+      "group": [
+        "Band 4"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": -60,
+        "max": 0,
+        "unit": "dB",
+        "scale": "linear",
+        "default": -18
+      }
+    },
+    {
+      "id": "b4_ratio",
+      "symbol": "b4_ratio",
+      "name": "Band 4 Ratio",
+      "label": "Band 4 Ratio",
+      "group": [
+        "Band 4"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": 1,
+        "max": 20,
+        "unit": "unknown",
+        "scale": "linear",
+        "default": 4
+      }
+    },
+    {
+      "id": "b4_attack",
+      "symbol": "b4_attack",
+      "name": "Band 4 Attack",
+      "label": "Band 4 Attack",
+      "group": [
+        "Band 4"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": 0.1,
+        "max": 100,
+        "unit": "ms",
+        "scale": "linear",
+        "default": 10
+      }
+    },
+    {
+      "id": "b4_release",
+      "symbol": "b4_release",
+      "name": "Band 4 Release",
+      "label": "Band 4 Release",
+      "group": [
+        "Band 4"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": 5,
+        "max": 1000,
+        "unit": "ms",
+        "scale": "linear",
+        "default": 120
+      }
+    },
+    {
+      "id": "b4_makeup",
+      "symbol": "b4_makeup",
+      "name": "Band 4 Makeup",
+      "label": "Band 4 Makeup",
+      "group": [
+        "Band 4"
+      ],
+      "kind": "travel",
+      "travel": {
+        "min": 0,
+        "max": 24,
+        "unit": "dB",
+        "scale": "linear",
+        "default": 0
+      }
+    }
+  ]
+}
