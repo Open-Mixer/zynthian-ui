@@ -45,7 +45,7 @@
 #   be in it.
 #
 #   Two more things are not protocol words (docs/restated-declarations.md): the ids of the hosts table (ruling D22;
-#   HOST_TABLES, the `VERB_HOSTS` table of omx-contract's verbs.json: plugin-hostd, omx-clap-host, mod-host, and
+#   HOST_TABLES, `HOSTING_VERB_HOSTS` of plugin-hostd-protocol's domain hosting-verb: plugin-hostd, omx-clap-host, mod-host, and
 #   plugin-db's `PLUGIN_DB_ISOLATION_HOSTS`, the same ids), which name a package, an engine and a worker, never a word
 #   on the wire; and a word an owner only mirrors from an external published standard (the owner's ruling of
 #   2026-11-23): a member of a domain item of x-kind `terms` that names its standard (`x-spec`, omx-contract's
@@ -98,7 +98,7 @@ CONTRACT_DIRS = tuple("omx-contract/contract.d/*/" + owner for owner in (
 DOMAINS = tuple("omx-contract/contract.d/" + owner for owner in ("plugin-db", "plugin-hostd", "plugin-hostd-protocol"))
 DOMAIN_DIRS = "omx-contract/contract.d/[a-z]*"
 DOMAIN_ROLES = {"verbs": "verb", "codes": "code"}
-HOST_TABLES = ("VERB_HOSTS", "PLUGIN_DB_ISOLATION_HOSTS")  # tables whose ids name a package, an engine or a worker: not words of a protocol
+HOST_TABLES = ("HOSTING_VERB_HOSTS", "PLUGIN_DB_ISOLATION_HOSTS")  # tables whose ids name a package, an engine or a worker: not words of a protocol
 MIRROR_KIND = "terms"  # a domain item of this x-kind that names its standard (x-spec) mirrors that standard's words
 REASON = object()  # an allowance that says why in words: it stands where an issue= reference would
 ISSUE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*#[1-9][0-9]*$")
