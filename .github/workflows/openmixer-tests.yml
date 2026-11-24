@@ -125,9 +125,9 @@ jobs:
         run: |
           # the owners' contract packages, beside omx-contract-data and plugin-hostd-protocol-contract installed above;
           # omx-panel's schema is the commit fetched above. tools/restated_declarations.py names what a root lacks.
-          apt-get install -y -qq --no-install-recommends omx-clap-core-contract omx-dsp-contract omx-plugins-contract \
+          apt-get install -y -qq --no-install-recommends omx-clap-contract omx-dsp-contract omx-plugins-contract \
             plugin-db-contract $HOSTD_PINS
-          dpkg-query -W omx-clap-core-contract omx-dsp-contract omx-plugins-contract plugin-db-contract plugin-hostd-contract
+          dpkg-query -W omx-clap-contract omx-dsp-contract omx-plugins-contract plugin-db-contract plugin-hostd-contract
           mkdir -p /tmp/contract-root/omx-panel
           ln -s /usr/share/omx-contract /tmp/contract-root/omx-contract
           ln -s /usr/share/plugin-hostd-protocol /tmp/contract-root/plugin-hostd-protocol
