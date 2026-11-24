@@ -707,13 +707,15 @@ class test_processor(plugin_hostd_case):
             self.assertEqual(fake.instances[instance], uri, "the daemon took the path whole")
 
     def test_a_preset_name_with_a_backslash_reaches_the_daemon_as_it_is(self):
-        """The grammar unescapes only a quote: a backslash doubled by the client would be a different name."""
+        """The name is one quoted word as the protocol client writes it, and the daemon's grammar reads it back whole."""
         fake = self.serve()
         proc = self.add(self.chain(), "PH/clap:/usr/lib/clap/test.clap#org.test.synth")
         with tempfile.TemporaryDirectory() as my_data:
             proc.engine.my_data_dir = my_data
             path = proc.engine.save_preset(None, 'a\\b "c"')
-            self.assertIn('preset_save 1000 %s %s "a\\b \\"c\\""' % os.path.split(path), fake.lines)
+            line = "preset_save 1000 %s %s %s" % (*os.path.split(path), plugin_hostd_protocol.quote('a\\b "c"'))
+            self.assertIn(line, fake.lines)
+            self.assertEqual(plugin_hostd_protocol.words(line)[-1], 'a\\b "c"', "the name comes back as it was")
             with open(path) as f:
                 self.assertEqual(json.load(f)["name"], 'a\\b "c"')
 

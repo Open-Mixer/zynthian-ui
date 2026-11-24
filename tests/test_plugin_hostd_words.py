@@ -34,13 +34,15 @@ class test_words(unittest.TestCase):
         self.assertEqual(grammar.words('pin_set "clap:/p/My Plugins/x.clap#id" f=1  v'), ["pin_set", "clap:/p/My Plugins/x.clap#id", "f=1", "v"])
         self.assertEqual(grammar.words(r'a "b \"c\" d" e'), ["a", 'b "c" d', "e"])
 
-    def test_the_only_escape_is_the_quote(self):
-        self.assertEqual(grammar.words(r'x "a\b"'), ["x", "a\\b"], "a backslash is a character of the word")
-        self.assertEqual(grammar.quote("a\\b"), '"a\\b"')
-        self.assertEqual(grammar.quote('a"b'), '"a\\"b"')
-        # (a value that ends in a backslash cannot be quoted: the grammar reads \" there as a quote, never a closing one)
+    def test_the_escapes_are_the_clients(self):
+        """How a quoted word escapes a quote or a backslash is plugin-hostd-protocol's grammar (its client's quote and
+        words, which 0.9.0 extends with \\\\): this module hands both on and spells no escape of its own."""
+        import plugin_hostd_protocol
+        self.assertIs(grammar.quote, plugin_hostd_protocol.quote)
+        self.assertIs(grammar.words, plugin_hostd_protocol.words)
+        self.assertEqual(grammar.quote('a"b'), '"a\\"b"', "a quote is escaped in every version of the grammar")
         for value in ("a\\b", 'a"b', "a b", "a\\b\\c d"):
-            self.assertEqual(grammar.words(grammar.quote(value)), [value])
+            self.assertEqual(grammar.words(grammar.quote(value)), [value], "a value comes back whole")
 
     def test_a_path_is_percent_encoded_and_back(self):
         self.assertEqual(grammar.encode_path("/c/Surge XT.clap"), "/c/Surge%20XT.clap")
