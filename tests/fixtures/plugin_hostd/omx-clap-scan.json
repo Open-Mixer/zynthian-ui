@@ -1,0 +1,191 @@
+{
+ "scanner": "omx-clap-scan",
+ "version": "0.31.2",
+ "files": [
+  {
+   "path": "/usr/lib/clap/lsp-plugins.clap",
+   "plugins": [
+    {
+     "id": "in.lsp-plug.limiter_mono",
+     "name": "Limiter Mono",
+     "vendor": "LSP CLAP",
+     "version": "1.0.33",
+     "description": "",
+     "url": "",
+     "features": [
+      "audio-effect",
+      "limiter",
+      "mono"
+     ],
+     "params": [
+      {
+       "id": 1574856808,
+       "name": "Threshold",
+       "module": "",
+       "min": -48,
+       "max": 0,
+       "default": 0,
+       "flags": [
+        "automatable",
+        "requires_process"
+       ]
+      },
+      {
+       "id": 2849352001,
+       "name": "Gain boost",
+       "module": "",
+       "min": 0,
+       "max": 1,
+       "default": 1,
+       "flags": [
+        "stepped",
+        "automatable",
+        "requires_process"
+       ]
+      }
+     ],
+     "remote_controls": [],
+     "audio_ports": {
+      "inputs": [
+       {
+        "id": 0,
+        "name": "mono_in",
+        "role": "main",
+        "channels": 1,
+        "kind": "unknown",
+        "jack": [
+         "in_1"
+        ]
+       }
+      ],
+      "outputs": [
+       {
+        "id": 0,
+        "name": "mono_out",
+        "role": "main",
+        "channels": 1,
+        "kind": "unknown",
+        "jack": [
+         "out_1"
+        ]
+       }
+      ]
+     },
+     "note_ports": {
+      "inputs": 0,
+      "outputs": 0
+     },
+     "panel": null
+    }
+   ]
+  },
+  {
+   "path": "/usr/lib/clap/test.clap",
+   "plugins": [
+    {
+     "id": "org.test.synth",
+     "name": "Test \"Pad\" Synth",
+     "vendor": "Test Vendor Inc",
+     "version": "2.1",
+     "description": "",
+     "url": "",
+     "features": [
+      "instrument",
+      "synthesizer",
+      "stereo"
+     ],
+     "params": [
+      {
+       "id": 1,
+       "name": "Cutoff",
+       "module": "",
+       "min": 0,
+       "max": 1,
+       "default": 0.5,
+       "flags": [
+        "automatable"
+       ]
+      },
+      {
+       "id": 2,
+       "name": "Wave",
+       "module": "",
+       "min": 0,
+       "max": 3,
+       "default": 0,
+       "flags": [
+        "stepped",
+        "automatable"
+       ]
+      }
+     ],
+     "remote_controls": [],
+     "audio_ports": {
+      "inputs": [],
+      "outputs": [
+       {
+        "id": 0,
+        "name": "out",
+        "role": "main",
+        "channels": 1,
+        "kind": "unknown",
+        "jack": [
+         "out_1"
+        ]
+       }
+      ]
+     },
+     "note_ports": {
+      "inputs": 1,
+      "outputs": 0
+     },
+     "panel": null
+    },
+    {
+     "id": "org.test.arp",
+     "name": "Arp",
+     "vendor": "Test",
+     "version": "1",
+     "description": "",
+     "url": "",
+     "features": [
+      "note-effect"
+     ],
+     "params": [],
+     "remote_controls": [],
+     "audio_ports": {
+      "inputs": [],
+      "outputs": []
+     },
+     "note_ports": {
+      "inputs": 1,
+      "outputs": 1
+     },
+     "panel": null
+    }
+   ]
+  },
+  {
+   "path": "/usr/lib/clap/crashy.clap",
+   "plugins": [
+    {
+     "id": "org.test.crashy",
+     "name": "Crashy",
+     "vendor": "Test",
+     "version": "1",
+     "description": "",
+     "url": "",
+     "features": [
+      "audio-effect"
+     ],
+     "error": "plugin failed to create or init"
+    }
+   ]
+  },
+  {
+   "path": "/usr/lib/clap/broken.clap",
+   "code": "dlopen",
+   "error": "dlopen failed: undefined symbol"
+  }
+ ]
+}

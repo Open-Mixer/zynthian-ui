@@ -1,0 +1,39 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "A fixture domain, trimmed from plugin-hostd-protocol's",
+  "version": "0.0.0",
+  "x-owner": "plugin-hostd-protocol"
+ },
+ "components": {
+  "schemas": {
+   "PLUGIN_HOSTD_PROTOCOL_DAEMON_VERBS": {
+    "x-kind": "verbs",
+    "oneOf": [
+     {
+      "const": "pin_set",
+      "title": "pinSet",
+      "description": "A fixture verb",
+      "x-since": "0.1.0"
+     },
+     {
+      "const": "add",
+      "title": "add",
+      "description": "A short verb: noise"
+     }
+    ]
+   },
+   "PLUGIN_HOSTD_PROTOCOL_REPLY_CODES": {
+    "x-kind": "codes",
+    "oneOf": [
+     {
+      "const": "reply.plugin-hostd.placement-invalid",
+      "title": "placementInvalid",
+      "x-resp": -501,
+      "x-text": "The plugin cannot be placed there."
+     }
+    ]
+   }
+  }
+ }
+}

@@ -1,0 +1,1 @@
+{"info": {"title": "The hosts a verb names", "version": "1.0.0", "x-owner": "plugin-hostd-protocol"}, "components": {"schemas": {"HOSTING_VERB_HOSTS": {"x-kind": "words", "oneOf": [{"const": "demo-hostd", "title": "demo-hostd", "description": "a host's id"}, {"const": "demo-worker", "title": "demo-worker", "description": "a worker's id"}]}}}}
