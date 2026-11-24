@@ -3,8 +3,10 @@
 # The cost of one drag frame of a drawn panel on the Pi, by hand (not collected by CI; zynthian-ui#44): a bar of the
 # graphic EQ and a band dot of eq8 dragged for DRAG_S seconds each, at the widget's size on the 1024 px screen. Each frame is
 # what the panel widget does on a drag (zyngui/zynthian_widget_omx_panel.py, drawn_input then paint): the event to the
-# renderer, its draw, the blit (the panel image module's PanelImage, the widget's own path: only the rows the draw changed are
-# converted over the background and copied into the photo on the screen, #59), and the canvas update, each timed.
+# renderer, its draw (into the one buffer the view keeps: with omx-panel#78's renderer only the changed cells, and it
+# says which), the blit (the panel image module's PanelImage, the widget's own path: only those cells, else the rows
+# the draw changed, converted over the background and copied into the photo on the screen, #59), and the canvas update,
+# each timed.
 # Frames run back to back: the frame rate is what the screen reached. Run once in the renderer's own process (the
 # panel view's View, as the UI runs it now) and once with the library in this process (the view before #44), so the
 # process boundary's cost is the difference. One JSON line per run goes to stdout; the figures go into
@@ -66,7 +68,7 @@ def drag(view_class, what, name, symbol, root, canvas):
     t0 = time.monotonic()
     view.input(pv.EVENT_DOWN, t0 * 1000.0, cx, cy)
     parts = {"input": [], "draw": [], "blit": [], "canvas": [], "frame": []}
-    rows = []
+    blitted = []  # the pixels blitted per frame: the area of the boxes PanelImage copied
     n = 0
     while time.monotonic() - t0 < SECONDS:
         n += 1
@@ -78,9 +80,9 @@ def drag(view_class, what, name, symbol, root, canvas):
         for c, fraction, _ in changes:
             view.set_value(c, fraction, "")
         b = time.monotonic()
-        rgba = view.draw(W, H)
+        rgba, dirty = view.draw(W, H)
         c = time.monotonic()
-        rows.append(sum(box[3] for box in screen.show(rgba, W, H)))
+        blitted.append(sum(box[2] * box[3] for box in screen.show(rgba, W, H, dirty)))
         d = time.monotonic()
         root.update()
         e = time.monotonic()
@@ -92,7 +94,7 @@ def drag(view_class, what, name, symbol, root, canvas):
     result = {"drag": what, "plugin": name, "control": symbol, "size": f"{W}x{H}", "frames": n,
               "fps": round(n / elapsed, 1)}
     result.update({k: quantiles(v) for k, v in parts.items()})
-    result["rows blitted"] = quantiles(rows)
+    result["pixels blitted"] = quantiles(blitted)
     result["red"] = result["frame"]["p99"] > FRAME_MS
     return result
 
