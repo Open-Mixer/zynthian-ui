@@ -1,0 +1,7 @@
+@prefix lv2: <http://lv2plug.in/ns/lv2core#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# The bundle of the eq fixture as installed: its TTL is the source of its descriptions-store entry (omx-panel
+# docs/descriptions-store.md 3.6), so eq.stored.entry.json carries the SHA-256 omx_panel_store_source makes of it.
+<urn:test:eq> a lv2:Plugin ;
+    rdfs:label "eq" .

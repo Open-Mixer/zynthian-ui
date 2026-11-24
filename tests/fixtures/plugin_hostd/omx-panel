@@ -6,6 +6,7 @@
 # (test_engine_plugin_hostd) runs the real command and compares it with these files, so they cannot drift. A width or a
 # descriptor with no record gets a plain cut (sections by group, Easy first). With --remote the Easy pages come first, then
 # the host's pages as given, cut as omx-panel's pagesOf pads them to the width. Each run is appended to $OMX_PANEL_STUB_LOG.
+# `describe --stored` replays the recorded cut of a descriptions-store entry (below).
 import os
 import sys
 import json
@@ -72,6 +73,30 @@ if "--panel" in argv and os.environ.get("OMX_PANEL_STUB_PANEL_REFUSED"):
         print(json.dumps({"description": {"family": "none", "controls": [], "displays": []},
                           "refusals": [{"code": "refused", "args": {}}]}))
     sys.exit(0)
+if "--stored" in argv:
+    # `describe --stored <answer> --format <lv2|clap> [--pages --per-page N]`: describeFromStored over a descriptions-store
+    # entry (omx-panel tools/describe.mjs; the answer `omx-panel-store get --json` prints, read as tools/store-entry.mjs
+    # storedOf reads it). It replays <name>.stored.describe.json and <name>.stored.pages<N>.json, which omx-panel 98655dc's
+    # describeFromStored printed over the entry <name>.stored.entry.json after the real omx-panel-store put it into a user
+    # layer and read it back; the entry is the one whose body is the answer's. OMX_PANEL_STUB_NO_STORED is an omx-panel
+    # without the door, which answers it as a usage error.
+    if os.environ.get("OMX_PANEL_STUB_NO_STORED"):
+        sys.stderr.write("usage: omx-panel describe --descriptor <file> ...\n")
+        sys.exit(2)
+    with open(argv[argv.index("--stored") + 1]) as f:
+        answer = json.load(f)
+    if argv[argv.index("--format") + 1] not in ("lv2", "clap"):
+        sys.exit("omx-panel stub: --format is lv2 or clap")
+    here = os.path.dirname(os.path.realpath(__file__))
+    for name in sorted(os.listdir(here)):
+        if name.endswith(".stored.entry.json"):
+            with open(os.path.join(here, name)) as f:
+                if json.load(f)["body"] == answer["body"]:
+                    kind = "pages" + argv[argv.index("--per-page") + 1] if "--pages" in argv else "describe"
+                    with open(os.path.join(here, name[:-len("entry.json")] + kind + ".json")) as g:
+                        print(g.read())
+                    sys.exit(0)
+    sys.exit("omx-panel stub: no recorded entry has the body of %s" % argv[argv.index("--stored") + 1])
 path = argv[argv.index("--descriptor") + 1]
 base = path[:-len(".descriptor.json")] if path.endswith(".descriptor.json") else path
 if "--layout" in argv:

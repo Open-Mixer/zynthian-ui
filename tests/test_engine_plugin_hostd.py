@@ -8,6 +8,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 import importlib
+import importlib.util
 import os
 import re
 import sys
@@ -18,6 +19,7 @@ import shlex
 import shutil
 import signal
 import socket
+import subprocess
 import logging
 import tempfile
 import unittest
@@ -70,6 +72,7 @@ from zyngine.zynthian_chain import zynthian_chain  # noqa: E402
 from zyngine.zynthian_processor import zynthian_processor  # noqa: E402
 from fake_plugin_hostd import fake_plugin_hostd  # noqa: E402
 from fake_plugin_hostd import PLUGINS as fake_plugins  # noqa: E402
+import omx_panel_store_stub  # noqa: E402
 
 with open(os.path.join(FIXTURES, "omx-clap-scan.json")) as _f:
     CLAP_SCAN = json.load(_f)  # a document of omx-clap-scan --json, valid by omx-clap-core's omx-clap-scan.schema.json
@@ -1278,6 +1281,200 @@ class test_pages(plugin_hostd_case):
         proc = self.add(self.chain(), self.SYNTH)
         self.assertTrue(proc.controllers_dict["2"].is_integer)
         self.assertFalse(os.path.exists(log), "-530 is ask again, not a missing descriptor")
+
+
+class test_stored_pages(plugin_hostd_case):
+    # omx-panel docs/descriptions-store.md, lane 12 (zynthian-ui#99): Zynthian reads the plugin's description from the
+    # descriptions store, by the key plugin-hostd names (description_get), through omx-panel's Python door, and omx-panel
+    # cuts its pages from that entry (`describe --stored`, describeFromStored); the descriptor is described only where
+    # the store gives nothing. The fixture entry is eq's own derivation with a person's edit (its section Tone called
+    # Colour, its control Master called Level), so the store's description differs from what describe derives.
+    URI = "urn:test:big"  # the plugin the daemon serves the eq descriptor as
+    KEY = ("e" * 64, "lv2", "urn:test:eq", "user")  # description_get's answer: sha256, format, uri, layer
+    BUNDLE = os.path.join(FIXTURES, "eq.lv2")  # the plugin's bundle as installed: its TTL is the entry's source
+
+    def setUp(self):
+        super().setUp()
+        with open(os.path.join(FIXTURES, "eq.stored.entry.json")) as f:
+            self.entry = json.load(f)
+        self.door = self.stand_in()
+        lv2 = sys.modules["zyngine.zynthian_lv2"]
+        for patcher in (mock.patch.dict(sys.modules, {"omx_panel_store": self.door}),
+                        mock.patch.object(lv2, "get_plugin_bundle", lambda uri: self.BUNDLE if uri == "urn:test:eq" else None,
+                                          create=True),
+                        mock.patch.object(ph.os, "geteuid", lambda: 1000)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.runs = os.path.join(self.tmp, "omx-panel.log")
+        os.environ["OMX_PANEL_STUB_LOG"] = self.runs
+
+    def stand_in(self, entry=None, source=None):
+        entry = entry or self.entry
+        return omx_panel_store_stub.door({self.KEY[:3]: (entry, self.KEY[3])}, {("lv2", self.BUNDLE): source or entry["source"]})
+
+    def plugin(self, keys=None):
+        fake = self.serve(descriptors={self.URI: os.path.join(FIXTURES, "eq.descriptor.json")},
+                          keys={self.URI: self.KEY} if keys is None else keys)
+        return fake, self.add(self.chain(), "PH/Big")
+
+    def recorded(self, name, width=4):
+        with open(os.path.join(FIXTURES, f"{name}.pages{width}.json")) as f:
+            return [(p.get("pageName") or p["sectionName"], [None if i is None else str(i) for i in p["ids"]]) for p in json.load(f)]
+
+    def pages(self, proc, width=None):
+        return [(n, [s[0] if s else None for s in rows]) for n, rows in proc.engine.pages(width)]
+
+    def ran(self):
+        try:
+            with open(self.runs) as f:
+                return f.read().splitlines()
+        except FileNotFoundError:
+            return []
+
+    def derived(self):
+        """The describe runs over the descriptor that cut pages or a description (the drawn view's --layout is not one)."""
+        return [r for r in self.ran() if "--descriptor" in r and "--layout" not in r]
+
+    def assert_described_as_before(self, proc):
+        self.assertEqual(self.pages(proc), self.recorded("eq"), "the descriptor's own cut")
+        self.assertTrue(self.derived(), "the descriptor is described")
+        self.assertFalse([r for r in self.ran() if "--stored" in r])
+
+    def test_the_screens_are_the_stored_description_not_the_derived_one(self):
+        _, proc = self.plugin()
+        stored = self.recorded("eq.stored")
+        self.assertNotEqual([n for n, _ in stored], [n for n, _ in self.recorded("eq")],
+                            "the fixture: the store's description is not what describe derives")
+        self.assertEqual(self.pages(proc), stored)
+        self.assertEqual([(n, k) for n, k in proc.engine._ctrl_screens], stored, "the screens are the stored pages")
+        self.assertEqual(proc.engine.pages()[0][1][0][1], "Level", "a slot's label is the stored description's")
+        self.assertEqual(self.pages(proc, 8), self.recorded("eq.stored", 8), "a surface's width cuts the same entry")
+        self.assertEqual(self.derived(), [], "nothing is derived for a key the store holds")
+        stored_runs = [r.split() for r in self.ran() if "--stored" in r]
+        self.assertTrue(stored_runs)
+        self.assertTrue(all(r[r.index("--format") + 1] == "lv2" for r in stored_runs))
+        self.assertEqual(set(self.door.opened), {self.door.SCOPE_USER}, "a user's process reads the user scope")
+
+    def test_root_reads_the_system_scope(self):
+        with mock.patch.object(ph.os, "geteuid", lambda: 0):
+            _, proc = self.plugin()
+        self.assertEqual(self.pages(proc), self.recorded("eq.stored"))
+        self.assertEqual(set(self.door.opened), {self.door.SCOPE_SYSTEM})
+
+    def test_a_key_no_layer_holds_is_described_from_its_descriptor(self):
+        _, proc = self.plugin(keys={})
+        self.assert_described_as_before(proc)
+        self.assertEqual(self.door.opened, [], "no key, no read")
+
+    def test_a_daemon_without_description_get_describes_as_before(self):
+        fake = self.serve(descriptors={self.URI: os.path.join(FIXTURES, "eq.descriptor.json")}, keys={self.URI: self.KEY})
+        fake.verb_description_get = None  # a plugin-hostd before plugin-hostd-protocol 0.12.0: -902
+        proc = self.add(self.chain(), "PH/Big")
+        self.assert_described_as_before(proc)
+
+    def test_a_protocol_table_without_description_get_describes_as_before(self):
+        real = ph.command
+        with mock.patch.object(ph, "command", lambda verb, *a: (_ for _ in ()).throw(
+                ph.zynthian_plugin_hostd_protocol.ProtocolError("the protocol declares no command " + verb))
+                if verb == "description_get" else real(verb, *a)):
+            _, proc = self.plugin()
+            self.assert_described_as_before(proc)
+
+    def test_a_pending_ask_is_waited_for(self):
+        fake, _ = self.plugin(keys={})
+        answers = iter(["resp -530", "resp -530"])
+        fake.verb_description_get = lambda uri: next(answers, None) or "resp 0 " + " ".join(self.KEY)
+        proc = self.add(self.chain(2), "PH/Big")
+        self.assertEqual(self.pages(proc), self.recorded("eq.stored"), "-530 is ask again: the ask's entry is read")
+
+    def test_without_the_door_the_plugin_is_described_and_it_is_said_once(self):
+        with mock.patch.dict(sys.modules, {"omx_panel_store": None}), self.assertLogs(level=logging.WARNING) as logs:
+            _, proc = self.plugin()
+            self.add(self.chain(2), "PH/Big")
+        self.assert_described_as_before(proc)
+        self.assertEqual(len([r for r in logs.output if "descriptions store door is not installed" in r]), 1)
+
+    def test_an_entry_of_another_source_is_stale_and_the_plugin_is_described(self):
+        self.door = self.stand_in(source="0" * 64)  # the bundle's TTL is not the one the entry was derived from
+        with mock.patch.dict(sys.modules, {"omx_panel_store": self.door}):
+            _, proc = self.plugin()
+        self.assert_described_as_before(proc)
+        self.assertEqual(set(self.door.opened), {self.door.SCOPE_USER}, "the store was asked")
+
+    def test_a_refused_entry_is_described_as_before(self):
+        refused = dict(self.entry, body=None, groups=None, controls=[], refused="panel.describe.no-controls")
+        self.door = self.stand_in(refused)
+        with mock.patch.dict(sys.modules, {"omx_panel_store": self.door}):
+            _, proc = self.plugin()
+        self.assert_described_as_before(proc)
+
+    def test_an_omx_panel_without_describe_stored_describes_as_before_and_says_so_once(self):
+        os.environ["OMX_PANEL_STUB_NO_STORED"] = "1"
+        with self.assertLogs(level=logging.WARNING) as logs:
+            _, proc = self.plugin()
+            self.add(self.chain(2), "PH/Big")
+        self.assert_described_as_before(proc)
+        self.assertEqual(len([r for r in logs.output if "describe --stored" in r]), 1, logs.output)
+
+    @unittest.skipUnless(os.environ.get("OMX_PANEL_STORE_REAL"), "OMX_PANEL_STORE_REAL is an omx-panel tree with store/build "
+                         "built (libomx-panel-store.so.0, omx-panel-store): the real door and library")
+    def test_the_real_door_reads_the_entry_the_real_command_put(self):
+        if os.geteuid() == 0:
+            self.skipTest("the command writes the system layer as root")
+        tree = os.environ["OMX_PANEL_STORE_REAL"]
+        build = os.path.join(tree, "store", "build")
+        spec = importlib.util.spec_from_file_location("omx_panel_store_real", os.path.join(tree, "store", "python", "omx_panel_store.py"))
+        real = importlib.util.module_from_spec(spec)
+        with mock.patch.dict(os.environ, {"OMX_PANEL_STORE_LIB": os.path.join(build, "libomx-panel-store.so.0")}):
+            spec.loader.exec_module(real)
+            base, user, contract = self.real_store(tree)
+            entry = dict(self.entry, source=real.source("lv2", self.BUNDLE))  # the library's source of the bundle
+            self.assertEqual(entry["source"], self.entry["source"], "the fixture entry carries the library's source")
+            put = subprocess.run([os.path.join(build, "omx-panel-store"), "put", "--user", user, "--base", base, "--contract-dir",
+                                  contract, "--sha256", self.KEY[0], "--format", "lv2", "--uri", self.KEY[2]],
+                                 input=json.dumps(entry), capture_output=True, text=True)
+            self.assertEqual(put.returncode, 0, put.stderr)
+            opened = []
+            # production opens the installed places (Store.open, no path): here the same reader over the test's files
+            with mock.patch.dict(sys.modules, {"omx_panel_store": real}), \
+                    mock.patch.object(real.Store, "open", classmethod(
+                        lambda cls, scope=real.SCOPE_USER: opened.append(scope) or cls.open_at(base, None, user, contract))):
+                _, proc = self.plugin()
+                self.assertEqual(self.pages(proc), self.recorded("eq.stored"))
+                self.assertEqual(proc.engine.pages()[0][1][0][1], "Level")
+            self.assertEqual(self.derived(), [])
+            self.assertEqual(set(opened), {real.SCOPE_USER})
+
+    def real_store(self, tree):
+        """A base with no entry, an empty user layer's place and a contract directory (the tree's panel domain and a
+        plugin-db domain holding lv2 and clap), as omx-panel's store/test/door.py makes them."""
+        import sqlite3
+        d = os.path.join(self.tmp, "store")
+        contract = os.path.join(d, "c")
+        shutil.copytree(os.path.join(tree, "contract.d", "panel"), os.path.join(contract, "panel"))
+        os.makedirs(os.path.join(contract, "plugin-db"))
+        words = [{"const": w, "title": w, "description": w, "x-code": i, "x-text": w} for i, w in enumerate(["clap", "lv2"])]
+        with open(os.path.join(contract, "plugin-db", "plugin-db.json"), "w") as f:
+            json.dump({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://openmixer.org/contract/plugin-db",
+                       "info": {"title": "fixture", "version": "1.0.0", "x-owner": "plugin-db", "x-stability": "experimental"},
+                       "components": {"schemas": {"PLUGIN_DB_ADDRESS_FORMATS": {"description": "d", "x-since": "1.0.0", "oneOf": words}}}}, f)
+        with open(os.path.join(contract, "panel", "panel.json")) as f:
+            panel = json.load(f)["info"]["version"]
+        base = os.path.join(d, "base.sqlite")
+        db = sqlite3.connect(base)
+        with open(os.path.join(tree, "schema", "panel.sql")) as f:
+            db.executescript(f.read())
+        db.execute("DELETE FROM store_info")
+        db.execute("INSERT INTO store_info VALUES (1, 0, 'omx-panel.panel-description/1', ?)", ("b" * 40,))
+        db.executemany("INSERT INTO store_domain VALUES (?, ?)", [("panel", panel), ("plugin-db", "1.0.0")])
+        db.executemany("INSERT INTO word_check VALUES (?, ?, ?, ?)", [
+            ("plugin", "format", "plugin-db", "PLUGIN_DB_ADDRESS_FORMATS"), ("description", "family", "panel", "PANEL_FAMILIES"),
+            ("description", "refused", "panel", "PANEL_DESCRIBE_CODES"), ("port_group_verdict", "outcome", "panel", "PANEL_GROUP_OUTCOMES"),
+            ("port_group_verdict", "reason", "panel", "PANEL_GROUP_REASONS"), ("port_group", "rule", "panel", "PANEL_GROUP_RULES")])
+        db.commit()
+        db.execute("PRAGMA user_version = 1")
+        db.close()
+        return base, os.path.join(d, "user.sqlite"), contract
 
 
 class test_easy(plugin_hostd_case):

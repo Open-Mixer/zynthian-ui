@@ -57,11 +57,14 @@ PLUGINS = {
 class fake_plugin_hostd:
 
     def __init__(self, port, journal=None, descriptors=None, mod_host=False, grouping=True,
-                 group_max=8, verdicts=None, stale_tags=False, hello_reply=None, panels=None):
+                 group_max=8, verdicts=None, stale_tags=False, hello_reply=None, panels=None, keys=None):
         self.port = port
         self.journal = journal
         self.descriptors = descriptors or {}
         self.panels = panels or {}  # uri => the panel file plugin-hostd filed beside its descriptor (panel_get)
+        # uri => the descriptions store's key description_get answers, (sha256, format, uri, layer), or a refusal's code
+        # (-530: its ask still runs); a uri it does not name no layer holds (-529)
+        self.keys = keys or {}
         self.mod_host = mod_host  # answer like mod-host: no plugin-hostd verbs
         self.instances = {}  # instance => uri
         self.curves = {}  # (instance, display) => the terms of its curve_bind, see verb_curve_bind
@@ -202,7 +205,7 @@ class fake_plugin_hostd:
         try:
             method = getattr(self, "verb_" + verb, None)
             if method is None or (self.mod_host and verb in ("worker_list", "chain", "chain_get", "chain_clear",
-                                                              "descriptor_get", "panel_get", "preset_list",
+                                                              "descriptor_get", "panel_get", "description_get", "preset_list",
                                                               "preset_get")):
                 return "resp -902"
             return method(*args)
@@ -560,6 +563,16 @@ class fake_plugin_hostd:
         if uri not in self.panels:
             return "resp -529"
         return f'resp 0 "{self.panels[uri]}"'
+
+    def verb_description_get(self, uri):
+        # plugin-hostd-protocol 0.12.0: the key a client reads the plugin's description by in the descriptions store,
+        # never the description
+        key = self.keys.get(grammar.pin_key(uri))
+        if key is None:
+            return "resp -529"
+        if isinstance(key, int):
+            return f"resp {key}"
+        return "resp 0 " + " ".join(key)
 
     def verb_state_save(self, directory):
         for n, params in self.params.items():
