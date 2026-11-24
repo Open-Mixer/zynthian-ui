@@ -103,9 +103,10 @@ jobs:
         run: |
           apt-get install -y -qq --no-install-recommends git ca-certificates build-essential pkgconf libcjson-dev \
             libomx-contract-dev libomxdsp-dev binutils
-          # omx-panel v0.15.1: its renderer holds omx-dsp-devel to a floor (0.32.2) only, and builds against omx-dsp 0.33; it carries the group model
+          # omx-panel v0.16.1: delivered with omx-contract 3.21.0 (which moved the PANEL_* items to omx-panel) and
+          # omx-dsp 0.34.0, the channel's versions; renderer soname still .so.0; it carries the group model
           # (omx-panel#63) the cut tests/fixtures/plugin_hostd records (#71)
-          SHA=3cace582d1da169fe3f6597e6574c3bc23a3cba2
+          SHA=7bd62614462ecaf69a63b3c133c413e152297f74
           git clone -q https://github.com/Open-Mixer/omx-panel /tmp/omx-panel
           git -C /tmp/omx-panel checkout -q "$SHA"
           test -f /tmp/omx-panel/schema/gestures.json
