@@ -330,7 +330,7 @@ class TheLookAfterAStop(ControllerHarness):
         self.assertEqual(ctrl.of("image"), [])
 
     def test_a_renderer_that_is_not_installed_stays_stock_on_the_next_page(self):
-        absent = self.panel_view.RendererAbsent("omx-panel's renderer (libomx-panel-render.so.0) is not installed")
+        absent = self.panel_view.RendererAbsent("omx-panel's renderer (libomx-panel-render.so.1) is not installed")
         look_widgets.FakeView.refuse = absent
         with self.assertLogs(level="WARNING"):
             ctrl = self.controller(look_widgets.Zctrl())

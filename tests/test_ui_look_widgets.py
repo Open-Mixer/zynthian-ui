@@ -343,7 +343,7 @@ class WhatCIMustHave(unittest.TestCase):
 
     @unittest.skipUnless(CI, "a desk may lack omx-panel's renderer: the pixel test skips and says so")
     def test_ci_has_the_renderer_so_the_pixels_are_read(self):
-        self.assertTrue(renderer(), "CI has no omx-panel renderer (libomx-panel-render.so.0): the pixel test ran nothing")
+        self.assertTrue(renderer(), "CI has no omx-panel renderer (libomx-panel-render.so.1): the pixel test ran nothing")
 
 
 @unittest.skipUnless(Image, "no PIL")
@@ -499,7 +499,7 @@ class DrawnController(unittest.TestCase):
         self.assertEqual(ctrl.order.index(ctrl.midi_bind) > ctrl.order.index(ctrl.image_item), True, "the MIDI bind stays above")
 
     def test_without_the_renderer_the_stock_widget_is_drawn_and_the_reason_said_once(self):
-        FakeView.refuse = FakeView.module.RendererAbsent("omx-panel's renderer (libomx-panel-render.so.0) is not installed: no")
+        FakeView.refuse = FakeView.module.RendererAbsent("omx-panel's renderer (libomx-panel-render.so.1) is not installed: no")
         with self.assertLogs(level="WARNING") as log:
             a = self.controller(Zctrl())
             b = self.controller(Zctrl(symbol="res", short_name="Res"))
@@ -615,7 +615,7 @@ KNOB_POINTER = knob_pointer()
 
 @unittest.skipUnless(Image and renderer(), "omx-panel's renderer is not installed")
 class RealRenderer(unittest.TestCase):
-    """The vintage controller through the real libomx-panel-render.so.0: the drawn controller's own one-knob
+    """The vintage controller through the real libomx-panel-render.so.1: the drawn controller's own one-knob
     description, opened with zynthian_ui_look.tokens over the fixture, drawn by the library and painted by the
     controller; the colours are read where the renderer puts them. The knob is the look's drawing (omx-panel 0.15:
     look.json drawings.knob-vintage, its pointer stroked in {console:--knob-pointer}); %7's ruling (#77 item 1): the
