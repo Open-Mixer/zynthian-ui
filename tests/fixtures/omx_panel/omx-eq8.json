@@ -980,6 +980,7 @@
   "displays": [
    {
     "kind": "eq_response",
+    "axis": "log-frequency",
     "section": 2,
     "sectionKey": "bands.band_1",
     "source": "family",
