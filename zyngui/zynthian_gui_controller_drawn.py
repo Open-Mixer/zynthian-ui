@@ -148,7 +148,7 @@ def drawn_controller(base):
                 self.drawn_state = state
                 try:
                     self.give_reading(z, kind)
-                    pixels = self.view.draw(w, h)
+                    pixels = self.view.draw(w, h)[0]  # the whole draw: this controller repaints its image whole
                 except panel_view.RendererAbsent as e:
                     self.fall_back(e)
                     return
