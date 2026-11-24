@@ -1129,8 +1129,9 @@ class test_pages(plugin_hostd_case):
             if not n.startswith("Easy"):  # the Easy pages are omx-panel's picks over the whole plugin, one gain per band
                 self.assert_one_band_or_an_aligned_row(n, k)
         self.assertTrue(all(c.endswith(" Gain") for c in easy), f"the Easy pages hold gains: {easy}")
-        bands = [n for n, _ in screens if n.startswith("Bands: ")]
+        bands = [n for n, _ in screens if n.startswith("Bands: ") and not n.startswith("Bands: Type")]
         self.assertEqual((bands[0], bands[-1]), ("Bands: HPF", "Bands: LPF"), "the edges are the model's: HPF first, LPF last")
+        self.assertEqual([n for n, _ in screens][-2:], ["Bands: Type", "Bands: Type 2"], "the aligned rows follow the bands")
         self.assertEqual(dict(screens)["Bands: LPF"], ["LPF On", "LPF Frequency", "LPF Slope", None])
 
     def test_a_calf_multiband_shaped_plugin_never_shows_a_screen_across_two_bands(self):
