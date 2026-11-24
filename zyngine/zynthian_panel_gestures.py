@@ -363,12 +363,15 @@ class BarGroup:
     absolute, a column jumped over in one event taking the line between (omx-panel's tools/gestures.mjs). A tap is
     `select` of its column, `more` a long press, a double-tap or Backspace the column's reset, a wheel or an arrow a step
     of the selected column. `downward`: the bars come out downward (their value grows down the column), as the drawbar
-    widget draws them. `on_word(word, column)`."""
+    widget draws them. `on_word(word, column)`. Painting is touch's (and a pen's); a mouse paints only where the surface
+    sets `paint_with_mouse` (the declaration's paint: touch required, mouse optional; omx-panel's paintWithMouse, off by
+    default), else a mouse drag that leaves the column keeps dragging the pressed bar."""
 
-    def __init__(self, bars, on_word=None, downward=False, table=None):
+    def __init__(self, bars, on_word=None, downward=False, table=None, paint_with_mouse=False):
         self.table = table or load_table()
         self.on_word = on_word or (lambda word, column=None: None)
         self.downward = downward
+        self.paint_with_mouse = paint_with_mouse
         self.bars = []
         for i, (travel, get, put, target) in enumerate(bars):
             g = Gestures("bar", travel, get, put, target, travel_px=target[3], table=self.table,
@@ -421,7 +424,8 @@ class BarGroup:
         g.press(x, y, t, pid, ptype)
         self._logged(g, n)
         if g.owner and g.owner["id"] == pid:
-            self.pressed = {"col": i, "pid": pid, "in_x": x, "in_y": y, "painting": False, "prev": (x, y)}
+            self.pressed = {"col": i, "pid": pid, "in_x": x, "in_y": y, "painting": False, "prev": (x, y),
+                            "paints": ptype != "mouse" or self.paint_with_mouse}
 
     def motion(self, x, y, t, pid="p", fine=False):
         p = self.pressed
@@ -433,10 +437,10 @@ class BarGroup:
             p["in_x"], p["in_y"] = x, y
         if not p["painting"]:
             n = len(g.log)
-            if col == p["col"] or col is None or not (g.owner and g.owner["dragging"]):
+            if col == p["col"] or col is None or not p["paints"] or not (g.owner and g.owner["dragging"]):
                 g.motion(x, y, t, pid, fine)
                 self._logged(g, n)
-                if col == p["col"] or col is None or not (g.owner and g.owner["dragging"]):
+                if col == p["col"] or col is None or not p["paints"] or not (g.owner and g.owner["dragging"]):
                     return
             # the drag left the pressed column: it paints from here, one gesture
             p["painting"] = True
