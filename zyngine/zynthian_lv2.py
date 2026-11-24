@@ -1068,6 +1068,16 @@ def get_node_value(node):
         return str(node)
 
 
+def get_plugin_bundle(plugin_url):
+    """The directory of the bundle that holds the plugin, as lilv found it; None when lilv knows no such plugin."""
+    try:
+        plugin = world.get_all_plugins()[plugin_url]
+        return urllib.parse.unquote(urllib.parse.urlparse(str(plugin.get_bundle_uri())).path) or None
+    except Exception as e:
+        logging.warning(f"Can't find the bundle of {plugin_url} => {e}")
+        return None
+
+
 def get_plugin_ports(plugin_url):
     wplugins = world.get_all_plugins()
     plugin = wplugins[plugin_url]
