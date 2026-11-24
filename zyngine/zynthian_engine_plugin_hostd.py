@@ -1651,11 +1651,12 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
                      "default": travel.get("default", meta.get("default", 0.0)), "scale": travel.get("scale", "linear")}
                 info = self.send_quiet(command("param_info", self.instance, symbol))
                 if info:
-                    w = info.split()
+                    w = zynthian_plugin_hostd_protocol.words(info)  # the grammar's words: a unit may be a quoted ""
                     o.update(unit=w[0], scale=w[1], min=float(w[2]), max=float(w[3]), default=float(w[4]))
                 value = values.get(symbol)
-                unit = o["unit"] if o["unit"] not in (None, "", "-", "unknown") else ""
-                zopts = {"name": f"{label} {unit}" if unit else label, "group_symbol": f"page{k}",
+                # the symbol omx-contract's PARAM_UNITS gives the unit id: none for the unit-less id or an undeclared word
+                shown = zynthian_plugin_hostd_protocol.unit_symbol(o["unit"])
+                zopts = {"name": f"{label} {shown}" if shown else label, "group_symbol": f"page{k}",
                          "group_name": page_name, "display_priority": priority, "value_min": o["min"],
                          "value_max": o["max"], "value_default": o["default"], "is_logarithmic": o["scale"] == "log",
                          "is_integer": o["scale"] == "stepped"}

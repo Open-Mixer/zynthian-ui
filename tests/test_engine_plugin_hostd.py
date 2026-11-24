@@ -49,6 +49,17 @@ from zyngine.zynthian_processor import zynthian_processor  # noqa: E402
 from fake_plugin_hostd import fake_plugin_hostd  # noqa: E402
 from fake_plugin_hostd import PLUGINS as fake_plugins  # noqa: E402
 
+def PARAM_UNITS():
+    """The members of PARAM_UNITS in omx-contract's installed domain param: the unit ids param_info answers."""
+    root = (os.environ.get("OMX_CONTRACT_PATH") or "/usr/share/omx-contract/contract.d").split(":")[0]
+    with open(os.path.join(root, "param", "param.json")) as f:
+        return json.load(f)["components"]["schemas"]["PARAM_UNITS"]["oneOf"]
+
+
+def unit_symbols():
+    return {m["const"]: m["x-symbol"] for m in PARAM_UNITS()}
+
+
 with open(os.path.join(FIXTURES, "omx-clap-scan.json")) as _f:
     CLAP_SCAN = json.load(_f)  # a document of omx-clap-scan --json, valid by omx-clap-core's omx-clap-scan.schema.json
 
@@ -567,6 +578,37 @@ class test_processor(plugin_hostd_case):
         self.assertEqual(gain.value, -3.5)
         proc.controllers_dict["bypass"].set_value(1)
         self.assertEqual(fake.bypass[1000], 1)
+
+    def gain_named(self, unit):
+        """The name of the Amp's gain when param_info answers `unit` for it (one daemon per test)."""
+        with mock.patch.dict(fake_plugins["urn:test:amp"], params={"gain": (unit, "linear", -20.0, 20.0, 0.0)}):
+            self.serve()
+            return self.add(self.chain(), "PH/Amp").controllers_dict["gain"].name
+
+    def test_a_unit_is_shown_as_the_symbol_omx_contract_gives_its_id(self):
+        """param_info answers a unit id of omx-contract's PARAM_UNITS (its domain param); the name shows the symbol the
+        installed domain gives that id."""
+        self.assertEqual(self.gain_named("percent"), "Gain " + unit_symbols()["percent"])
+
+    def test_the_unit_less_id_shows_no_unit(self):
+        no_unit = next(u for u, s in unit_symbols().items() if s == "")
+        self.assertEqual(self.gain_named(no_unit), "Gain", "the unit-less id is no unit to show")
+
+    def test_an_empty_unit_is_one_quoted_empty_word(self):
+        self.assertEqual(self.gain_named('""'), "Gain", "the reply's words are the grammar's, not split at spaces")
+
+    def test_the_unit_symbols_are_the_installed_domains_never_a_copy(self):
+        """A domain param whose dB carries another symbol changes the name: nothing here keeps a table of units."""
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, "param"))
+            planted = [dict(m, **{"x-symbol": "decibel"}) if m["const"] == "dB" else m for m in PARAM_UNITS()]
+            with open(os.path.join(root, "param", "param.json"), "w") as f:
+                json.dump({"components": {"schemas": {"PARAM_UNITS": {"oneOf": planted}}}}, f)
+            with mock.patch.dict(os.environ, {"OMX_CONTRACT_PATH": root}):
+                self.assertEqual(self.gain_named("dB"), "Gain decibel")
+
+    def test_a_word_the_domain_does_not_declare_is_no_unit(self):
+        self.assertEqual(self.gain_named("decibels"), "Gain")
 
     def test_presets_are_listed_and_loaded(self):
         fake = self.serve()

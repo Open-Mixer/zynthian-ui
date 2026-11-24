@@ -99,6 +99,44 @@ def config_default(key, directory=None):
     return None
 
 
+# ---- The units: param_info answers a unit as an id of PARAM_UNITS, the item of omx-contract's domain param (in its
+# contract directory), and that item gives each id the symbol a screen writes (its x-symbol: % for percent, nothing for
+# the unit-less id). Both are read from the installed domain; no unit is spelt here.
+CONTRACT_PATH = "/usr/share/omx-contract/contract.d"
+UNITS_DOMAIN = ("param", "param.json")
+UNITS_ITEM = "PARAM_UNITS"
+
+_unit_symbols = {}  # contract directories => {unit id: its symbol}
+
+
+def unit_symbols():
+    """{unit id: its symbol} from PARAM_UNITS of the domain param in the first contract directory that holds it
+    (OMX_CONTRACT_PATH's, else the installed one); {} when it cannot be read."""
+    dirs = tuple(d for d in (os.environ.get("OMX_CONTRACT_PATH") or CONTRACT_PATH).split(":") if d)
+    if dirs not in _unit_symbols:
+        path = next((p for p in (os.path.join(d, *UNITS_DOMAIN) for d in dirs) if os.path.isfile(p)), None)
+        try:
+            if path is None:
+                raise OSError("no %s in %s" % (os.path.join(*UNITS_DOMAIN), ", ".join(dirs)))
+            with open(path) as f:
+                members = json.load(f)["components"]["schemas"][UNITS_ITEM]["oneOf"]
+            _unit_symbols[dirs] = {m["const"]: m["x-symbol"] for m in members}
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            logging.warning("omx-contract's domain param is not readable (%s): no unit is shown", e)
+            return {}
+    return _unit_symbols[dirs]
+
+
+def unit_symbol(unit):
+    """The symbol a screen writes for a unit id: '' for the unit-less id and for a word PARAM_UNITS does not declare."""
+    return unit_symbols().get(unit) or ""
+
+
+def no_unit():
+    """The unit-less id of PARAM_UNITS (the one whose symbol is empty); None when the domain cannot be read."""
+    return next((unit for unit, symbol in unit_symbols().items() if symbol == ""), None)
+
+
 # ---- The reply codes: the number of a code by its name, its name by its number and its sentence are the client's
 # (Protocol: code, name, sentence), read from plugin-hostd-protocol's installed table, the contract directory's
 # vocabularies and the owners' catalogs. A code is named as its owner names it: reply.<group>.<reason>. From
