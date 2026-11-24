@@ -12,8 +12,10 @@ Status: RULED by the owner. D22 on 2026-11-13; the external-standard ruling on 2
 - The first argument of a call into the owner's library (`command`, `encode`, `code`, `name`, `find`, `need`)
   names the verb or the code the owner is asked for. That is how the owner is asked, so it is not a copy.
   Anywhere else, a declared literal counts: a line built as text, a table of codes, a comparison.
-- The ids of a hosts table (`VERB_HOSTS`, `PLUGIN_DB_ISOLATION_HOSTS`) name a package, an engine or a worker,
-  never a word on the wire, so they are left out of the declared words.
+- The ids of a hosts table (`HOSTING_VERB_HOSTS`, `PLUGIN_DB_ISOLATION_HOSTS`) name a package, an engine or a
+  worker, never a word on the wire, so they are left out of the declared words. `HOSTING_VERB_HOSTS` is the item of
+  plugin-hostd-protocol's domain `hosting-verb` (its devel wave of 2026-11-24, protocol 0.9.0); before it the same ids
+  were omx-contract's `VERB_HOSTS` in `verbs.json`, which that wave removes.
 - Where the gate reads it: `NAME_CALLS` and `HOST_TABLES` in `tools/restated_declarations.py`.
 
 ## A word an owner only mirrors from an external published standard (2026-11-23)
