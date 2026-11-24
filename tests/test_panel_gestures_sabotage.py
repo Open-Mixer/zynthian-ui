@@ -35,7 +35,7 @@ ARMS = {
     "drop fine": ('fine=bool(e.state & SHIFT))\n\n\ndef tk_release', "fine=False)\n\n\ndef tk_release"),
     "drop double-click reset": ('if o["second"] and self.word("doubleTap") == "reset":', "if False:"),
     "drop backspace reset": ('if self.word("backspace") == "reset":', "if False:"),
-    "drop wheel step": ('        word = self.word(inp)\n        if not word:\n            return self.refuse("GESTURE_NOT_IN_TABLE", t, f"a {self.widget} has no {inp}")\n        if word == "second" and self.second',
+    "drop wheel step": ('        word = self.word(inp)\n        if not word:\n            return self.refuse(self.code("GESTURE_NOT_IN_TABLE"), t, f"a {self.widget} has no {inp}")\n        if word == "second" and self.second',
                         '        word = self.word(inp)\n        return\n        if word == "second" and self.second'),
     "drop coarse": ("count = abs(n) * (", "count = abs(n) * 1 or ("),
     "drop toggle": ('if word == "toggle":', "if False:"),

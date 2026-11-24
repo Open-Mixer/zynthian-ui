@@ -3,7 +3,7 @@
 #
 # A stand-in for plugin-hostd on its command port: NUL-terminated lines, one reply each,
 # the replies and refusal codes its README documents. Protocol 0.3 of plugin-hostd-protocol (hello with tags and
-# error words, param_get_many, param_set_many), plan, plan_get, plan_clear and estimate (its reply of protocol 0.7). hello_reply makes it a
+# error words, param_get_many, param_set_many), plan, plan_get, plan_clear and estimate (its reply of protocol 0.8). hello_reply makes it a
 # daemon that does not speak hello. It runs in a thread of a test, or as a
 # program started the way the engine starts the daemon: fake_plugin_hostd.py -n -p <port> [-c <conf>].
 # Every line it takes is appended to $FAKE_HOSTD_JOURNAL when that is set.
@@ -243,10 +243,13 @@ class fake_plugin_hostd:
     RAM_BUDGET = 2147483648
 
     def verb_estimate(self, rate, quantum, *refs):
-        """The chain's figures from the records, in the one reply form of plugin-hostd-protocol 0.7 (plugin-hostd
-        0.20.8 docs/guide.md, estimate): latencies add, CPU adds, RAM adds, one worker per chain; a plugin without a
-        record counts as unknown and adds nothing. Then the four RAM words: the host's used RAM, what the members
-        would add (- when none has a figure), the host's budget and how many members have no RAM figure."""
+        """The chain's figures from the records, in the reply form of plugin-hostd-protocol 0.8 (protocol/plugin-hostd.json,
+        estimate): latencies add, CPU adds, RAM adds, one worker per chain; a plugin without a record counts as unknown
+        and adds nothing. Then the four RAM words: the host's used RAM, what the members would add (- when none has a
+        figure), the host's budget and how many members have no RAM figure. Last the insert verdict on the last uri,
+        the candidate, and its reason, the first that holds in the daemon's order (the CPU ceiling is not modelled):
+        the candidate without a record is not-measured, used and added over the budget warns, another member's code
+        warns, a memory figure missing warns; else recommend, within."""
         if not refs:
             return "resp -902"
         refs = tuple(grammar.pin_key(r) for r in refs)
@@ -255,9 +258,17 @@ class fake_plugin_hostd:
         lost = ",".join(f"{i}:-533" for i, k in enumerate(known) if not k) or "-"
         ram = str(sum(k[2] for k in have)) if len(have) == len(refs) else "-"
         added = str(sum(k[2] for k in have)) if have else "-"
-        return "resp 0 %d %.2f %s 1 %d %s %d %s %d %d" % (
+        if not known[-1]:
+            verdict = "not-measured no-record"
+        elif self.RAM_USED + sum(k[2] for k in have) > self.RAM_BUDGET:
+            verdict = "warn ram-over-budget"
+        elif len(have) < len(refs):
+            verdict = "warn no-record"
+        else:
+            verdict = "recommend within"
+        return "resp 0 %d %.2f %s 1 %d %s %d %s %d %d %s" % (
             sum(k[0] for k in have), sum(k[1] for k in have), ram, len(refs) - len(have), lost,
-            self.RAM_USED, added, self.RAM_BUDGET, len(refs) - len(have))
+            self.RAM_USED, added, self.RAM_BUDGET, len(refs) - len(have), verdict)
 
     def verb_plan(self, chain, *members):
         """The planner of plugin-hostd 0.13, reduced to what the pin verdicts and group_max decide: a member

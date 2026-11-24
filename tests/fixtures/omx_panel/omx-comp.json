@@ -380,6 +380,7 @@
   "displays": [
    {
     "kind": "transfer_curve",
+    "axis": "linear",
     "section": 0,
     "sectionKey": "comp",
     "source": "family",
@@ -395,6 +396,7 @@
    },
    {
     "kind": "gain_reduction_bar",
+    "axis": "linear",
     "section": 0,
     "sectionKey": "comp",
     "source": "meters",
@@ -1034,6 +1036,7 @@
   "displays": [
    {
     "kind": "transfer_curve",
+    "axis": "linear",
     "section": "comp",
     "source": "family",
     "meterIds": [
@@ -1048,6 +1051,7 @@
    },
    {
     "kind": "gain_reduction_bar",
+    "axis": "linear",
     "section": "comp",
     "source": "meters",
     "meterIds": [

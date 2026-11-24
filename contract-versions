@@ -3,12 +3,14 @@
 # channel serves a newer contract the series needs, the floor line moves.
 # <name> >= <floor> [: <binary packages that carry it>]
 # estimate's reply in its one form of 0.7.0: ten words, the four RAM words after the members (ram_used_bytes,
-# ram_added_bytes, ram_budget_bytes, ram_unknown_count); 0.7.0 reads no shorter form
-plugin-hostd-protocol >= 0.7.0 : libplugin-hostd-protocol0 plugin-hostd-protocol-contract plugin-hostd-protocol-l10n-ca
-# the daemon answers estimate with the four RAM words from 0.20.0 on (docs/guide.md); 0.20.4 for the rest of the verbs
-plugin-hostd-contract >= 0.20.4
+# ram_added_bytes, ram_budget_bytes, ram_unknown_count); 0.7.0 reads no shorter form. 0.8.0 (the sorting pass, with
+# plugin-hostd-contract 0.21.0, #100): the client refuses a NUL in a word itself (#108); estimate keeps ten words
+plugin-hostd-protocol >= 0.8.0 : libplugin-hostd-protocol0 plugin-hostd-protocol-contract plugin-hostd-protocol-l10n-ca
+# the daemon answers estimate with the four RAM words from 0.20.0 on (docs/guide.md); 0.20.4 for the rest of the verbs;
+# 0.21.0 (the sorting pass): the grouping reasons are its domain plugin-hostd/grouping (#103)
+plugin-hostd-contract >= 0.21.0
 # plugin-hostd's Python client, imported at module load: read_estimate gives the four RAM figures, and reads the
-# ten-word reply only, from 0.7.0 on
-python3-plugin-hostd-protocol >= 0.7.0
+# ten-word reply only, from 0.7.0 on; 0.8.0 with the protocol (#100)
+python3-plugin-hostd-protocol >= 0.8.0
 # omx-contract's Python readers (omx_contract.scale, omx_contract.catalog): python3-omx-contract ships from 3.18.1 on
 omx-contract >= 3.18.1 : python3-omx-contract

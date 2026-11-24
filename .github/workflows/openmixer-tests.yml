@@ -83,8 +83,9 @@ jobs:
         run: |
           # plugin_db, the reader the menus ask about a plugin (#4), and the golden answers the tests ask it with:
           # python3-plugin-db from plugin-db 0.3.2 on; until that release from a named commit of its main, and the
-          # log says so. The golden answers always come from the checkout.
-          SHA=4a9d62dce6b64d6fe141880c63905ab8255a9219
+          # log says so. The golden answers always come from the checkout. The sorting pass (chain 2026-11-22): its
+          # pass head, lane/sort-plugin-db-pass, until plugin-db 0.5.0 is on the channel
+          SHA=8ee7a401704e29351bcd4dfbe830446715b9df48
           apt-get install -y -qq --no-install-recommends git ca-certificates
           git clone -q https://github.com/Open-Mixer/plugin-db /tmp/plugin-db
           git -C /tmp/plugin-db checkout -q "$SHA"
@@ -102,9 +103,10 @@ jobs:
         run: |
           apt-get install -y -qq --no-install-recommends git ca-certificates build-essential pkgconf libcjson-dev \
             libomx-contract-dev libomxdsp-dev binutils
-          # omx-panel v0.15.1: its renderer holds omx-dsp-devel to a floor (0.32.2) only, and builds against omx-dsp 0.33; it carries the group model
+          # omx-panel v0.16.1: delivered with omx-contract 3.21.0 (which moved the PANEL_* items to omx-panel) and
+          # omx-dsp 0.34.0, the channel's versions; renderer soname still .so.0; it carries the group model
           # (omx-panel#63) the cut tests/fixtures/plugin_hostd records (#71)
-          SHA=3cace582d1da169fe3f6597e6574c3bc23a3cba2
+          SHA=7bd62614462ecaf69a63b3c133c413e152297f74
           git clone -q https://github.com/Open-Mixer/omx-panel /tmp/omx-panel
           git -C /tmp/omx-panel checkout -q "$SHA"
           test -f /tmp/omx-panel/schema/gestures.json
@@ -124,9 +126,9 @@ jobs:
         run: |
           # the owners' contract packages, beside omx-contract-data and plugin-hostd-protocol-contract installed above;
           # omx-panel's schema is the commit fetched above. tools/restated_declarations.py names what a root lacks.
-          apt-get install -y -qq --no-install-recommends omx-clap-core-contract omx-dsp-contract omx-plugins-contract \
+          apt-get install -y -qq --no-install-recommends omx-clap-contract omx-dsp-contract omx-plugins-contract \
             plugin-db-contract $HOSTD_PINS
-          dpkg-query -W omx-clap-core-contract omx-dsp-contract omx-plugins-contract plugin-db-contract plugin-hostd-contract
+          dpkg-query -W omx-clap-contract omx-dsp-contract omx-plugins-contract plugin-db-contract plugin-hostd-contract
           mkdir -p /tmp/contract-root/omx-panel
           ln -s /usr/share/omx-contract /tmp/contract-root/omx-contract
           ln -s /usr/share/plugin-hostd-protocol /tmp/contract-root/plugin-hostd-protocol
