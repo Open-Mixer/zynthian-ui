@@ -11,6 +11,12 @@
 # pointer, the wheel and the keys with the same gesture vocabulary; plugin-hostd computes each curve's points and its
 # feedback port gives the meters. Without the renderer the strips below are drawn, and the reason is logged once.
 #
+# Under a curve the renderer can draw the measured spectrum (the Zynthian RTA's wiring): while the
+# panel is shown and a display takes one, omx-rta-read runs as the panel's child, reading the taps the mode shows
+# (the console's pre | post | both, and the delta), and the newest frame is handed to the view on each refresh. The
+# child is ended and reaped when the panel is hidden, rebuilt or destroyed; a tap the mode shows that the engine
+# does not answer, or a missing reader, leaves the curve without a spectrum, said once.
+#
 # Each control is a strip that moves with omx-panel's one gesture vocabulary (zynthian_panel_gestures): press and drag,
 # Shift for fine, the wheel and the arrow keys for a step (Shift for five), double-click or Backspace for the declared
 # default, a tap to select, a long press for `more`. The unit and the taper are the control's own; every number is
@@ -27,6 +33,8 @@ import logging
 import time
 import tkinter
 
+import zynautoconnect
+
 from zyngine import zynthian_omx_panel_view as panel_view
 from zyngine import zynthian_panel_gestures as gestures
 from zyngine import zynthian_position_law as position_law
@@ -37,6 +45,13 @@ from zyngui import zynthian_gui_omx_panel_image as panel_image
 from zyngui.zynthian_widget_base import zynthian_widget_base
 
 MARGIN = 10
+_said = set()
+
+
+def log_once(key, msg, *args):
+    if key not in _said:
+        _said.add(key)
+        logging.warning(msg, *args)
 
 
 class zynthian_widget_omx_panel(zynthian_widget_base):
@@ -67,6 +82,8 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         self.drawn_state = None
         self.panel_image = None  # the panel on the canvas, blitted where a draw changed (panel_image.PanelImage)
         self.meter_at = {}
+        self.spectrum = None  # the panel's omx-rta-read child (panel_view.SpectrumFeed) while it is shown
+        self.rta_mode, self.rta_delta = "post", False
         try:  # Tk sees one pointer; a multi-touch screen's fingers come from the evdev slots (a pinch needs two)
             self.touch = touch.EvdevSource()
         except touch.NoTouchDevice as e:
@@ -142,6 +159,7 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         """The renderer's view of the part of the panel this screen shows; False when there is none to draw."""
         engine = self.processor.engine if self.processor else None
         drawn = getattr(engine, "drawn", None)
+        self.stop_spectrum()
         if self.drawn:
             self.drawn.close()
         self.drawn = self.drawn_state = None
@@ -177,7 +195,63 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         self.drawn = view
         self.drawn_page = tuple(sorted(keys))
         self.meter_at = {}
+        if self.shown:
+            self.start_spectrum()
         return True
+
+    # ---- The spectrum under a curve ----
+
+    def start_spectrum(self):
+        """Start the reader for the shown view when one of its displays takes a spectrum (the renderer says which: an
+        empty spectrum is refused on a display with no log axis) and the engine answers the taps the mode shows."""
+        self.stop_spectrum()
+        view = self.drawn
+        window = panel_view.rta_window()
+        if not view or not window:
+            return False
+        displays = [k for k in self.display_map if view.set_spectrum(k, None, self.rta_mode, self.rta_delta, window)]
+        if not displays:
+            return False
+        engine = self.processor.engine
+        post, pre, refusal = panel_view.rta_taps(self.processor.get_jackname(), getattr(engine, "rta_sharing", lambda p: [])(self.processor),
+                                                 getattr(engine, "instance", None), zynautoconnect.get_ports)
+        argv = panel_view.rta_argv(self.rta_mode, post, pre, panel_view.rta_bands(self.width))
+        if argv is None:
+            log_once(("rta", engine.name, self.rta_mode), "%s shows no %s spectrum: %s", engine.name, self.rta_mode,
+                     refusal or "its taps are not answered")
+            return False
+        self.spectrum = panel_view.SpectrumFeed(view, displays, argv, self.rta_mode, self.rta_delta, window)
+        if not self.spectrum.start():
+            self.spectrum = None
+            return False
+        return True
+
+    def stop_spectrum(self):
+        """End and reap the reader, if one runs."""
+        feed, self.spectrum = self.spectrum, None
+        if feed:
+            feed.stop()
+
+    def set_rta_mode(self, mode, delta=False):
+        """The console's mode and delta: a change ends the reader and starts it with the taps the new mode shows."""
+        if (mode, bool(delta)) != (self.rta_mode, self.rta_delta):
+            self.rta_mode, self.rta_delta = mode, bool(delta)
+            if self.spectrum or self.shown:
+                self.start_spectrum()
+
+    def show(self):
+        was = self.shown
+        super().show()
+        if not was and self.drawn:
+            self.start_spectrum()
+
+    def hide(self):
+        self.stop_spectrum()
+        super().hide()
+
+    def destroy(self):
+        self.stop_spectrum()
+        super().destroy()
 
     def fraction(self, z):
         if z.position_law:
@@ -207,6 +281,8 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
                 points = engine.curve(display)
                 if len(points) >= 2:
                     view.set_curve(k, points)
+        if self.spectrum and self.spectrum.apply():
+            changed = True
         now = time.monotonic()
         for i, sym in enumerate(view.meters):
             value = engine.meter(sym)

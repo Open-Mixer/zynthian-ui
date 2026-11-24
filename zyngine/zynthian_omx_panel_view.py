@@ -31,6 +31,7 @@ import json
 import logging
 import math
 import os
+import re
 import shutil
 import signal
 import socket
@@ -148,6 +149,10 @@ def _declare(lib):
             ("omx_panel_word_name", S, [ctypes.c_int])):
         f = getattr(lib, name)
         f.restype, f.argtypes = res, args
+    # the spectrum layer (omx-panel 0.14): a renderer without it draws every panel, with no spectrum under a curve
+    f = getattr(lib, "omx_panel_view_set_spectrum", None)
+    if f is not None:
+        f.restype, f.argtypes = B, [P, U, DP, DP, DP, U, D, D, D]
     # the dirty draw (omx-panel#78): a renderer released before it has no such symbol, and the full draw is then the only
     # draw; no other shape of it is taken
     dirty = getattr(lib, "omx_panel_view_draw_dirty", None)
@@ -244,6 +249,22 @@ class _LibraryView:
         xs = (ctypes.c_double * n)(*(p[0] for p in points))
         ys = (ctypes.c_double * n)(*(p[1] for p in points))
         return self.lib.omx_panel_view_set_curve(self.view, display, xs, ys, n)
+
+    def set_spectrum(self, display, frame, mode, delta, window):
+        """The spectrum under display `display`'s curve: a frame of rta_frame() (None clears it), drawn in the console's
+        `mode` (pre, post or both) with or without the `delta`, on the level window (db_min, db_max, grid_db). False
+        for a display the renderer refuses (no log axis) and for a renderer without the layer."""
+        f = getattr(self.lib, "omx_panel_view_set_spectrum", None)
+        if f is None or not window:
+            return False
+        tap = None if frame is None else (frame["pre"] if mode == "pre" else frame["post"] or frame["pre"])
+        if tap is None:
+            return bool(f(self.view, display, None, None, None, 0, *window))
+        # the renderer's single-trace entry (omx-panel 0.14.0): the tap the mode shows; both and the delta wait for the
+        # amended entry that takes pre, post and the mode
+        n = len(frame["hz"])
+        arr = ctypes.c_double * n
+        return bool(f(self.view, display, arr(*frame["hz"]), arr(*tap[0]), arr(*tap[1]), n, *window))
 
     def set_surface(self, width, height, scale=1.0):
         self.size = (width, height)
@@ -511,6 +532,10 @@ class View:
     def set_curve(self, display, points):
         return self._call("set_curve", display, [tuple(p) for p in points])
 
+    def set_spectrum(self, display, frame, mode, delta, window):
+        """The spectrum under display `display`'s curve, drawn by the renderer's process (_LibraryView.set_spectrum)."""
+        return bool(self._call("set_spectrum", display, frame, mode, delta, window))
+
     def set_surface(self, width, height, scale=1.0):
         self.size = (width, height)
         return self._call("set_surface", width, height, scale)
@@ -641,6 +666,197 @@ def output_set(line):
         return int(words[1]), words[2], float(words[3])
     except ValueError:
         return None
+
+
+# ---- The spectrum under a curve: omx-rta-read as the panel's child (the Zynthian RTA's reader and wiring) ----
+
+READER = "omx-rta-read"
+MODES = ("pre", "post", "both")
+
+
+def rta_argv(mode, post_ports, pre_ports, bands, exe=None):
+    """The reader's command line for the console's `mode`: --post for post, --pre for pre, both for both, each port
+    named; None when the mode is none of these or a tap it shows is not answered (a tap nobody shows is never read)."""
+    if mode not in MODES or (mode != "pre" and not post_ports) or (mode != "post" and not pre_ports):
+        return None
+    argv = [exe or os.environ.get("ZYNTHIAN_OMX_RTA_READ", READER)]
+    for tap, ports in (("--post", post_ports if mode != "pre" else []), ("--pre", pre_ports if mode != "post" else [])):
+        for port in ports:
+            argv += [tap, port]
+    return argv + ["--bands", str(int(bands))]
+
+
+def rta_taps(client, sharing, instance, get_ports):
+    """(post ports, pre ports, refusal) of `instance` (spec §3.3): the audio outputs of its jack client for POST, the
+    audio inputs for PRE. `sharing` is the instances the client runs, in chain order ([instance] for a client of its
+    own): only the LAST answers POST and only the FIRST answers PRE, so a member inside a grouped chain answers neither
+    and is refused by name, never given another signal's spectrum. `get_ports` is jack's (pattern, is_input)."""
+    if not client:
+        return [], [], "no jack client"
+    first, last = (not sharing or sharing[0] == instance), (not sharing or sharing[-1] == instance)
+
+    def audio(is_input):
+        return [p.name for p in get_ports(f"^{re.escape(client)}:", is_input=is_input) if getattr(p, "is_audio", True)]
+    post, pre = audio(False) if last else [], audio(True) if first else []
+    return post, pre, None if (first or last) else "no spectrum inside a grouped chain"
+
+
+RTA_PATH = os.path.join("3", "omx-dsp", "kernels", "rta.json")  # omx-dsp's package of the contract directory
+_rta_window_said = set()  # the contract roots whose rta.json was said unreadable
+
+
+def rta_window(root=None):
+    """(db_min, db_max, grid_db): the level window omx-dsp declares (RTA_LEVEL_DB_MIN, RTA_LEVEL_DB_MAX,
+    RTA_LEVEL_GRID_DB of the rta.json its contract package installs), never restated here; None, said once, when it
+    cannot be read, and no spectrum is drawn then."""
+    root = root or (os.environ.get("OMX_CONTRACT_PATH") or CONTRACT_PATH).split(":")[0]
+    try:
+        with open(os.path.join(root, RTA_PATH)) as f:
+            doc = json.load(f)["constants"]
+
+        def number(key):
+            v = doc[key]
+            v = v.get("value") if isinstance(v, dict) else v
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+                raise ValueError(f"{key} is no number")
+            return float(v)
+        window = number("RTA_LEVEL_DB_MIN"), number("RTA_LEVEL_DB_MAX"), number("RTA_LEVEL_GRID_DB")
+        if not (window[0] < window[1] and window[2] > 0):
+            raise ValueError(f"{window} is no level window")
+        return window
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
+        if root not in _rta_window_said:
+            _rta_window_said.add(root)
+            logging.warning("omx-dsp's rta.json is not readable (%s): no spectrum is drawn", e)
+        return None
+
+
+def rta_bands(width_px):
+    """As many bands as the display's width supports: one per 6 px, 16 to 64."""
+    return max(16, min(64, int(width_px) // 6))
+
+
+def _levels(values, n):
+    if not isinstance(values, list) or len(values) != n:
+        raise ValueError("a level list of another length")
+    out = []
+    for v in values:
+        if v is None:
+            out.append(float("-inf"))
+        elif isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
+            out.append(float(v))
+        else:
+            raise ValueError("a level that is no number")
+    return out
+
+
+def rta_frame(line):
+    """One of the reader's lines as {"hz", "post": (db, peak) | None, "pre": (db, peak) | None, "diff": [...] | None},
+    a null level as -INFINITY (silence); None for a line that is no frame."""
+    try:
+        doc = json.loads(line)
+        hz = doc["hz"]
+        if not isinstance(hz, list) or len(hz) < 2:
+            return None
+        hz = [float(h) for h in hz]
+        if not all(math.isfinite(h) and h > 0 for h in hz) or any(b <= a for a, b in zip(hz, hz[1:])):
+            return None
+        frame = {"hz": hz, "post": None, "pre": None, "diff": None}
+        for tap in ("post", "pre"):
+            if doc.get(tap) is not None:
+                frame[tap] = (_levels(doc[tap]["db"], len(hz)), _levels(doc[tap]["peak"], len(hz)))
+        if frame["post"] is None and frame["pre"] is None:
+            return None
+        if doc.get("diff") is not None:
+            frame["diff"] = _levels(doc["diff"], len(hz))
+        return frame
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return None
+
+
+class SpectrumFeed:
+    """The reader of one shown panel: a child in its own process group, its stdout read by a thread that keeps the
+    newest frame; apply() hands that frame to the view's displays on the caller's (the UI's) thread, at most once per
+    frame; stop() ends the child (SIGTERM, then SIGKILL after `grace`) and reaps it. A reader that ends by itself clears
+    the spectrum and is said once by its exit status; a missing reader is named once and nothing runs."""
+
+    def __init__(self, view, displays, argv, mode, delta, window):
+        self.view, self.displays, self.argv = view, list(displays), list(argv)
+        self.mode, self.delta, self.window = mode, bool(delta), window
+        self.proc = self.thread = None
+        self.lock = threading.Lock()
+        self.frame = None
+        self.fresh = False      # a frame (or the end) the view has not been given
+        self.ended = None       # the reader's exit status once it ended by itself
+        self.refused = set()    # displays the view refused: said once, not fed again
+        self.stopping = False
+
+    @property
+    def running(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    def start(self):
+        try:
+            self.proc = subprocess.Popen(self.argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                         stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
+        except OSError as e:
+            logging.warning("%s cannot be started (%s): the panel shows no spectrum", READER, e)
+            self.proc = None
+            return False
+        self.thread = threading.Thread(target=self._read, name="omx-rta-read", daemon=True)
+        self.thread.start()
+        return True
+
+    def _read(self):
+        proc = self.proc
+        for line in proc.stdout:
+            frame = rta_frame(line)
+            if frame is not None:
+                with self.lock:
+                    self.frame, self.fresh = frame, True
+        status = proc.wait()
+        if not self.stopping:
+            logging.warning("%s ended by itself with status %s: the panel shows no spectrum", READER, status)
+            with self.lock:
+                self.frame, self.fresh, self.ended = None, True, status
+
+    def apply(self):
+        """Hand the newest frame (or the end's empty spectrum) to the view; True when the view was given anything."""
+        with self.lock:
+            if not self.fresh:
+                return False
+            frame, self.fresh = self.frame, False
+        given = False
+        for d in self.displays:
+            if d in self.refused:
+                continue
+            if self.view.set_spectrum(d, frame, self.mode, self.delta, self.window):
+                given = True
+            elif frame is not None:
+                self.refused.add(d)
+                logging.warning("the renderer refuses a spectrum on display %s: it is not fed again", d)
+        return given
+
+    def stop(self, grace=1.0):
+        proc, self.stopping = self.proc, True
+        if proc is None:
+            return
+        if proc.poll() is None:
+            for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, 5.0)):
+                try:
+                    os.killpg(proc.pid, sig)
+                except ProcessLookupError:
+                    break
+                try:
+                    proc.wait(wait)
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+        proc.wait()
+        if self.thread is not None:
+            self.thread.join(2.0)
+        proc.stdout.close()
+        self.proc = self.thread = None
 
 
 if __name__ == "__main__" and sys.argv[1:2] == ["--serve"]:
