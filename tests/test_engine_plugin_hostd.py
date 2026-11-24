@@ -1332,13 +1332,15 @@ class test_stored_pages(plugin_hostd_case):
             return []
 
     def derived(self):
-        """The describe runs over the descriptor that cut pages or a description (the drawn view's --layout is not one)."""
-        return [r for r in self.ran() if "--descriptor" in r and "--layout" not in r]
+        """The runs that cut the descriptor into pages. (The drawn view, set_drawn_view, still describes the descriptor:
+        its layout is the derivation's, and a stored entry carries none.)"""
+        return [r for r in self.ran() if "--descriptor" in r and "--pages" in r]
 
-    def assert_described_as_before(self, proc):
+    def assert_described_as_before(self, proc, asked=False):
         self.assertEqual(self.pages(proc), self.recorded("eq"), "the descriptor's own cut")
         self.assertTrue(self.derived(), "the descriptor is described")
-        self.assertFalse([r for r in self.ran() if "--stored" in r])
+        if not asked:
+            self.assertFalse([r for r in self.ran() if "--stored" in r], "omx-panel is not asked for a stored cut")
 
     def test_the_screens_are_the_stored_description_not_the_derived_one(self):
         _, proc = self.plugin()
@@ -1358,7 +1360,7 @@ class test_stored_pages(plugin_hostd_case):
     def test_root_reads_the_system_scope(self):
         with mock.patch.object(ph.os, "geteuid", lambda: 0):
             _, proc = self.plugin()
-        self.assertEqual(self.pages(proc), self.recorded("eq.stored"))
+            self.assertEqual(self.pages(proc), self.recorded("eq.stored"))
         self.assertEqual(set(self.door.opened), {self.door.SCOPE_SYSTEM})
 
     def test_a_key_no_layer_holds_is_described_from_its_descriptor(self):
@@ -1391,14 +1393,14 @@ class test_stored_pages(plugin_hostd_case):
         with mock.patch.dict(sys.modules, {"omx_panel_store": None}), self.assertLogs(level=logging.WARNING) as logs:
             _, proc = self.plugin()
             self.add(self.chain(2), "PH/Big")
-        self.assert_described_as_before(proc)
+            self.assert_described_as_before(proc)
         self.assertEqual(len([r for r in logs.output if "descriptions store door is not installed" in r]), 1)
 
     def test_an_entry_of_another_source_is_stale_and_the_plugin_is_described(self):
         self.door = self.stand_in(source="0" * 64)  # the bundle's TTL is not the one the entry was derived from
         with mock.patch.dict(sys.modules, {"omx_panel_store": self.door}):
             _, proc = self.plugin()
-        self.assert_described_as_before(proc)
+            self.assert_described_as_before(proc)
         self.assertEqual(set(self.door.opened), {self.door.SCOPE_USER}, "the store was asked")
 
     def test_a_refused_entry_is_described_as_before(self):
@@ -1406,14 +1408,15 @@ class test_stored_pages(plugin_hostd_case):
         self.door = self.stand_in(refused)
         with mock.patch.dict(sys.modules, {"omx_panel_store": self.door}):
             _, proc = self.plugin()
-        self.assert_described_as_before(proc)
+            self.assert_described_as_before(proc)
+        self.assertTrue(self.door.opened, "the store was asked")
 
     def test_an_omx_panel_without_describe_stored_describes_as_before_and_says_so_once(self):
         os.environ["OMX_PANEL_STUB_NO_STORED"] = "1"
         with self.assertLogs(level=logging.WARNING) as logs:
             _, proc = self.plugin()
             self.add(self.chain(2), "PH/Big")
-        self.assert_described_as_before(proc)
+        self.assert_described_as_before(proc, asked=True)
         self.assertEqual(len([r for r in logs.output if "describe --stored" in r]), 1, logs.output)
 
     @unittest.skipUnless(os.environ.get("OMX_PANEL_STORE_REAL"), "OMX_PANEL_STORE_REAL is an omx-panel tree with store/build "
