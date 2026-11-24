@@ -26,7 +26,7 @@
         "kind": "number",
         "symbol": "hpf_freq",
         "name": "HPF Frequency",
-        "unit": "hz",
+        "unit": "Hz",
         "scale": "stepped",
         "step": 1,
         "min": 20,
@@ -74,7 +74,7 @@
         "kind": "number",
         "symbol": "lpf_freq",
         "name": "LPF Frequency",
-        "unit": "hz",
+        "unit": "Hz",
         "scale": "stepped",
         "step": 1,
         "min": 1000,
@@ -130,7 +130,7 @@
         "kind": "number",
         "symbol": "b1_freq",
         "name": "Band 1 Frequency",
-        "unit": "hz",
+        "unit": "Hz",
         "scale": "stepped",
         "step": 1,
         "min": 20,
@@ -141,7 +141,7 @@
         "kind": "number",
         "symbol": "b1_gain",
         "name": "Band 1 Gain",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": -15,
@@ -193,7 +193,7 @@
         "kind": "number",
         "symbol": "b2_freq",
         "name": "Band 2 Frequency",
-        "unit": "hz",
+        "unit": "Hz",
         "scale": "stepped",
         "step": 1,
         "min": 20,
@@ -204,7 +204,7 @@
         "kind": "number",
         "symbol": "b2_gain",
         "name": "Band 2 Gain",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": -15,
@@ -256,7 +256,7 @@
         "kind": "number",
         "symbol": "b3_freq",
         "name": "Band 3 Frequency",
-        "unit": "hz",
+        "unit": "Hz",
         "scale": "stepped",
         "step": 1,
         "min": 20,
@@ -267,7 +267,7 @@
         "kind": "number",
         "symbol": "b3_gain",
         "name": "Band 3 Gain",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": -15,
@@ -319,7 +319,7 @@
         "kind": "number",
         "symbol": "b4_freq",
         "name": "Band 4 Frequency",
-        "unit": "hz",
+        "unit": "Hz",
         "scale": "stepped",
         "step": 1,
         "min": 20,
@@ -330,7 +330,7 @@
         "kind": "number",
         "symbol": "b4_gain",
         "name": "Band 4 Gain",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": -15,
@@ -382,7 +382,7 @@
         "kind": "number",
         "symbol": "b5_freq",
         "name": "Band 5 Frequency",
-        "unit": "hz",
+        "unit": "Hz",
         "scale": "stepped",
         "step": 1,
         "min": 20,
@@ -393,7 +393,7 @@
         "kind": "number",
         "symbol": "b5_gain",
         "name": "Band 5 Gain",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": -15,
@@ -445,7 +445,7 @@
         "kind": "number",
         "symbol": "b6_freq",
         "name": "Band 6 Frequency",
-        "unit": "hz",
+        "unit": "Hz",
         "scale": "stepped",
         "step": 1,
         "min": 20,
@@ -456,7 +456,7 @@
         "kind": "number",
         "symbol": "b6_gain",
         "name": "Band 6 Gain",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": -15,
@@ -508,7 +508,7 @@
         "kind": "number",
         "symbol": "b7_freq",
         "name": "Band 7 Frequency",
-        "unit": "hz",
+        "unit": "Hz",
         "scale": "stepped",
         "step": 1,
         "min": 20,
@@ -519,7 +519,7 @@
         "kind": "number",
         "symbol": "b7_gain",
         "name": "Band 7 Gain",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": -15,
@@ -571,7 +571,7 @@
         "kind": "number",
         "symbol": "b8_freq",
         "name": "Band 8 Frequency",
-        "unit": "hz",
+        "unit": "Hz",
         "scale": "stepped",
         "step": 1,
         "min": 20,
@@ -582,7 +582,7 @@
         "kind": "number",
         "symbol": "b8_gain",
         "name": "Band 8 Gain",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": -15,
@@ -1161,25 +1161,25 @@
         "role": "hpf_freq",
         "index": 0,
         "symbol": "hpf_freq",
-        "unit": "hz"
+        "unit": "Hz"
       },
       {
         "role": "lpf_freq",
         "index": 0,
         "symbol": "lpf_freq",
-        "unit": "hz"
+        "unit": "Hz"
       },
       {
         "role": "band_freq",
         "index": 0,
         "symbol": "b1_freq",
-        "unit": "hz"
+        "unit": "Hz"
       },
       {
         "role": "band_gain",
         "index": 0,
         "symbol": "b1_gain",
-        "unit": "db"
+        "unit": "dB"
       },
       {
         "role": "band_q",
@@ -1191,13 +1191,13 @@
         "role": "band_freq",
         "index": 1,
         "symbol": "b2_freq",
-        "unit": "hz"
+        "unit": "Hz"
       },
       {
         "role": "band_gain",
         "index": 1,
         "symbol": "b2_gain",
-        "unit": "db"
+        "unit": "dB"
       },
       {
         "role": "band_q",
@@ -1209,13 +1209,13 @@
         "role": "band_freq",
         "index": 2,
         "symbol": "b3_freq",
-        "unit": "hz"
+        "unit": "Hz"
       },
       {
         "role": "band_gain",
         "index": 2,
         "symbol": "b3_gain",
-        "unit": "db"
+        "unit": "dB"
       },
       {
         "role": "band_q",
@@ -1227,13 +1227,13 @@
         "role": "band_freq",
         "index": 3,
         "symbol": "b4_freq",
-        "unit": "hz"
+        "unit": "Hz"
       },
       {
         "role": "band_gain",
         "index": 3,
         "symbol": "b4_gain",
-        "unit": "db"
+        "unit": "dB"
       },
       {
         "role": "band_q",
@@ -1245,13 +1245,13 @@
         "role": "band_freq",
         "index": 4,
         "symbol": "b5_freq",
-        "unit": "hz"
+        "unit": "Hz"
       },
       {
         "role": "band_gain",
         "index": 4,
         "symbol": "b5_gain",
-        "unit": "db"
+        "unit": "dB"
       },
       {
         "role": "band_q",
@@ -1263,13 +1263,13 @@
         "role": "band_freq",
         "index": 5,
         "symbol": "b6_freq",
-        "unit": "hz"
+        "unit": "Hz"
       },
       {
         "role": "band_gain",
         "index": 5,
         "symbol": "b6_gain",
-        "unit": "db"
+        "unit": "dB"
       },
       {
         "role": "band_q",
@@ -1281,13 +1281,13 @@
         "role": "band_freq",
         "index": 6,
         "symbol": "b7_freq",
-        "unit": "hz"
+        "unit": "Hz"
       },
       {
         "role": "band_gain",
         "index": 6,
         "symbol": "b7_gain",
-        "unit": "db"
+        "unit": "dB"
       },
       {
         "role": "band_q",
@@ -1299,13 +1299,13 @@
         "role": "band_freq",
         "index": 7,
         "symbol": "b8_freq",
-        "unit": "hz"
+        "unit": "Hz"
       },
       {
         "role": "band_gain",
         "index": 7,
         "symbol": "b8_gain",
-        "unit": "db"
+        "unit": "dB"
       },
       {
         "role": "band_q",
@@ -1493,6 +1493,7 @@
     "displays": [
       {
         "kind": "eq_response",
+        "axis": "log-frequency",
         "section": "bands.band_1",
         "source": "family",
         "meterIds": [
