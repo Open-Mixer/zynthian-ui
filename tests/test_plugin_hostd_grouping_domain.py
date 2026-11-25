@@ -55,7 +55,7 @@ def contract_dir(doc):
 class TheSentencesAreTheDomains(unittest.TestCase):
 
     def test_the_installed_domain_is_there(self):
-        self.assertTrue(os.path.isfile(DOMAIN), f"{DOMAIN}: plugin-hostd-contract >= 0.21.0 installs the domain plugin-hostd/grouping")
+        self.assertTrue(os.path.isfile(DOMAIN), f"{DOMAIN}: plugin-hostd-contract installs the domain plugin-hostd/grouping")
 
     def test_every_word_of_the_domain_is_told_with_its_sentence(self):
         want = reasons(installed())

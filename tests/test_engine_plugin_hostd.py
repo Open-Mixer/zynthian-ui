@@ -1783,7 +1783,7 @@ class test_protocol_03(plugin_hostd_case):
 
 class test_no_old_daemons(plugin_hostd_case):
     """What a plugin-hostd that is too old to answer hello, the bulk verbs, plan or estimate gets: a refusal, never a
-    way around. The engine requires a daemon of the contract-versions floor."""
+    way around. The engine requires the daemon the channel publishes (contract-versions names it)."""
 
     CLAP = "PH/clap:/usr/lib/clap/lsp-plugins.clap#in.lsp-plug.limiter_mono"
 

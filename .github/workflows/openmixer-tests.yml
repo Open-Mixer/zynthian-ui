@@ -65,19 +65,13 @@ jobs:
           # python3-plugin-hostd-protocol: plugin_hostd_protocol, the client the words of a line and the reply codes are
           # read through (#4); python3-omx-contract: omx_contract.scale and omx_contract.catalog, the position law and
           # the catalog reader (#28)
-          # shellcheck disable=SC2086 # one word per pin
-          apt-get install -y -qq --no-install-recommends $pins omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract \
-            plugin-hostd-protocol-l10n-ca python3-plugin-hostd-protocol python3-omx-contract
-          # the contract the series is built and tested against: every declared package at or above its floor
+          # the contract the series is built and tested against (contract-versions): by name, the channel's packages,
+          # no version kept here; then every one of them is installed, and the log says which version
+          # shellcheck disable=SC2086,SC2046 # one word per pin and per package
+          apt-get install -y -qq --no-install-recommends $pins omx-contract-data omx-dsp-contract \
+            $(python3 -m tools.contract_versions --packages)
           python3 -m tools.contract_versions
-          dpkg-query -W plugin-hostd omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract python3-plugin-hostd-protocol \
-            python3-omx-contract
-          # the owners' sentences are read from the vocabularies omx-contract-data's contract directory holds, in the
-          # layout it has from 3.14.0 on (#6), and the catalogs of plugin-hostd-protocol-contract: a floor only (%7's
-          # ruling: no ceiling on our own packages)
-          v=$(dpkg-query -W -f '${Version}' omx-contract-data)
-          dpkg --compare-versions "$v" ge 3.14.0 \
-            || { echo "::error::omx-contract-data $v is not >= 3.14.0"; exit 1; }
+          dpkg-query -W plugin-hostd omx-contract-data omx-dsp-contract
 
       - name: Fetch plugin-db's Python reader and its golden answers
         run: |
