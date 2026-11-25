@@ -78,13 +78,15 @@ CONTRACT_ROOT = os.environ.get("RESTATED_CONTRACT_ROOT") or "/usr/share"
 
 # where the owners install their declarations, under the contract root: omx-contract's contract directory holds one
 # directory per owner that still has data files (omx-contract, omx-clap, omx-dsp, omx-plugins, plugin-hostd,
-# plugin-hostd-protocol; the * is the contract's major), plugin-hostd-protocol installs its own command table, omx-panel its schema.
+# plugin-hostd-protocol: <contractdir>/<package>/, no schema-major level, omx-contract 0.23), plugin-hostd-protocol
+# installs its own command table, omx-panel its schema.
 # The sorting pass (chain 2026-11-22): omx-clap-core is omx-clap, and plugin-db installs domains only.
-CONTRACT_DIRS = tuple("omx-contract/contract.d/*/" + owner for owner in (
+CONTRACT_DIRS = tuple("omx-contract/contract.d/" + owner for owner in (
     "omx-contract", "omx-clap", "omx-dsp", "omx-plugins", "plugin-hostd", "plugin-hostd-protocol")
 ) + ("plugin-hostd-protocol", "omx-panel/schema")
-# the owners' domains, beside the schema major's directories: contract.d/<domain>/<leaf>.json (a nested domain in a
-# directory of its own, catalogs/ beside), each item's words the `const` of its oneOf members
+# the owners' domains, beside the packages' directories (a package shares the directory of the domain of its name):
+# contract.d/<domain>/<leaf>.json (a nested domain in a directory of its own, catalogs/ beside), each item's words the
+# `const` of its oneOf members
 DOMAIN_DIRS = "omx-contract/contract.d/[a-z]*"
 HOST_TABLES = ("VERB_HOSTS", "PLUGIN_DB_ISOLATION_HOSTS")  # tables whose ids name a package, an engine or a worker: not words of a protocol
 ISSUE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*#[1-9][0-9]*$")
@@ -261,11 +263,16 @@ def declared(contracts):
     for directory in CONTRACT_DIRS + (DOMAIN_DIRS,):
         count = 0
         reader = collect_domain if directory == DOMAIN_DIRS else collect
+        shared = directory.startswith("omx-contract/contract.d/")
         for top in sorted(glob.glob(os.path.join(glob.escape(contracts), directory))):
             for here, dirs, files in os.walk(top):
                 dirs[:] = sorted(d for d in dirs if d not in ("catalogs", "node_modules", "ts", "fixtures"))
                 for name in sorted(files):
-                    if name.endswith(".json"):
+                    # in the contract directory a package and the domain of its name share a directory: a domain's
+                    # document is the one named after its directory (<domain>/<domain>.json), read as a domain and
+                    # never as a package's file
+                    domain = name == os.path.basename(here) + ".json"
+                    if name.endswith(".json") and (not shared or domain == (reader is collect_domain)):
                         path = os.path.join(here, name)
                         try:
                             with open(path, encoding="utf-8") as f:

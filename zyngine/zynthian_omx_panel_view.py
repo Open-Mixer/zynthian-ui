@@ -588,7 +588,7 @@ def curve_words(root=None):
         def wire(ids):
             return tuple("".join("_" + c.lower() if c.isupper() else c for c in i) for i in ids)
         try:
-            with open(os.path.join(root, "3", "omx-dsp", "primitives", "curve.json")) as f:
+            with open(os.path.join(root, "omx-dsp", "primitives", "curve.json")) as f:
                 doc = json.load(f)
             _curve_words[root] = wire(doc["CURVE_DISPLAYS"]["ids"]), wire(doc["CURVE_ROLES"]["ids"])
         except (OSError, ValueError, KeyError, TypeError) as e:
