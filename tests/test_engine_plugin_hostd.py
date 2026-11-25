@@ -1095,6 +1095,18 @@ class test_pages(plugin_hostd_case):
         """The bands a screen's controls belong to, by the band number in their names ("Band 3 Gain" -> "3")."""
         return {m.group(1) for c in screen if c for m in [re.match(r"Band (\d+) ", c)] if m}
 
+    def assert_one_band_or_an_aligned_row(self, name, screen):
+        """omx-panel's cut (v0.16.0 on, omx-panel#175, 4b0b7c4): a screen holds one band's controls, or, past the page, is
+        a row of the aligned matrix: one place of every band, in band order, the same role word on each."""
+        shown = [c for c in screen if c]
+        if len(self.bands_on(shown)) <= 1:
+            return
+        rows = [re.match(r"Band (\d+) (.+)", c) for c in shown]
+        self.assertTrue(all(rows), f"{name} is cut across two bands: {screen}")
+        self.assertEqual(len({m.group(2) for m in rows}), 1, f"{name} is cut across two bands and two roles: {screen}")
+        bands = [int(m.group(1)) for m in rows]
+        self.assertEqual(bands, sorted(set(bands)), f"{name}: a row of the aligned matrix is in band order: {screen}")
+
     def test_omx_eq8_shows_eight_band_screens_each_opening_with_the_bands_on_off(self):
         self.assertEqual(self.family("omx-eq8"), "eq", "the channel's omx-plugins role meanings make it an EQ")
         proc = self.plugin("omx-eq8")
@@ -1107,15 +1119,19 @@ class test_pages(plugin_hostd_case):
         for n, k in heads:
             i = n[-1]
             self.assertEqual(k[:2], [f"Band {i} On", f"Band {i} Frequency"], n)
-            # the band's other controls follow on its screen and its own continuation, less those the Easy pages took
+            # the band's first page of places is its own screen, less those the Easy pages took; its fifth place, the
+            # type, is past the page and goes to the aligned matrix's row screens (omx-panel#175)
             own = [c for _, k in screens if self.bands_on(k) == {i} for c in k if c]
-            self.assertEqual(set(own), {f"Band {i} {w}" for w in ("On", "Frequency", "Gain", "Q", "Type")} - easy, n)
+            self.assertEqual(set(own), {f"Band {i} {w}" for w in ("On", "Frequency", "Gain", "Q")} - easy, n)
+        rows = [c for n, k in screens if n.startswith("Bands: Type") for c in k if c]
+        self.assertEqual(rows, [f"Band {i} Type" for i in range(1, 9)], "the types are one aligned row, in band order")
         for n, k in screens:
             if not n.startswith("Easy"):  # the Easy pages are omx-panel's picks over the whole plugin, one gain per band
-                self.assertLessEqual(len(self.bands_on(k)), 1, f"{n} is cut across two bands: {k}")
+                self.assert_one_band_or_an_aligned_row(n, k)
         self.assertTrue(all(c.endswith(" Gain") for c in easy), f"the Easy pages hold gains: {easy}")
-        bands = [n for n, _ in screens if n.startswith("Bands: ")]
+        bands = [n for n, _ in screens if n.startswith("Bands: ") and not n.startswith("Bands: Type")]
         self.assertEqual((bands[0], bands[-1]), ("Bands: HPF", "Bands: LPF"), "the edges are the model's: HPF first, LPF last")
+        self.assertEqual([n for n, _ in screens][-2:], ["Bands: Type", "Bands: Type 2"], "the aligned rows follow the bands")
         self.assertEqual(dict(screens)["Bands: LPF"], ["LPF On", "LPF Frequency", "LPF Slope", None])
 
     def test_a_calf_multiband_shaped_plugin_never_shows_a_screen_across_two_bands(self):
@@ -1125,16 +1141,16 @@ class test_pages(plugin_hostd_case):
         got = [(n, [s[0] if s else None for s in rows]) for n, rows in proc.engine.pages()]
         self.assertEqual(got, self.recorded("calf-mbc", 4), "the engine adds, reorders and drops nothing")
         for n, k in screens:
-            self.assertLessEqual(len(self.bands_on(k)), 1, f"{n} is cut across two bands: {k}")
-        # a band of six is two screens of its own, opening with its bypass; band 1's first four are the Easy page's, and
-        # omx-panel (v0.15.1) keeps their slots hidden on band 1's own first screen, so its rest is on its continuation
+            self.assert_one_band_or_an_aligned_row(n, k)
+        # a band of six is one screen of its own, opening with its bypass, and its places past the page are the aligned
+        # matrix's rows, one per role across the bands (omx-panel#175, v0.16.0 on); band 1's first four are the Easy
+        # page's, and no screen is left with nothing visible, so band 1 has no screen of its own
         for i in (2, 3, 4):
             self.assertEqual(dict(screens)[f"Band: Band {i}"], [f"Band {i} Bypass", f"Band {i} Threshold", f"Band {i} Ratio", f"Band {i} Attack"])
-            self.assertEqual(dict(screens)[f"Band: Band {i} 2"], [f"Band {i} Release", f"Band {i} Makeup", None, None])
         self.assertEqual(screens[0], ("Easy", ["Band 1 Bypass", "Band 1 Threshold", "Band 1 Ratio", "Band 1 Attack"]))
-        self.assertEqual(screens[1], ("Band: Band 1", [None, None, None, None]))
-        self.assertEqual(screens[2], ("Band: Band 1 2", ["Band 1 Release", "Band 1 Makeup", None, None]))
-        self.assertEqual([n for n, _ in screens], ["Easy"] + [f"Band: Band {i}{s}" for i in (1, 2, 3, 4) for s in ("", " 2")])
+        self.assertEqual(dict(screens)["Band: Release"], [f"Band {i} Release" for i in (1, 2, 3, 4)])
+        self.assertEqual(dict(screens)["Band: Makeup"], [f"Band {i} Makeup" for i in (1, 2, 3, 4)])
+        self.assertEqual([n for n, _ in screens], ["Easy"] + [f"Band: Band {i}" for i in (2, 3, 4)] + ["Band: Release", "Band: Makeup"])
 
     def test_an_authored_controls_label_is_read_under_the_symbol_the_description_serves(self):
         """omx-panel serves a control under the name a session keys it by (the contract's `symbol`: an authored CLAP

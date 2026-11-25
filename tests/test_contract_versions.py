@@ -51,12 +51,14 @@ def test_a_ceiling_is_refused():
 
 
 def test_the_repository_declares_floors_only():
-    """contract-versions itself: every line a floor, none with a ceiling, and the estimate reply's floor: the
-    10-word form (the four RAM words) is the only one python3-plugin-hostd-protocol 0.7.0 reads."""
+    """contract-versions itself: every line a floor, none with a ceiling, and the floors of the sorting pass
+    (#100): the protocol and its Python client at 0.8.0, plugin-hostd-contract at 0.21.0, together (the grouping
+    reasons are its domain plugin-hostd/grouping from 0.21.0, #103; the estimate reply is the 12-word form of protocol 0.8.0, its verdict and reason last)."""
     with open(os.path.join(ROOT, "contract-versions")) as f:
         floors = parse(f.read())
-    assert floors["plugin-hostd-protocol"] == "0.7.0"
-    assert floors["python3-plugin-hostd-protocol"] == "0.7.0"
+    assert floors["plugin-hostd-protocol"] == "0.8.0"
+    assert floors["python3-plugin-hostd-protocol"] == "0.8.0"
+    assert floors["plugin-hostd-contract"] == "0.21.0"
 
 
 def test_the_client_the_runtime_imports_is_declared_and_carries_every_name():
