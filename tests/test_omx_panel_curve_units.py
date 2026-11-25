@@ -33,11 +33,11 @@ _spec.loader.exec_module(view)
 
 
 def curve_unit_words():
-    """The units curve_bind takes: the standard ids of omx-dsp's curve unit words, as its contract package installs
-    them."""
+    """The units curve_bind takes: omx-dsp's curve unit words, as its contract package installs them (from omx-dsp
+    0.34.1 the ids are the standard ones, PARAM_UNITS' ids, with no lower-case list beside them)."""
     root = (os.environ.get("OMX_CONTRACT_PATH") or view.CONTRACT_PATH).split(":")[0]
-    with open(os.path.join(root, "3", "omx-dsp", "primitives", "curve.json")) as f:
-        return set(json.load(f)["CURVE_UNITS"]["standard"])
+    with open(os.path.join(root, "omx-dsp", "primitives", "curve.json")) as f:
+        return set(json.load(f)["CURVE_UNITS"]["ids"])
 
 
 def units_of(line):
