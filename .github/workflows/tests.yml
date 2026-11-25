@@ -64,12 +64,12 @@ jobs:
           echo "PYTHONPATH=$GITHUB_WORKSPACE/plugin-hostd-src/clients/python:$PYTHONPATH" >> "$GITHUB_ENV"
           PYTHONPATH="$GITHUB_WORKSPACE/plugin-hostd-src/clients/python" python -c "from plugin_hostd_protocol import Protocol, ProtocolError"
 
-      # plugin_db, the reader zyngine's plugin qualification imports (python3-plugin-db on the channel): its python
-      # directory at the commit the openmixer-tests workflow reads
+      # plugin_db, the reader zyngine's plugin qualification imports: its python directory at the release the channel
+      # serves (the openmixer-tests workflow reads the same tag from plugin-db-contract's version)
       - uses: actions/checkout@v5
         with:
           repository: Open-Mixer/plugin-db
-          ref: 8ee7a401704e29351bcd4dfbe830446715b9df48
+          ref: v0.5.0
           path: plugin-db-src
           sparse-checkout: python
 

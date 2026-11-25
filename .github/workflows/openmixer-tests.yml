@@ -82,11 +82,12 @@ jobs:
       - name: Fetch plugin-db's Python reader and its golden answers
         run: |
           # plugin_db, the reader the menus ask about a plugin (#4), and the golden answers the tests ask it with:
-          # python3-plugin-db from plugin-db 0.3.2 on; until that release from a named commit of its main, and the
-          # log says so. The golden answers always come from the checkout. The sorting pass (chain 2026-11-22): its
-          # pass head, lane/sort-plugin-db-pass, until plugin-db 0.5.0 is on the channel
-          SHA=8ee7a401704e29351bcd4dfbe830446715b9df48
-          apt-get install -y -qq --no-install-recommends git ca-certificates
+          # the channel serves no python3-plugin-db, so both come from plugin-db's release tag of the version the
+          # channel serves (plugin-db-contract's), never a named commit; the log says which. The golden answers always
+          # come from the checkout.
+          apt-get install -y -qq --no-install-recommends git ca-certificates plugin-db-contract
+          v=$(dpkg-query -W -f '${Version}' plugin-db-contract)
+          SHA=v${v%%[-~+]*}
           git clone -q https://github.com/Open-Mixer/plugin-db /tmp/plugin-db
           git -C /tmp/plugin-db checkout -q "$SHA"
           test -f /tmp/plugin-db/tests/golden/qualified.json
@@ -96,7 +97,7 @@ jobs:
           else
             test -f /tmp/plugin-db/python/plugin_db/__init__.py
             echo "PYTHONPATH=/tmp/plugin-db/python${PYTHONPATH:+:$PYTHONPATH}" >> "$GITHUB_ENV"
-            echo "READER FROM BRANCH $SHA"
+            echo "READER FROM TAG $SHA (plugin-db-contract $v)"
           fi
 
       - name: Fetch omx-panel's gesture declaration and build its renderer
