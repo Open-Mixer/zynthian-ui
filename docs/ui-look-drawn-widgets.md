@@ -1,5 +1,7 @@
 # The UI look draws the stock controller widgets (zynthian-ui#53, level 2)
 
+Superseded for the controller (zynthian-ui#93 stage 1): `vintage` draws the controller with Tk and PIL, in `zyngui/zynthian_gui_controller_tk.py`; `zyngui/zynthian_gui_controller_drawn.py` and the renderer path below are gone from it (see `docs/ui-look-tk-widgets.md`). What follows still describes the plugin panel's renderer path until stage 2.
+
 Owner, 2026-11-16: the vintage look is one of OpenMixer's main selling points; it should reach
 Zynthian's normal screens with a chosen config. Level 1 (zynthian-sys#13, #15; zynthian-webconf#1)
 is a colour preset: `config/ui-looks/openmixer-vintage.sh` sets the sixteen `ZYNTHIAN_UI_COLOR_*`,

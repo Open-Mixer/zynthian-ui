@@ -580,12 +580,31 @@ color_grid_tx = os.environ.get('ZYNTHIAN_UI_COLOR_GRID_TX', "#ffffff")
 color_grid_tx_off = os.environ.get('ZYNTHIAN_UI_COLOR_GRID_TX_OFF', "#aaaaaa")
 color_grid_sel = os.environ.get('ZYNTHIAN_UI_COLOR_GRID_SEL', "yellow")
 
-# How the controller widgets are drawn (docs/ui-look-drawn-widgets.md): `stock` is upstream Zynthian's drawing;
-# `vintage` draws them through omx-panel's renderer, in the colours above. A word that names no look is said and
-# draws stock, so the UI starts whatever the config says.
+# The knob's metal and the switch's pill, a look token each (docs/ui-look-tk-widgets.md, zynthian-ui#93): the vintage
+# preset sets them (zynthian-sys config/ui-looks/openmixer-vintage.sh); stock reads none. Unset is None: no default is
+# filled in, and `vintage` refuses a preset that leaves one unset.
+color_knob_face = os.environ.get('ZYNTHIAN_UI_COLOR_KNOB_FACE') or None
+color_knob_edge = os.environ.get('ZYNTHIAN_UI_COLOR_KNOB_EDGE') or None
+color_knob_cap_hi = os.environ.get('ZYNTHIAN_UI_COLOR_KNOB_CAP_HI') or None
+color_knob_knurl = os.environ.get('ZYNTHIAN_UI_COLOR_KNOB_KNURL') or None
+color_knob_pointer = os.environ.get('ZYNTHIAN_UI_COLOR_KNOB_POINTER') or None
+color_switch_track = os.environ.get('ZYNTHIAN_UI_COLOR_SWITCH_TRACK') or None
+color_switch_thumb = os.environ.get('ZYNTHIAN_UI_COLOR_SWITCH_THUMB') or None
+
+# How the controller widgets are drawn (docs/ui-look-tk-widgets.md): `stock` is upstream Zynthian's drawing; `vintage`
+# is Zynthian's own, drawn with Tk and PIL from the colours above. A word that names no look is said and draws stock,
+# so the UI starts whatever the config says; so does a `vintage` preset with a knob token unset, said by name.
 ui_look = os.environ.get('ZYNTHIAN_UI_LOOK', "stock")
 if ui_look not in ("stock", "vintage"):
     logging.warning("ZYNTHIAN_UI_LOOK='%s' names no look (stock, vintage): the controllers are drawn stock", ui_look)
+    ui_look = "stock"
+if ui_look == "vintage" and not all((color_knob_face, color_knob_edge, color_knob_cap_hi, color_knob_knurl, color_knob_pointer, color_switch_track, color_switch_thumb)):
+    logging.warning("ZYNTHIAN_UI_LOOK='vintage' needs %s: the controllers are drawn stock",
+                    ", ".join(name for name, value in (
+                        ("ZYNTHIAN_UI_COLOR_KNOB_FACE", color_knob_face), ("ZYNTHIAN_UI_COLOR_KNOB_EDGE", color_knob_edge),
+                        ("ZYNTHIAN_UI_COLOR_KNOB_CAP_HI", color_knob_cap_hi), ("ZYNTHIAN_UI_COLOR_KNOB_KNURL", color_knob_knurl),
+                        ("ZYNTHIAN_UI_COLOR_KNOB_POINTER", color_knob_pointer), ("ZYNTHIAN_UI_COLOR_SWITCH_TRACK", color_switch_track),
+                        ("ZYNTHIAN_UI_COLOR_SWITCH_THUMB", color_switch_thumb)) if not value) + " (unset)")
     ui_look = "stock"
 
 # ------------------------------------------------------------------------------

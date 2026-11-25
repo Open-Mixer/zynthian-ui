@@ -1,18 +1,10 @@
 # -*- coding: utf-8 -*-
 #
-# The UI look draws the stock controller widget (docs/ui-look-drawn-widgets.md, zynthian-ui#53 level 2).
-# ZYNTHIAN_UI_LOOK chooses the drawing: `stock` is upstream Zynthian's widget, the class zyngui/zynthian_gui_controller.py
-# defines, its canvas items created and configured as upstream does, the drawn module never imported; `vintage` draws
-# every controller through omx-panel's renderer (zyngine/zynthian_omx_panel_view.py), one panel description of one
-# control per controller, the renderer's RGBA painted over color_panel_bg as one canvas image, the selection a frame
-# in the colour the stock arc would take. The look the view is opened with is the UI's palette over the renderer's own
-# look.json (zyngine/zynthian_ui_look.py): the colour roles Zynthian's palette has a colour for carry the config's
-# colour, the others the renderer's base; the preset's colours are zynthian-sys config/ui-looks/openmixer-vintage.sh's.
-#
-# The config's colour roles and ui_look are the real zynthian_gui_config.py's own lines, run under each look's
-# environment; the controller and the drawn module are the real files over a Tk canvas that records what it is asked
-# to draw; the renderer's view is a stand-in that records the description, the look and the readings and draws a PIL
-# frame; PIL is real (the Pi has it; CI installs it).
+# The UI look's switch and the renderer's look table (docs/ui-look-drawn-widgets.md, zynthian-ui#53): ZYNTHIAN_UI_LOOK
+# chooses the drawing, and the plugin panel is still drawn through omx-panel's renderer in the UI's palette over the
+# renderer's own look.json (zyngine/zynthian_ui_look.py) until its stage 2 (zynthian-ui#93). The controller's drawing is
+# Tk and PIL now: tests/test_tk_controller.py holds it. Here the config's colour roles and ui_look are the real
+# zynthian_gui_config.py's own lines, run under each look's environment; the helpers (Canvas, Font, Zctrl) are shared.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 # SPDX-License-Identifier: GPL-2.0-or-later
@@ -30,7 +22,6 @@ import unittest
 from unittest import mock
 
 from tests.omx_panel_widget_stub import load_widget
-from tests.test_omx_panel_view import renderer, view as real_view
 
 try:
     from PIL import Image, ImageDraw
@@ -41,7 +32,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 CONFIG = os.path.join(ROOT, "zyngui", "zynthian_gui_config.py")
 CONTROLLER = os.path.join(ROOT, "zyngui", "zynthian_gui_controller.py")
-DRAWN = os.path.join(ROOT, "zyngui", "zynthian_gui_controller_drawn.py")
 LOOK = os.path.join(ROOT, "zyngine", "zynthian_ui_look.py")
 VIEW = os.path.join(ROOT, "zyngine", "zynthian_omx_panel_view.py")
 LOOK_BASE = os.path.join(HERE, "fixtures", "omx_panel", "look.json")  # omx-panel tools/look.json, as the package installs it
@@ -54,12 +44,17 @@ STOCK = {"ZYNTHIAN_UI_COLOR_BG": "#000000", "ZYNTHIAN_UI_COLOR_TX": "#ffffff", "
          "ZYNTHIAN_UI_COLOR_PANEL_HL": "#2a323d", "ZYNTHIAN_UI_COLOR_INFO": "#8080ff", "ZYNTHIAN_UI_COLOR_MIDI": "#19b1f7",
          "ZYNTHIAN_UI_COLOR_ALT": "#ff00ff", "ZYNTHIAN_UI_COLOR_ALT2": "#ff9000", "ZYNTHIAN_UI_COLOR_ERROR": "#ff0000",
          "ZYNTHIAN_UI_COLOR_WARN": "#ff9000"}
+# the knob's metal as the vintage preset carries it (zynthian-sys config/ui-looks/openmixer-vintage.sh)
+KNOB = {"ZYNTHIAN_UI_COLOR_KNOB_FACE": "#7d848b", "ZYNTHIAN_UI_COLOR_KNOB_EDGE": "#a9b0b7",
+        "ZYNTHIAN_UI_COLOR_KNOB_CAP_HI": "#b9c0c6", "ZYNTHIAN_UI_COLOR_KNOB_KNURL": "#5d646b",
+        "ZYNTHIAN_UI_COLOR_KNOB_POINTER": "#f4efe2", "ZYNTHIAN_UI_COLOR_SWITCH_TRACK": "#3b4046",
+        "ZYNTHIAN_UI_COLOR_SWITCH_THUMB": "#a9b0b7"}
 VINTAGE = {"ZYNTHIAN_UI_COLOR_BG": "#0b0e11", "ZYNTHIAN_UI_COLOR_TX": "#eaf0f4", "ZYNTHIAN_UI_COLOR_TX_OFF": "#8a97a3",
            "ZYNTHIAN_UI_COLOR_ON": "#e8732c", "ZYNTHIAN_UI_COLOR_OFF": "#0d1115", "ZYNTHIAN_UI_COLOR_LOW_ON": "#693d24",
            "ZYNTHIAN_UI_COLOR_HL": "#e9dfc6", "ZYNTHIAN_UI_COLOR_ML": "#f2b03a", "ZYNTHIAN_UI_COLOR_PANEL_BG": "#15191e",
            "ZYNTHIAN_UI_COLOR_PANEL_HL": "#242b33", "ZYNTHIAN_UI_COLOR_INFO": "#8a97a3", "ZYNTHIAN_UI_COLOR_MIDI": "#34d17b",
            "ZYNTHIAN_UI_COLOR_ALT": "#34d17b", "ZYNTHIAN_UI_COLOR_ALT2": "#f2b632", "ZYNTHIAN_UI_COLOR_ERROR": "#ff5a4d",
-           "ZYNTHIAN_UI_COLOR_WARN": "#ffbf3d", "ZYNTHIAN_UI_LOOK": "vintage"}
+           "ZYNTHIAN_UI_COLOR_WARN": "#ffbf3d", "ZYNTHIAN_UI_LOOK": "vintage", **KNOB}
 # The roles the preset's colours land on, and the console token each carries (docs/ui-look-drawn-widgets.md)
 VINTAGE_ROLES = {"--surface": "#15191e", "--surface-3": "#242b33", "--glass": "#0d1115", "--ink": "#eaf0f4",
                  "--ink-dim": "#8a97a3", "--legend": "#e9dfc6", "--accent": "#e8732c", "--state-engaged": "#f2b03a",
@@ -171,97 +166,6 @@ class Zctrl:
     def set_value(self, v, *a): self.value = v
 
 
-class FakeView:
-    """The renderer's view as the drawn controller uses it: the description and the look it was opened with, the
-    readings it was given, and a PIL frame for every draw."""
-    opened = []
-    refuse = None
-    stop_at_draw = False
-
-    def __init__(self, layout, tools_dir=None, look=None):
-        if FakeView.refuse:
-            raise FakeView.refuse
-        self.layout, self.tools_dir, self.look = layout, tools_dir, look
-        self.symbols = [c["symbol"] for c in layout["controls"]]
-        self.meters = []
-        self.calls, self.draws, self.closed = [], [], False
-        FakeView.opened.append(self)
-
-    def set_title(self, brand, name): self.calls.append(("title", brand, name))
-    def set_surface(self, w, h, scale=1.0): self.size = (w, h)
-    def set_value(self, i, fraction, text): self.calls.append(("value", i, fraction, text))
-    def set_choice(self, i, at, count, text): self.calls.append(("choice", i, at, count, text))
-    def set_travel(self, *a, **kw): self.calls.append(("travel",) + a)
-    def close(self): self.closed = True
-    rect = ((10.0, 20.0, 100.0, 60.0), 60.0)  # where the knob takes a press: its bounding square, and the drag's travel
-
-    def target_rect(self, index):
-        return FakeView.rect
-
-    def draw(self, w, h, scale=1.0):
-        if FakeView.stop_at_draw:
-            raise FakeView.module.RendererStopped("omx-panel's renderer stopped (SIGSEGV); the panel is drawn again when it is opened again")
-        self.draws.append((w, h))
-        return frame(w, h), None
-
-
-def frame(w, h):
-    """A renderer draw: a translucent face and an opaque pointer, alpha over the background."""
-    im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    d.rectangle((2, 2, w - 3, h - 3), fill=(21, 25, 30, 200))
-    d.line((w // 2, h // 2, w // 2, 4), fill=(232, 115, 44, 255), width=3)
-    return im.tobytes()
-
-
-def shown(w, h, bg):
-    return Image.alpha_composite(Image.new("RGBA", (w, h), bg), Image.frombuffer("RGBA", (w, h), frame(w, h), "raw", "RGBA", 0, 1))
-
-
-def load_controller(environ, tools_dir=None):
-    """zyngui.zynthian_gui_controller as zynthian_gui.py imports it, with zynthian_gui_config carrying <environ>'s look;
-    the renderer's View is FakeView. Returns (the class the module exports, the config, sys.modules as loaded)."""
-    FakeView.opened, FakeView.refuse, FakeView.stop_at_draw = [], None, False
-    FakeView.rect = ((10.0, 20.0, 100.0, 60.0), 60.0)
-    values = config_under(environ)
-    zyngui = mock.MagicMock()
-    zyngui.chain_manager.get_midi_learn_from_zctrl.return_value = None
-    config = types.ModuleType("zyngui.zynthian_gui_config")
-    config.__dict__.update({k: v for k, v in values.items() if k != "said"}, font_family="sans", font_size=12,
-                           layout={"ctrl_orientation": "horizontal"}, ctrl_graph=1, zyngui=zyngui, num_zynpots=0, select_ctrl=3)
-    gui = types.ModuleType("zyngui")
-    gui.__path__ = [os.path.join(ROOT, "zyngui")]
-    gui.zynthian_gui_config = config
-    engine = types.ModuleType("zyngine")
-    engine.__path__ = [os.path.join(ROOT, "zyngine")]
-    law = types.ModuleType("zyngine.zynthian_position_law")
-    law.scale_position = lambda law, value: 0.5
-    zyncoder = types.ModuleType("zyncoder")
-    zyncore = types.ModuleType("zyncoder.zyncore")
-    zyncore.lib_zyncore = mock.MagicMock()
-    tk = types.ModuleType("tkinter")
-    tk.Canvas, tk.ARC, tk.CENTER, tk.LEFT, tk.S, tk.NW, tk.NORMAL, tk.HIDDEN, tk.FLAT = Canvas, "arc", "center", "left", "s", "nw", "normal", "hidden", "flat"
-    tkfont = types.ModuleType("tkinter.font")
-    tkfont.Font = Font
-    tk.font = tkfont
-    view = load_module("zyngine.zynthian_omx_panel_view", VIEW)
-    view.View = FakeView
-    FakeView.module = view
-    if tools_dir:
-        view.tools_dir = lambda: tools_dir  # the test's directory, whatever $ZYNTHIAN_OMX_PANEL_TOOLS says on this desk or in CI
-    modules = {"tkinter": tk, "tkinter.font": tkfont, "zyngui": gui, "zyngui.zynthian_gui_config": config, "zyngine": engine,
-               "zyngine.zynthian_position_law": law, "zyngine.zynthian_omx_panel_view": view, "zyncoder": zyncoder,
-               "zyncoder.zyncore": zyncore}
-    for name in [m for m in sys.modules if m.startswith("zyngui.zynthian_gui_controller_drawn") or m == "zyngine.zynthian_ui_look"]:
-        modules[name] = None
-    with mock.patch.dict(sys.modules, modules):
-        for name in [m for m, v in modules.items() if v is None]:
-            del sys.modules[name]
-        module = load_module("zynthian_gui_controller_under_test", CONTROLLER)
-        loaded = dict(sys.modules)
-    return module.zynthian_gui_controller, config, loaded
-
-
 def tools_dir_with(base):
     """A tools directory as omx-panel installs it, with <base> as its look.json."""
     d = tempfile.mkdtemp(suffix=".tools")
@@ -294,406 +198,14 @@ class LookSwitch(unittest.TestCase):
         self.assertTrue(any("chrome" in str(s) for s in values["said"]), values["said"])
 
 
-# ---- Stock is upstream
-
-class StockIsUpstream(unittest.TestCase):
-    def test_the_exported_class_is_the_files_own_and_the_drawn_module_is_not_imported(self):
-        cls, _, loaded = load_controller(STOCK)
-        self.assertEqual(cls.__name__, "zynthian_gui_controller")
-        self.assertEqual(cls.__module__, "zynthian_gui_controller_under_test")
-        self.assertNotIn("zyngui.zynthian_gui_controller_drawn", loaded)
-        self.assertNotIn("zyngine.zynthian_ui_look", loaded)
-
-    def test_stock_draws_the_upstream_items_and_no_image(self):
-        cls, config, _ = load_controller(STOCK)
-        ctrl = cls(0, None, Zctrl())
-        ctrl._w, ctrl._h = 120, 100
-        ctrl.on_size(None)
-        ctrl.set_hl()
-        self.assertEqual([o["kind"] for o in ctrl.items.values()], ["arc", "arc", "text", "text", "text"])
-        self.assertEqual(ctrl.items[ctrl.graph]["outline"], config.color_hl)
-        self.assertEqual(ctrl.items[ctrl.graph]["state"], "normal")
-        self.assertEqual(ctrl.of("image"), [])
-        self.assertEqual(FakeView.opened, [])
-
-    def test_the_stock_file_knows_no_look_renderer_or_pil_but_its_tail(self):
-        tree = ast.parse(open(CONTROLLER).read())
-        klass = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "zynthian_gui_controller")
-        words = re.compile(r"ui_look|drawn|renderer|panel_view|PIL", re.I)
-        for node in ast.walk(klass):
-            for text in ([node.id] if isinstance(node, ast.Name) else [node.attr] if isinstance(node, ast.Attribute)
-                         else [node.value] if isinstance(node, ast.Constant) and isinstance(node.value, str) else []):
-                self.assertFalse(words.search(text), f"line {node.lineno}: {text!r} in the stock class")
-        tails = [n for n in tree.body if isinstance(n, ast.If)]
-        self.assertEqual(len(tails), 1, "one module-level if: the look's class takes the name when the look is not stock")
-        self.assertIn("ui_look", ast.dump(tails[0].test))
-        self.assertEqual(tails[0].orelse, [], "stock has no branch: nothing runs for it")
-
-
-# ---- The drawn controller
+# ---- The look's fixture
 
 class WhatCIMustHave(unittest.TestCase):
-    @unittest.skipUnless(CI, "a desk may lack PIL: the drawn tests skip and say so")
-    def test_ci_has_pil_so_the_drawn_controller_tests_run(self):
-        self.assertIsNotNone(Image, "CI has no PIL (python3-pil): every drawn-controller test skipped and ran nothing")
-
     @unittest.skipUnless(CI, "a desk may lack omx-panel's tools: the drift check skips and says so")
     def test_ci_names_omx_panels_tools_so_the_fixture_is_held(self):
         self.assertTrue(os.environ.get("ZYNTHIAN_OMX_PANEL_TOOLS"), "CI names no $ZYNTHIAN_OMX_PANEL_TOOLS: the fixture drift check ran nothing")
 
-    @unittest.skipUnless(CI, "a desk may lack omx-panel's renderer: the pixel test skips and says so")
-    def test_ci_has_the_renderer_so_the_pixels_are_read(self):
-        self.assertTrue(renderer(), "CI has no omx-panel renderer (libomx-panel-render.so.0): the pixel test ran nothing")
 
-
-@unittest.skipUnless(Image, "no PIL")
-class DrawnController(unittest.TestCase):
-    def setUp(self):
-        self.tools = tools_dir_with(json.load(open(LOOK_BASE)))
-        self.cls, self.config, _ = load_controller(VINTAGE, tools_dir=self.tools)
-        self.images = []
-        test = self
-
-        class Recorded(self.cls):
-            def photo_of(self, image):
-                test.images.append(image)
-                return ("photo", image.size)
-
-        self.Recorded = Recorded
-
-    def reload(self, base):
-        """The controller class again, over a tools directory whose look.json is <base>."""
-        self.tools = tools_dir_with(base)
-        self.cls, self.config, _ = load_controller(VINTAGE, tools_dir=self.tools)
-        test = self
-
-        class Recorded(self.cls):
-            def photo_of(self, image):
-                test.images.append(image)
-                return ("photo", image.size)
-
-        self.Recorded = Recorded
-
-    def controller(self, zctrl, w=120, h=100, **kw):
-        ctrl = self.Recorded(0, None, zctrl, **kw)
-        ctrl._w, ctrl._h = w, h
-        ctrl.on_size(None)
-        return ctrl
-
-    def test_it_is_a_subclass_of_the_stock_widget_overriding_only_what_paints_and_where_a_page_begins(self):
-        self.assertEqual(self.cls.__name__, "zynthian_gui_controller_drawn")
-        stock = self.cls.__mro__[1]
-        self.assertEqual(stock.__name__, "zynthian_gui_controller")
-        own = {k for k, v in vars(self.cls).items() if callable(v) and not k.startswith("__")}
-        overridden = own & set(vars(stock))
-        # config: a new page, where a renderer that stopped is asked again (zynthian-ui#79); the rest paints
-        self.assertEqual(overridden, {"config", "show", "on_size", "plot_value", "set_title", "_set_color_graph", "zynpot_abs"})
-
-    def test_a_numeric_controller_is_a_knob_with_its_value(self):
-        ctrl = self.controller(Zctrl(value=0.25))
-        view = FakeView.opened[-1]
-        self.assertEqual(view.layout["controls"], [{"symbol": "cutoff", "label": "Cutoff", "section": 0, "standard": {"widget": "knob"}}])
-        self.assertEqual(len(view.layout["sections"]), 1)
-        self.assertEqual(view.size, (120, 100))
-        self.assertEqual(view.calls[-1], ("value", 0, 0.25, ctrl.value_print))
-        self.assertEqual(ctrl.value_print, "0.25")
-
-    def test_a_list_of_values_is_a_selector_with_the_chosen_one(self):
-        z = Zctrl(ticks=[0, 1, 2, 3], labels=["Sine", "Saw", "Square", "Noise"], value=2)
-        self.controller(z)
-        view = FakeView.opened[-1]
-        self.assertEqual(view.layout["controls"][0]["standard"], {"widget": "selector"})
-        self.assertEqual(view.calls[-1], ("choice", 0, 2, 4, "Square"))
-
-    def test_a_two_value_list_is_a_switch(self):
-        self.controller(Zctrl(ticks=[0, 1], labels=["Off", "On"], value=1, is_toggle=True))
-        view = FakeView.opened[-1]
-        self.assertEqual(view.layout["controls"][0]["standard"], {"widget": "switch"})
-        self.assertEqual(view.calls[-1], ("value", 0, 1, "On"))
-
-    def test_a_two_value_enumeration_the_engine_says_is_no_toggle_is_a_selector(self):
-        # MDA Piano's Polyphony: two scale points (8 voices, 32 voices), lv2:enumeration, not lv2:toggled (zynthian-ui#86); the
-        # controller makes every two-label list is_toggle, the engine's own word is toggle_declared
-        z = Zctrl(ticks=[0, 1], labels=["8 voices", "32 voices"], value=1, is_toggle=True, toggle_declared=False)
-        self.controller(z)
-        view = FakeView.opened[-1]
-        self.assertEqual(view.layout["controls"][0]["standard"], {"widget": "selector"})
-        self.assertEqual(view.calls[-1], ("choice", 0, 1, 2, "32 voices"))
-
-    def test_a_two_value_list_the_engine_says_is_a_toggle_stays_a_switch(self):
-        self.controller(Zctrl(ticks=[0, 1], labels=["off", "on"], value=1, is_toggle=True, toggle_declared=True))
-        self.assertEqual(FakeView.opened[-1].layout["controls"][0]["standard"], {"widget": "switch"})
-
-    def test_a_midi_two_label_list_of_0_and_127_stays_a_switch(self):
-        # an engine that gave labels and no word on toggles: the controller's own rule stands (the MIDI toggles of [0, 127])
-        self.controller(Zctrl(ticks=[0, 127], labels=["off", "on"], value=127, is_toggle=True, toggle_declared=None))
-        self.assertEqual(FakeView.opened[-1].layout["controls"][0]["standard"], {"widget": "switch"})
-
-    def test_a_path_is_a_display_with_its_name(self):
-        self.controller(Zctrl(is_path=True, value="/zynthian/media/take 3.wav"))
-        view = FakeView.opened[-1]
-        self.assertEqual(view.layout["controls"][0]["standard"], {"widget": "display"})
-        self.assertEqual(view.calls[-1], ("value", 0, 0, "take 3.wav"))
-
-    def test_the_image_is_the_renderers_frame_over_the_panel_colour_and_the_stock_items_are_hidden(self):
-        ctrl = self.controller(Zctrl())
-        self.assertEqual(self.images[-1].tobytes(), shown(120, 100, self.config.color_panel_bg).tobytes())
-        self.assertEqual(ctrl.items[ctrl.graph]["state"], "hidden")
-        self.assertEqual(ctrl.items[ctrl.label_title]["state"], "hidden")
-        self.assertEqual(ctrl.items[ctrl.value_text]["state"], "hidden")
-        self.assertEqual(len(ctrl.of("image")), 1)
-
-    def test_a_new_value_is_given_to_the_view_and_drawn_once(self):
-        ctrl = self.controller(Zctrl(value=0.25))
-        view, drawn = FakeView.opened[-1], len(FakeView.opened[-1].draws)
-        ctrl.zctrl.value = 0.75
-        ctrl.calculate_plot_values()
-        ctrl.plot_value()
-        self.assertEqual(view.calls[-1], ("value", 0, 0.75, "0.75"))
-        self.assertEqual(len(view.draws), drawn + 1)
-        ctrl.plot_value()  # nothing moved: nothing drawn
-        self.assertEqual(len(view.draws), drawn + 1)
-
-    def test_the_selection_is_a_frame_in_the_highlight_colour_and_none_when_unselected(self):
-        ctrl = self.controller(Zctrl())
-        ctrl.set_hl()
-        frames = [o for o in ctrl.of("rectangle") if o.get("outline") and o["state"] == "normal"]
-        self.assertEqual([f["outline"] for f in frames], [self.config.color_hl])
-        ctrl.unset_hl()
-        self.assertEqual([o for o in ctrl.of("rectangle") if o.get("outline") and o["state"] == "normal"], [])
-        ctrl.set_color_readonly()
-        frames = [o for o in ctrl.of("rectangle") if o.get("outline") and o["state"] == "normal"]
-        self.assertEqual([f["outline"] for f in frames], [self.config.color_ctrl_bg_off])
-
-    def test_the_view_is_opened_with_the_presets_colours_at_their_roles_over_the_renderers_base(self):
-        self.controller(Zctrl())
-        look = FakeView.opened[-1].look
-        base = json.load(open(LOOK_BASE))
-        self.assertEqual(set(look["tokens"]), set(base["tokens"]), "every role of the renderer's look, no more")
-        for role, colour in VINTAGE_ROLES.items():
-            self.assertEqual(look["tokens"][role], colour, role)
-        for role in ("--surface-2", "--border", "--ink-faint", "--state-bypass", "--origin-fbs", "--font-file"):
-            self.assertEqual(look["tokens"][role], base["tokens"][role], role)
-
-    def test_a_hidden_controller_draws_nothing(self):
-        ctrl = self.Recorded(0, None, Zctrl(), hidden=True)
-        self.assertEqual(FakeView.opened, [])
-        self.assertEqual(self.images, [])
-
-    def test_a_blank_slot_shows_no_face_and_the_next_controller_is_drawn_again(self):
-        # a page's blank slot: the control screen configures the controller with None and shows it
-        ctrl = self.controller(Zctrl())
-        first = FakeView.opened[-1]
-        self.assertEqual([i["kind"] for i in ctrl.items.values()].count("image"), 1)
-        ctrl.config(None)
-        ctrl.show()
-        self.assertEqual([i["kind"] for i in ctrl.items.values()].count("image"), 0, "the last controller's face is gone")
-        self.assertTrue(first.closed)
-        self.assertIsNone(ctrl.view)
-        if ctrl.frame_item is not None:
-            self.assertEqual(ctrl.items[ctrl.frame_item]["state"], "hidden")
-        ctrl.config(Zctrl(symbol="resonance", short_name="Resonance", name="Resonance"))
-        ctrl.show()
-        self.assertEqual(FakeView.opened[-1].layout["controls"][0]["symbol"], "resonance")
-        self.assertEqual([i["kind"] for i in ctrl.items.values()].count("image"), 1)
-        self.assertEqual(ctrl.order.index(ctrl.midi_bind) > ctrl.order.index(ctrl.image_item), True, "the MIDI bind stays above")
-
-    def test_without_the_renderer_the_stock_widget_is_drawn_and_the_reason_said_once(self):
-        FakeView.refuse = FakeView.module.RendererAbsent("omx-panel's renderer (libomx-panel-render.so.0) is not installed: no")
-        with self.assertLogs(level="WARNING") as log:
-            a = self.controller(Zctrl())
-            b = self.controller(Zctrl(symbol="res", short_name="Res"))
-        self.assertEqual(len([m for m in log.output if "not installed" in m]), 1, log.output)
-        for ctrl in (a, b):
-            self.assertEqual(ctrl.items[ctrl.graph]["state"], "normal")
-            self.assertEqual(ctrl.of("image"), [])
-        self.assertEqual(self.images, [])
-
-    def test_a_renderer_that_stops_after_a_draw_gives_the_stock_items_back(self):
-        ctrl = self.controller(Zctrl(value=0.25))
-        self.assertEqual(ctrl.items[ctrl.graph]["state"], "hidden")
-        FakeView.stop_at_draw = True
-        ctrl.zctrl.value = 0.75
-        ctrl.calculate_plot_values()
-        with self.assertLogs(level="WARNING") as log:
-            ctrl.plot_value()
-        self.assertEqual(len([m for m in log.output if "stopped" in m]), 1, log.output)
-        self.assertEqual(ctrl.items[ctrl.graph]["state"], "normal")
-        self.assertEqual(ctrl.items[ctrl.value_text]["state"], "normal")
-        self.assertEqual(ctrl.of("image"), [])
-        self.assertEqual([o for o in ctrl.of("rectangle") if o["state"] == "normal"], [])
-        self.assertTrue(FakeView.opened[-1].closed)
-
-    def test_a_look_short_of_a_role_is_refused_by_name_once_and_every_controller_draws_stock(self):
-        base = json.load(open(LOOK_BASE))
-        self.reload({**base, "tokens": {k: v for k, v in base["tokens"].items() if k != "--legend"}})
-        with self.assertLogs(level="WARNING") as log:
-            a = self.controller(Zctrl())
-            b = self.controller(Zctrl(symbol="res", short_name="Res"))
-        self.assertEqual(len([m for m in log.output if "--legend" in m]), 1, log.output)
-        self.assertEqual(FakeView.opened, [], "no view is opened in the renderer's own look")
-        for ctrl in (a, b):
-            self.assertEqual(ctrl.items[ctrl.graph]["state"], "normal")
-            self.assertEqual(ctrl.of("image"), [])
-
-    def test_a_refused_look_is_refused_from_the_cache_once_the_base_is_gone(self):
-        """One read and one warning for a refused look: the second controller meets the cached refusal, never a missing
-        file read as 'no look' and a view in the renderer's own look."""
-        base = json.load(open(LOOK_BASE))
-        self.reload({**base, "tokens": {k: v for k, v in base["tokens"].items() if k != "--legend"}})
-        with self.assertLogs(level="WARNING") as log:
-            a = self.controller(Zctrl())
-            shutil.rmtree(self.tools)
-            b = self.controller(Zctrl(symbol="res", short_name="Res"))
-        self.assertEqual(len(log.output), 1, log.output)
-        self.assertIn("--legend", log.output[0])
-        self.assertEqual(FakeView.opened, [])
-        for ctrl in (a, b):
-            self.assertEqual(ctrl.items[ctrl.graph]["state"], "normal")
-
-    def test_a_look_without_tokens_is_refused_by_name_and_draws_stock(self):
-        self.reload({"theme": "dark"})
-        with self.assertLogs(level="WARNING") as log:
-            ctrl = self.controller(Zctrl())
-        self.assertTrue(any("tokens" in m for m in log.output), log.output)
-        self.assertEqual(FakeView.opened, [])
-        self.assertEqual(ctrl.items[ctrl.graph]["state"], "normal")
-
-    def test_the_look_is_read_once_for_every_controller(self):
-        self.controller(Zctrl())
-        shutil.rmtree(self.tools)  # the base is gone: a second read would find nothing
-        self.controller(Zctrl(symbol="res", short_name="Res"))
-        self.assertEqual(len(FakeView.opened), 2)
-        self.assertEqual(FakeView.opened[0].look, FakeView.opened[1].look)
-        self.assertEqual(FakeView.opened[1].look["tokens"]["--accent"], "#e8732c")
-
-    def test_the_midi_bind_text_stays_over_the_drawn_face(self):
-        ctrl = self.controller(Zctrl())
-        ctrl.plot_midi_bind("1#74", self.config.color_ml)
-        bind = ctrl.items[ctrl.midi_bind]
-        self.assertEqual((bind["state"], bind["text"], bind["fill"]), ("normal", "1#74", self.config.color_ml))
-        self.assertGreater(ctrl.order.index(ctrl.midi_bind), ctrl.order.index(ctrl.image_item), "the text is above the image")
-
-    def test_the_pickup_marker_sits_on_the_renderers_knob(self):
-        ctrl = self.controller(Zctrl(value=0.25))
-        ctrl.pickup = True
-        ctrl.zynpot_abs(0.5)
-        marker = ctrl.items[ctrl.graph_pickup]
-        self.assertEqual(marker["state"], "normal")
-        self.assertGreater(ctrl.order.index(ctrl.graph_pickup), ctrl.order.index(ctrl.image_item), "the marker is above the image")
-        # the knob: the renderer's target rect (10, 20, 100 x 60), its circle centred at (60, 50), radius 30
-        self.assertEqual(marker["coords"], (28.0, 18.0, 92.0, 82.0))
-        # the encoder at 0.5 of a 270 degree travel points straight up: Tk's 90 degrees, a 12 degree marker centred there
-        self.assertEqual((marker["start"], marker["extent"]), (84.0, 12))
-        self.assertEqual(marker["outline"], self.config.color_ctrl_tx_off)
-        ctrl.zynpot_abs(0.25)  # within 1 % of the value: the pickup ends and the marker goes
-        self.assertEqual(ctrl.items[ctrl.graph_pickup]["state"], "hidden")
-
-    def test_the_pickup_marker_has_no_place_on_a_control_without_a_knob(self):
-        FakeView.rect = None
-        ctrl = self.controller(Zctrl(ticks=[0, 1, 2, 3], labels=["Sine", "Saw", "Square", "Noise"], value=2))
-        ctrl.pickup = True
-        ctrl.zynpot_abs(0.5)
-        self.assertEqual(ctrl.items[ctrl.graph_pickup]["state"], "hidden")
-
-
-# ---- The pixels, where the renderer is built (CI, the Pi): zynthian-ui#74
-
-def rgb(colour):
-    return tuple(int(colour[k:k + 2], 16) for k in (1, 3, 5))
-
-
-def knob_pointer():
-    """The console's --knob-pointer as tokens.css gives it, from the console pin omx-panel's look.json carries
-    (console.tokens, the commit of tokens.css it is held to in console.commit): the one public copy of tokens.css."""
-    with open(LOOK_BASE) as f:
-        return json.load(f)["console"]["tokens"]["--knob-pointer"]
-
-
-KNOB_POINTER = knob_pointer()
-
-
-@unittest.skipUnless(Image and renderer(), "omx-panel's renderer is not installed")
-class RealRenderer(unittest.TestCase):
-    """The vintage controller through the real libomx-panel-render.so.0: the drawn controller's own one-knob
-    description, opened with zynthian_ui_look.tokens over the fixture, drawn by the library and painted by the
-    controller; the colours are read where the renderer puts them. The knob is the look's drawing (omx-panel 0.15:
-    look.json drawings.knob-vintage, its pointer stroked in {console:--knob-pointer}); %7's ruling (#77 item 1): the
-    pointer is the console's vintage token --knob-pointer of tokens.css, read here from the console pin the look carries
-    (look.json console.tokens, held to tokens.css), never a literal. The panel's face is --surface, round the section
-    the knob sits in."""
-
-    W, H = 240, 200
-
-    def setUp(self):
-        with open(LOOK_BASE) as f:
-            self.tools = tools_dir_with(json.load(f))
-        self.addCleanup(shutil.rmtree, self.tools, True)
-        cls, self.config, loaded = load_controller(VINTAGE, tools_dir=self.tools)
-        self.look = loaded["zyngine.zynthian_ui_look"]
-        loaded["zyngine.zynthian_omx_panel_view"].View = real_view.View  # the renderer itself, not the stand-in
-
-        class Shown(cls):
-            def photo_of(self, image):
-                return ("photo", image.size)
-
-        self.ctrl = Shown(0, None, Zctrl(value=0.5))
-        self.ctrl._w, self.ctrl._h = self.W, self.H
-        self.ctrl.on_size(None)
-        self.assertFalse(self.ctrl.stock, "the renderer took the description and the look")
-        self.addCleanup(self.ctrl.view.close)
-
-    def knob(self):
-        """The knob's centre and radius: its target rect is its bounding square."""
-        (x, y, w, h), _ = self.ctrl.view.target_rect(0)
-        return x + w / 2, y + h / 2, h / 2
-
-    def beside(self, image):
-        """The colours on the knob's row from the canvas edge to the knob's rim: the panel's border, its face, the
-        section the knob sits in, each in its role's colour."""
-        cx, cy, r = self.knob()
-        return {image.getpixel((x, int(cy))) for x in range(int(cx - r))}
-
-    def ray(self, image):
-        """The colours on the knob's 12 o'clock ray, from its centre to its rim: where the pointer stands at 0.5."""
-        cx, cy, r = self.knob()
-        return {image.getpixel((x, int(cy - dy)))[:3] for dy in range(int(r)) for x in (int(cx) - 1, int(cx), int(cx) + 1)}
-
-    def test_the_knobs_pointer_is_the_knob_pointer_token_and_the_face_the_surface(self):
-        view = self.ctrl.view
-        self.assertEqual(view.layout["controls"][0]["standard"], {"widget": "knob"})
-        self.assertEqual(self.ctrl.value_plot, 0.5)  # the pointer stands at 12 o'clock
-        pointer, surface = rgb(KNOB_POINTER), rgb(VINTAGE_ROLES["--surface"])
-        # the renderer's own pixels: opaque, in the look's colours
-        raw = Image.frombuffer("RGBA", (self.W, self.H), view.draw(self.W, self.H)[0], "raw", "RGBA", 0, 1)
-        self.assertIn(pointer, self.ray(raw), "the pointer is tokens.css's --knob-pointer")
-        self.assertNotIn(rgb(VINTAGE_ROLES["--accent"]), self.ray(raw), "the pointer is not the accent")
-        self.assertIn(surface + (255,), self.beside(raw))
-        self.assertNotIn(pointer + (255,), self.beside(raw))
-        # and what the controller shows: the same pixels over color_panel_bg
-        self.assertIn(pointer, self.ray(self.ctrl.image))
-        self.assertEqual(raw.getpixel((0, 0))[3], 0)  # outside the panel's round corner the renderer draws nothing
-        self.assertEqual(self.ctrl.image.getpixel((0, 0))[:3], rgb(self.config.color_panel_bg))
-        self.assertIn(surface + (255,), self.beside(self.ctrl.image))
-
-    def test_the_colours_follow_the_look_given(self):
-        # the same description in a look whose console pin names another --knob-pointer and whose panel is another
-        # colour: the pointer follows the token and the face the palette, so the colours above are the look's and not
-        # the renderer's own
-        with open(LOOK_BASE) as f:
-            base = json.load(f)
-        base["console"]["tokens"]["--knob-pointer"] = "#123456"
-        colours = types.SimpleNamespace(**{**vars(self.config), "color_panel_bg": "#654321"})
-        other = real_view.View(self.ctrl.view.layout, look=self.look.tokens(colours, base))
-        self.addCleanup(other.close)
-        other.set_title("", "")
-        other.set_surface(self.W, self.H)
-        other.set_value(0, 0.5, "0.50")
-        raw = Image.frombuffer("RGBA", (self.W, self.H), other.draw(self.W, self.H)[0], "raw", "RGBA", 0, 1)
-        self.assertIn(rgb("#123456"), self.ray(raw))
-        self.assertNotIn(rgb(KNOB_POINTER), self.ray(raw))
-        self.assertIn(rgb("#654321") + (255,), self.beside(raw))
-        self.assertNotIn(rgb(VINTAGE_ROLES["--surface"]) + (255,), self.beside(raw))
 
 # ---- The plugin panel over a look short of a role
 

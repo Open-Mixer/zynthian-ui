@@ -9,16 +9,16 @@
 # read an empty message, took the renderer as stopped and killed it (SIGKILL), and every controller was drawn stock for
 # the rest of the session.
 #
-# Four things are held here, each over the real files:
+# Three things are held here, each over the real files (the controller's rows went with the renderer's controller, zynthian-ui#93):
 # - the connection: two threads driving zyngine/zynthian_omx_panel_view.py's own View over a real renderer process
 #   (`--serve`, as the UI starts it), each taking its own answer, the renderer still running. The library the process
 #   loads is a stub built here from C (the race is in the client, not in what the library draws);
-# - the owner: the drawn controller and the panel widget give the renderer's calls to Tk's thread when a page change
-#   reaches them from another one, so a view is never closed under a draw;
+# - the owner: the panel widget gives the renderer's calls to Tk's thread when a page change reaches it from another
+#   one, so a view is never closed under a draw;
 # - the renderer's files: a closed view's shared memory is let go by the renderer's process, so a long walk does not
 #   end in `Too many open files` and stock controllers;
-# - the look after a stop: the renderer is started again for the next page, the controllers are drawn in the look
-#   again, and a renderer that stops every time is given up after STOPS_IN_A_ROW starts, said by name.
+# - the look after a stop: the renderer is started again for the next page, and a renderer that stops every time is
+#   given up after STOPS_IN_A_ROW starts, said by name.
 
 import importlib.util
 import json
@@ -32,7 +32,6 @@ import types
 import unittest
 from unittest import mock
 
-from tests import test_ui_look_widgets as look_widgets
 from tests.omx_panel_widget_stub import load_widget
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -247,7 +246,7 @@ class TheRendererLetsGoOfAClosedView(StubRenderer):
         self.assertEqual(self.files(), before, "the renderer's process holds a file per size a view was drawn at")
 
 
-# ---- The drawn controller: the look after a stop, and whose thread calls the renderer
+# ---- Tk's thread, as the panel widget's tests drive it
 
 class Idle:
     """Tk's after_idle as the widgets use it: what was given to Tk's thread, run when the test says."""
@@ -262,83 +261,6 @@ class Idle:
         while self.due:
             func, args = self.due.pop(0)
             func(*args)
-
-
-class ControllerHarness(unittest.TestCase):
-    def setUp(self):
-        if look_widgets.Image is None:
-            self.skipTest("no PIL")
-        with open(look_widgets.LOOK_BASE) as f:
-            self.tools = look_widgets.tools_dir_with(json.load(f))
-        self.addCleanup(shutil.rmtree, self.tools, True)
-        cls, self.config, modules = look_widgets.load_controller(look_widgets.VINTAGE, tools_dir=self.tools)
-        self.panel_view = modules["zyngine.zynthian_omx_panel_view"]
-        self.idle = idle = Idle()
-
-        class Recorded(cls):
-            def photo_of(self, image):
-                return ("photo", image.size)
-
-            def after_idle(self, func, *args):
-                idle.after_idle(func, *args)
-
-        self.Recorded = Recorded
-
-    def controller(self, zctrl, w=120, h=100):
-        ctrl = self.Recorded(0, None, zctrl)
-        ctrl._w, ctrl._h = w, h
-        ctrl.on_size(None)
-        return ctrl
-
-    def stop_under(self, ctrl):
-        """The renderer stops at the controller's next draw: the stock items come back."""
-        look_widgets.FakeView.stop_at_draw = True
-        ctrl.zctrl.value = 0.75
-        ctrl.calculate_plot_values()
-        with self.assertLogs(level="WARNING"):
-            ctrl.plot_value()
-        look_widgets.FakeView.stop_at_draw = False
-        self.assertEqual(ctrl.of("image"), [])
-
-    def page(self, ctrl, zctrl):
-        """A page change as zynthian_gui_control.set_zcontroller makes it."""
-        ctrl.config(zctrl)
-        ctrl.show()
-
-
-class TheLookAfterAStop(ControllerHarness):
-    def test_the_next_page_is_drawn_in_the_look_again(self):
-        ctrl = self.controller(look_widgets.Zctrl())
-        self.stop_under(ctrl)
-        opened = len(look_widgets.FakeView.opened)
-        self.page(ctrl, look_widgets.Zctrl(symbol="gain", short_name="Gain"))
-        self.assertEqual(len(look_widgets.FakeView.opened), opened + 1, "the next page opens a view again")
-        self.assertEqual(look_widgets.FakeView.opened[-1].symbols, ["gain"])
-        self.assertEqual(len(ctrl.of("image")), 1, "the renderer's face is on the canvas again")
-        self.assertEqual(ctrl.items[ctrl.graph]["state"], "hidden", "the stock arc is hidden again")
-        self.assertEqual(ctrl.items[ctrl.value_text]["state"], "hidden")
-
-    def test_the_page_the_renderer_stopped_on_stays_stock_until_the_page_changes(self):
-        ctrl = self.controller(look_widgets.Zctrl())
-        self.stop_under(ctrl)
-        opened = len(look_widgets.FakeView.opened)
-        for value in (0.1, 0.2, 0.3):  # the plot task, every 32 ms
-            ctrl.zctrl.value = value
-            ctrl.calculate_plot_values()
-            ctrl.plot_value()
-        self.assertEqual(len(look_widgets.FakeView.opened), opened, "no view is opened by the plot task")
-        self.assertEqual(ctrl.of("image"), [])
-
-    def test_a_renderer_that_is_not_installed_stays_stock_on_the_next_page(self):
-        absent = self.panel_view.RendererAbsent("omx-panel's renderer (libomx-panel-render.so.0) is not installed")
-        look_widgets.FakeView.refuse = absent
-        with self.assertLogs(level="WARNING"):
-            ctrl = self.controller(look_widgets.Zctrl())
-        look_widgets.FakeView.refuse = None
-        opened = len(look_widgets.FakeView.opened)
-        self.page(ctrl, look_widgets.Zctrl(symbol="gain", short_name="Gain"))
-        self.assertEqual(len(look_widgets.FakeView.opened), opened, "an absent renderer is not asked again")
-        self.assertEqual(ctrl.items[ctrl.graph]["state"], "normal")
 
 
 def recording_threads(base, calls):
@@ -376,47 +298,6 @@ def in_another_thread(func):
     t.start()
     t.join(30)
     return said
-
-
-class TheRendererIsTksThreads(ControllerHarness):
-    def setUp(self):
-        super().setUp()
-        self.calls = []
-        self.panel_view.View = recording_threads(look_widgets.FakeView, self.calls)
-
-    def others(self):
-        return [name for name, thread in self.calls if thread is not threading.main_thread()]
-
-    def test_a_page_change_from_another_thread_is_drawn_by_tks_thread(self):
-        ctrl = self.controller(look_widgets.Zctrl())
-        del self.calls[:]
-        said = in_another_thread(lambda: self.page(ctrl, look_widgets.Zctrl(symbol="gain", short_name="Gain")))
-        self.assertEqual(said, [])
-        self.assertEqual(self.others(), [], "the page change's thread called the renderer itself")
-        self.assertEqual(len(self.idle.due), 1, "one draw is given to Tk's thread, however many times the page change asks")
-        self.idle.run()
-        self.assertEqual(look_widgets.FakeView.opened[-1].symbols, ["gain"])
-        self.assertEqual(len(look_widgets.FakeView.opened[-1].draws), 1)
-        self.assertEqual(len(ctrl.of("image")), 1)
-
-    def test_the_pickup_marker_from_another_thread_is_placed_by_tks_thread(self):
-        ctrl = self.controller(look_widgets.Zctrl())
-        del self.calls[:]
-        said = in_another_thread(lambda: ctrl.zynpot_abs(0.9))
-        self.assertEqual(said, [])
-        self.assertEqual(self.others(), [], "the encoder's thread called the renderer itself")
-        self.idle.run()
-        self.assertIn("target_rect", [name for name, _ in self.calls])
-
-    def test_a_blank_slot_from_another_thread_is_cleared_by_tks_thread(self):
-        ctrl = self.controller(look_widgets.Zctrl())
-        del self.calls[:]
-        said = in_another_thread(lambda: self.page(ctrl, None))
-        self.assertEqual(said, [])
-        self.assertEqual(self.others(), [], "the page change's thread closed the view itself")
-        self.idle.run()
-        self.assertEqual(ctrl.of("image"), [])
-        self.assertIn("close", [name for name, _ in self.calls])
 
 
 # ---- The panel widget: its view is built by Tk's thread
