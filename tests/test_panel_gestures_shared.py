@@ -158,13 +158,9 @@ NO_SURFACE = {
 }
 
 
-# scripts this engine answers DIFFERENTLY from omx-panel's reference (found by this test, not yet brought in line): the
-# declaration's paint is touch required, mouse optional (schema/gestures.json), and the reference's mouse paints only where a
-# surface asks for it (paintWithMouse); BarGroup paints on any pointer type.
-DIVERGES = {
-    "8-band graphic EQ: a mouse sweep drags the pressed bar and paints nothing":
-        "BarGroup ignores the pointer type: a mouse sweep across columns paints, where the reference drags the pressed bar only",
-}
+# scripts this engine answers DIFFERENTLY from omx-panel's reference (found by this test, not yet brought in line); empty
+# since #91: BarGroup's mouse paints only where the surface asks for it (paintWithMouse), as the reference's does.
+DIVERGES = {}
 
 
 def tolerance(travel, scale_fraction):

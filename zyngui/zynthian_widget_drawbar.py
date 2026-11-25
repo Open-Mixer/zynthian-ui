@@ -123,7 +123,9 @@ class zynthian_widget_drawbar(zynthian_widget_base.zynthian_widget_base):
                              lambda i=i: self._value_to_position(self._drawbar_ctrl(i), self._drawbar_ctrl(i).value),
                              lambda pos, i=i: self._drawbar_ctrl(i).set_value(self._position_to_value(self._drawbar_ctrl(i), pos)),
                              (self.border + i * width, 0, width, self.height)))
-            self.gestures = pg.BarGroup(bars, downward=True)
+            # Tk reports a touchscreen's finger as its one mouse pointer, and a sweep across the drawbars is how they are
+            # set on a touchscreen, so this surface asks for paint on the mouse (omx-panel's paintWithMouse)
+            self.gestures = pg.BarGroup(bars, downward=True, paint_with_mouse=True)
             self._gestures_for = key
         return self.gestures
 
