@@ -85,6 +85,32 @@ renderer the Pi's 0.13.7, 30 s per drag at 1024 x 416, the vertical drag (run D)
 - Runs taken before the drag direction was fixed are kept as measured lines below. Their band-dot rows are valid;
   their bar rows moved nothing, and one in-process band-dot run collapsed (canvas up to 6.3 s) when it ran second.
 
+## The consumer of the renderer's dirty draw (#59, the zynthian-ui half with omx-panel#78; figure owed)
+
+The view now keeps ONE buffer between draws (cff103c0): in the renderer's process it is the UI's shared memory itself,
+drawn into straight, no copy. When the loaded renderer exports `omx_panel_view_draw_dirty` (Open-Mixer/omx-panel#78,
+unreleased as this is written) the view draws through it and answers the rects the renderer repainted; the widget and
+`tools/pi/blit_per_frame_on_the_pi.py` hand them to `PanelImage`, which blits only those (the band of changed rows
+stays the path for a renderer without the entry). Both halves of the drag frame that were red above, the whole-panel
+draw (19 to 25 ms) and the blit, are then bounded by the changed cells. Proof so far is `tests/test_omx_panel_dirty_draw.py`
+(real PIL, a fake renderer holding the entry's contract; the renderer's process run as a thread over the shared memory):
+one knob change draws and blits only its cell, byte-equal to a full draw; a view that made a new buffer per draw never
+gets a cell (4 red under that sabotage).
+
+**The Pi figure is owed.** It needs libomx-panel-render0 from an omx-panel release that ships the entry; then, on the
+Pi, from this repository's checkout:
+
+```
+DISPLAY=:0 XAUTHORITY=<the X authority file of the Pi's UI user> ZYNTHIAN_OMX_PANEL_TOOLS=/usr/share/omx-panel/tools DRAG_S=30 W=1024 H=416 \
+  python3 tools/pi/blit_per_frame_on_the_pi.py
+```
+
+and once more with `ORDER=in-process-first`. Green is `"red": false` on every line: a p99 frame at or under 16.7 ms. The
+lines go below with their commit. Until they are taken, #59 stays open: the budget is not claimed from this desk.
+The script's `pixels blitted` is the area of the boxes PanelImage copied per frame (the older lines' `rows blitted`
+summed box heights). The no-entry branch of `draw_into` and the `WithoutTheEntry` tests go once that omx-panel release is
+this repository's floor: the full draw is then no path of its own.
+
 ## The measured lines (#59)
 
 - D (vertical drag): `{"drag": "bar", "plugin": "omx-geq", "control": "band08", "size": "1024x416", "frames": 897, "fps": 29.9, "input": {"p50": 0.39, "p99": 0.59, "max": 1.33}, "draw": {"p50": 25.02, "p99": 25.44, "max": 37.62}, "blit": {"p50": 8.75, "p99": 9.03, "max": 96.14}, "canvas": {"p50": 0.46, "p99": 1.32, "max": 1.65}, "frame": {"p50": 34.63, "p99": 35.7, "max": 125.44}, "rows blitted": {"p50": 11, "p99": 21, "max": 416}, "red": true, "where": "renderer process", "commit": ""}`
