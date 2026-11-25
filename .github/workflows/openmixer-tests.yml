@@ -47,6 +47,9 @@ jobs:
 
       - name: Add the OpenMixer channel
         uses: Open-Mixer/.github/.github/actions/add-openmixer@openmixer-v1
+        with:
+          # the fork adapts to the wave on staging (omx-contract 0.23: the contract directory has no schema-major level)
+          staging: 'true'
 
       - name: Install plugin-hostd from the channel
         run: |
