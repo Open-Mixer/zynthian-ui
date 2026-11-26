@@ -56,6 +56,7 @@ from zyngui.zynthian_gui_none import zynthian_gui_none
 from zyngui.zynthian_gui_info import zynthian_gui_info
 from zyngui.zynthian_gui_help import zynthian_gui_help
 from zyngui.zynthian_gui_splash import zynthian_gui_splash
+from zyngui.zynthian_gui_update_progress import zynthian_gui_update_progress, update_running
 from zyngui.zynthian_gui_loading import zynthian_gui_loading
 from zyngui.zynthian_gui_option import zynthian_gui_option
 from zyngui.zynthian_gui_confirm import zynthian_gui_confirm
@@ -185,6 +186,7 @@ class zynthian_gui:
 
         self.debug_thread = None
         self.busy_thread = None
+        self.startup_done = False  # Set when the start task has shown the initial screen
         self.control_thread = None
         self.status_thread = None
         self.cuia_thread = None
@@ -568,6 +570,7 @@ class zynthian_gui:
         self.screens['info'] = zynthian_gui_info()
         self.screens['help'] = zynthian_gui_help()
         self.screens['splash'] = zynthian_gui_splash()
+        self.screens['update_progress'] = zynthian_gui_update_progress()
         self.screens['loading'] = zynthian_gui_loading()
         self.screens['option'] = zynthian_gui_option()
         self.screens['confirm'] = zynthian_gui_confirm()
@@ -719,6 +722,7 @@ class zynthian_gui:
 
         # Show initial screen
         self.show_screen(init_screen, zynthian_gui.SCREEN_HMODE_RESET)
+        self.startup_done = True
 
     def hide_screens(self, exclude=None):
         if not exclude:
@@ -947,6 +951,25 @@ class zynthian_gui:
         self.current_screen = 'splash'
         self.hide_screens(exclude='splash')
         self.screen_lock.release()
+
+    def show_update_progress(self):
+        self.screen_lock.acquire()
+        self.cancel_screen_timer()
+        self.screens['update_progress'].show()
+        self.current_screen = 'update_progress'
+        self.hide_screens(exclude='update_progress')
+        self.screen_lock.release()
+
+    def close_update_progress(self):
+        if self.current_screen == 'update_progress':
+            try:
+                self.close_screen()
+            except Exception as e:
+                logging.error(f"Can't close update progress screen: {e}")
+            if self.current_screen == 'update_progress':
+                self.show_screen_reset("root")
+        else:
+            self.screens['update_progress'].hide()
 
     def show_loading(self, title="", details=""):
         self.screens['loading'].set_title(title)
@@ -3622,6 +3645,12 @@ class zynthian_gui:
         busy_timeout = 0
         busy_warn_time = 300
         while not self.exit_flag:
+            # Software update running: its progress screen must stay. No busy screens.
+            # (Not during UI startup: the startup loading screen works as usual)
+            if self.startup_done and (self.current_screen == "update_progress" or update_running()):
+                busy_timeout = 0
+                sleep(0.1)
+                continue
             if self.state_manager.is_busy() and (monotonic() - self.state_manager.busy_ts) > 0.1 :
                 busy_timeout += 1
                 busy_message = self.state_manager.get_busy_message()
@@ -4493,6 +4522,19 @@ class zynthian_gui:
     def start_polling(self):
         self.osc_timeout()
         self.plot_zctrls_task()
+        self.update_progress_task()
+
+    def update_progress_task(self):
+        """Show the software update progress screen while an update is running (from any source)"""
+        if self.exit_flag:
+            return
+        try:
+            # Not while starting: the start task shows the initial screen when it ends
+            if self.startup_done and self.current_screen != 'update_progress' and update_running():
+                self.show_update_progress()
+        except Exception as e:
+            logging.error(e)
+        zynthian_gui_config.top.after(2000, self.update_progress_task)
 
     def after(self, msec, func):
         zynthian_gui_config.top.after(msec, func)
