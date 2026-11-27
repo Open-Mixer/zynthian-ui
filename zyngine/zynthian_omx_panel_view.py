@@ -597,6 +597,38 @@ def curve_words(root=None):
     return _curve_words[root]
 
 
+# ---- The words of a plugin's own panel: omx-panel's domain `panel`, read by code ----
+
+PANEL_DOMAIN = ("panel", "panel.json")  # <contract dir>/panel/panel.json, installed by omx-panel-contract
+_panel_words = {}  # (contract directory, item) => {code: word}
+
+
+def panel_words(item, root=None):
+    """{code: word} of a words item of omx-panel's domain `panel` (PANEL_DISPLAY_KINDS, PANEL_DISPLAY_SOURCES), each
+    word's `x-code` as the domain document of the contract directory declares it (OMX_CONTRACT_PATH's first, else the
+    installed one). {} when the document cannot be read, said once."""
+    root = root or (os.environ.get("OMX_CONTRACT_PATH") or CONTRACT_PATH).split(":")[0]
+    if (root, item) not in _panel_words:
+        try:
+            with open(os.path.join(root, *PANEL_DOMAIN)) as f:
+                words = json.load(f)["components"]["schemas"][item]["oneOf"]
+            _panel_words[root, item] = {w["x-code"]: w["const"] for w in words}
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            logging.warning("omx-panel's domain panel has no readable %s in %s (%s): a panel's numbers stay numbers",
+                            item, root, e)
+            _panel_words[root, item] = {}
+    return _panel_words[root, item]
+
+
+def panel_word(item, value, root=None):
+    """A display's kind or source of a plugin's own panel as its word: omx-clap-scan prints the number (omx-clap-core
+    keeps no panel words), the word's code in `item` of the panel domain; a word is read as it is. A number the item
+    has no word for stays the number, so it matches no word."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return panel_words(item, root).get(value, value)
+    return value
+
+
 def curve_bind_line(instance, index, description):
     """The curve_bind line of display `index` of a description (`omx-panel describe`'s): its kind, the family and a
     term per role, <role>[.<index>]=<symbol>:<unit>[@<shape>|...], the symbols as the daemon sets them. None for a

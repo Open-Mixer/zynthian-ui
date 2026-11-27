@@ -1,0 +1,292 @@
+{
+ "plugin": {
+  "format": "clap",
+  "id": "org.openmixer.comp",
+  "version": "0.21.1"
+ },
+ "panel": {
+  "family": "dynamics",
+  "fingerprint": "3ca5adc1d410e6ee10d4609470bb649d633fe4fdffbde7f2d811ea097e5b0d2c",
+  "sections": [
+   {
+    "key": "comp",
+    "labelKey": "fx.comp.section.comp",
+    "label": "Comp"
+   },
+   {
+    "key": "key",
+    "labelKey": "fx.comp.section.key",
+    "label": "Key"
+   },
+   {
+    "key": "duck",
+    "labelKey": "fx.comp.section.duck",
+    "label": "Duck"
+   }
+  ],
+  "controls": [
+   {
+    "paramId": 0,
+    "section": 0,
+    "widget": "knob",
+    "labelKey": "fx.comp.threshold_db",
+    "label": "Threshold",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 1,
+    "section": 0,
+    "widget": "knob",
+    "labelKey": "fx.comp.ratio",
+    "label": "Ratio",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 2,
+    "section": 0,
+    "widget": "knob",
+    "labelKey": "fx.comp.knee_db",
+    "label": "Knee",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 3,
+    "section": 0,
+    "widget": "knob",
+    "labelKey": "fx.comp.attack_ms",
+    "label": "Attack",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 4,
+    "section": 0,
+    "widget": "knob",
+    "labelKey": "fx.comp.release_ms",
+    "label": "Release",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 15,
+    "section": 0,
+    "widget": "knob",
+    "labelKey": "fx.comp.hold_ms",
+    "label": "Hold",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 5,
+    "section": 0,
+    "widget": "knob",
+    "labelKey": "fx.comp.makeup_db",
+    "label": "Makeup",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 6,
+    "section": 0,
+    "widget": "knob",
+    "labelKey": "fx.comp.mix_pct",
+    "label": "Mix",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 7,
+    "section": 0,
+    "widget": "auto",
+    "labelKey": "fx.comp.kind",
+    "label": "Kind",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 8,
+    "section": 0,
+    "widget": "auto",
+    "labelKey": "fx.comp.detector_oversampling",
+    "label": "Detector Oversampling",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 9,
+    "section": 0,
+    "widget": "auto",
+    "labelKey": "fx.comp.detector_topology",
+    "label": "Detector Topology",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 19,
+    "section": 0,
+    "widget": "auto",
+    "labelKey": "fx.comp.release_mode",
+    "label": "Release Mode",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 10,
+    "section": 1,
+    "widget": "auto",
+    "labelKey": "fx.comp.key_source",
+    "label": "Key Source",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 11,
+    "section": 1,
+    "widget": "knob",
+    "labelKey": "fx.comp.key_hp_hz",
+    "label": "Key HP",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 12,
+    "section": 1,
+    "widget": "knob",
+    "labelKey": "fx.comp.key_lp_hz",
+    "label": "Key LP",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 13,
+    "section": 1,
+    "widget": "knob",
+    "labelKey": "fx.comp.key_tilt_db",
+    "label": "Key Tilt",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 16,
+    "section": 1,
+    "widget": "auto",
+    "labelKey": "fx.comp.detect_link",
+    "label": "Detect Link",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 14,
+    "section": 1,
+    "widget": "switch",
+    "labelKey": "fx.comp.key_listen",
+    "label": "Key Listen",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 17,
+    "section": 2,
+    "widget": "switch",
+    "labelKey": "fx.comp.duck",
+    "label": "Duck",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   },
+   {
+    "paramId": 18,
+    "section": 2,
+    "widget": "knob",
+    "labelKey": "fx.comp.range_db",
+    "label": "Duck Range",
+    "visibleParamId": null,
+    "visibleMask": "0"
+   }
+  ],
+  "roles": [
+   {
+    "role": "threshold",
+    "index": 0,
+    "paramId": 0
+   },
+   {
+    "role": "ratio",
+    "index": 0,
+    "paramId": 1
+   },
+   {
+    "role": "attack",
+    "index": 0,
+    "paramId": 3
+   },
+   {
+    "role": "release",
+    "index": 0,
+    "paramId": 4
+   },
+   {
+    "role": "knee",
+    "index": 0,
+    "paramId": 2
+   },
+   {
+    "role": "makeup",
+    "index": 0,
+    "paramId": 5
+   },
+   {
+    "role": "mix",
+    "index": 0,
+    "paramId": 6
+   }
+  ],
+  "displays": [
+   {
+    "kind": 1,
+    "section": 0,
+    "source": "family",
+    "meterIds": [
+     1,
+     2
+    ],
+    "curveIndex": 0,
+    "floorParamId": null,
+    "floorDb": 0,
+    "labelKey": "fx.comp.display.transfer_curve",
+    "label": "Comp"
+   },
+   {
+    "kind": 0,
+    "section": 0,
+    "source": "meters",
+    "meterIds": [
+     0,
+     null
+    ],
+    "curveIndex": 0,
+    "floorParamId": null,
+    "floorDb": 0,
+    "labelKey": "fx.comp.display.gain_reduction_bar",
+    "label": "Gain reduction"
+   }
+  ],
+  "placementDefaults": [],
+  "meters": [
+   {
+    "symbol": "compGr",
+    "kind": "gain-reduction"
+   },
+   {
+    "symbol": "compIn",
+    "kind": "level"
+   },
+   {
+    "symbol": "compOut",
+    "kind": "level"
+   }
+  ]
+ }
+}
