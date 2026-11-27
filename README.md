@@ -13,9 +13,13 @@
 > setting in `/zynthian/config/plugin-hostd.conf`: with `grouping off` each plugin runs in a worker of its own, and
 > `grouping on` lets the daemon plan which neighbours in series share one. How to install and use it, the measurements and where it stands:
 > <https://openmixer.org/docs/zynthian>.
-> The changes are offered upstream one step at a time, starting with
-> [zynthian-sys#228](https://github.com/zynthian/zynthian-sys/pull/228); the companion fork is
-> [FreeMixer/zynthian-sys](https://github.com/FreeMixer/zynthian-sys). Install the daemon and the packages from the
+> The changes are prepared for upstream as a series on upstream's `tomita`, one PR per step, each branch the one
+> before it plus one change: `upstream-series-t20261126/02..10` here and `upstream-series-t20261126b/01..04` on the
+> companion fork, [FreeMixer/zynthian-sys](https://github.com/FreeMixer/zynthian-sys), whose settings keep the
+> stock values (`ZYNTHIAN_PLUGIN_ENGINE=jalv`, mod-host by `jack_load`). None of it is posted upstream yet. On a
+> Raspberry Pi 5 the series loads a snapshot of three LV2 instruments through jalv with the stock setting and
+> through plugin-hostd with `ZYNTHIAN_PLUGIN_ENGINE=plugin-hostd`, and the zynthian journal shows no error that this
+> fork's own run does not show (2026-11-27). Install the daemon and the packages from the
 > [FreeMixer channel](https://www.openmixer.org).
 >
 > PRs merge into `openmixer`, not the default branch: close the issue by hand at merge.
