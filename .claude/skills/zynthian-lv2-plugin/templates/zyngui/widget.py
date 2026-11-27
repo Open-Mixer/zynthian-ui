@@ -106,7 +106,6 @@ class zynthian_widget_@@SYMBOL@@(zynthian_widget_base.zynthian_widget_base):
             self.widget_canvas.coords(items['bar'], x0, y0, x0 + frac * (x1 - x0), y1)
             self.widget_canvas.itemconfigure(items['label'], text=label)
             self.widget_canvas.itemconfigure(items['value'], text=text)
-
     # Optional hooks (return True to consume the event, otherwise the control view handles it):
     # def zynpot_cb(self, i, dval): ...
     # def switch(self, i, t): ...
