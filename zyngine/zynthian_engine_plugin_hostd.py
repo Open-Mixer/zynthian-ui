@@ -1036,8 +1036,8 @@ def own_panel(path):
 def panel_meters(layout, panel):
     """`layout` with the meters the plugin's own panel declares, when plugin-hostd's panel reply carries them
     (clap.meters/1): the layout's meters are the panel's, in its order, each with describe's facts of the meter of
-    that symbol, and each display's meter ids are the panel's display's, indices into those meters (the gain-reduction
-    bar reads its meter 0). An id beyond them is said once and drawn as none. A panel that carries no meters leaves
+    that symbol, and each display's meter ids are the panel's display of that kind's, indices into those meters (the
+    gain-reduction bar reads its meter 0); a kind the panel gives as a code is read as its word first. An id beyond them is said once and drawn as none. A panel that carries no meters leaves
     describe's meters and their ids as they are."""
     try:
         with open(panel) as f:
@@ -1052,9 +1052,9 @@ def panel_meters(layout, panel):
     for m in meters:
         symbol = str(m.get("symbol") or m.get("id"))
         drawn.append({**m, **facts.get(symbol, {}), "symbol": symbol})
-    own = {}
+    own = {}  # the panel's displays by kind word: omx-clap-scan prints the kind's code (panel_view.panel_word)
     for d in declared.get("displays") or []:
-        own.setdefault(d.get("kind"), []).append(d)
+        own.setdefault(panel_view.panel_word("PANEL_DISPLAY_KINDS", d.get("kind")), []).append(d)
     displays = []
     for d in layout.get("displays") or []:
         mine = own.get(d.get("kind")) or []

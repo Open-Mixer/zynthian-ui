@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openmixer.org/contract/panel",
+  "x-omx-contract": "0.23",
+  "info": {
+    "title": "The panel vocabulary: families, widgets, display kinds, display axes, display sources and placements of a panel",
+    "version": "0.1.0",
+    "x-owner": "omx-panel",
+    "x-stability": "experimental"
+  },
+  "components": {
+    "schemas": {
+      "PANEL_DISPLAY_KINDS": {
+        "description": "The displays a declared panel may carry, and the extension serves (org.openmixer.panel-description/1), in the order of their codes: a panel description names a display by its place here. omx-panel's tools/panel-description.mjs and omx-clap-core's panel tables read them, and keep their code.",
+        "x-since": "0.1.0",
+        "x-why": "omx-clap-core restated these words by hand beside the families and widgets; a display kind is a declaration, so it lives here (vocabulary-owner rule).",
+        "x-c-codes": true,
+        "x-c-xmacro": true,
+        "oneOf": [
+          {
+            "const": "gain_reduction_bar",
+            "title": "gainReductionBar",
+            "description": "a bar of the gain a dynamics processor takes off",
+            "x-code": 0,
+            "x-text": "A bar showing the gain reduction."
+          },
+          {
+            "const": "transfer_curve",
+            "title": "transferCurve",
+            "description": "a dynamics processor's output level against its input level",
+            "x-code": 1,
+            "x-text": "The dynamics transfer curve: output level against input level."
+          },
+          {
+            "const": "eq_response",
+            "title": "eqResponse",
+            "description": "an equaliser's frequency response",
+            "x-code": 2,
+            "x-text": "The equaliser's frequency response."
+          },
+          {
+            "const": "meter",
+            "title": "meter",
+            "description": "a level meter",
+            "x-code": 3,
+            "x-text": "A level meter."
+          },
+          {
+            "const": "time_response",
+            "title": "timeResponse",
+            "description": "a response over time: a delay's train of taps or a reverb's decay envelope",
+            "x-code": 4,
+            "x-text": "The response over time: a delay's taps or a reverb's decay."
+          }
+        ]
+      },
+      "PANEL_DISPLAY_SOURCES": {
+        "description": "Where a panel description's display takes its data from, in the order of their codes (org.openmixer.panel-description/1). omx-panel's tools/panel-description.mjs and omx-clap-core's panel tables read them, and keep their code.",
+        "x-since": "0.1.0",
+        "x-why": "omx-clap-core and omx-plugins restated these words by hand beside the families, widgets and display kinds; a display source is a declaration, so it lives here (vocabulary-owner rule).",
+        "x-c-codes": true,
+        "x-c-xmacro": true,
+        "oneOf": [
+          {
+            "const": "family",
+            "title": "family",
+            "description": "the data the panel family itself implies",
+            "x-code": 0,
+            "x-text": "The data the panel family implies."
+          },
+          {
+            "const": "meters",
+            "title": "meters",
+            "description": "the plugin's meter readouts",
+            "x-code": 1,
+            "x-text": "The plugin's meter readouts."
+          },
+          {
+            "const": "gain_adjustment",
+            "title": "gainAdjustment",
+            "description": "the gain the processor applies",
+            "x-code": 2,
+            "x-text": "The gain the processor applies."
+          },
+          {
+            "const": "curve",
+            "title": "curve",
+            "description": "a curve the plugin declares",
+            "x-code": 3,
+            "x-text": "A curve the plugin declares."
+          }
+        ]
+      }
+    }
+  }
+}
