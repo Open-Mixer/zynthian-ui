@@ -6,7 +6,7 @@
 # renderer with the daemon's values, the curve plugin-hostd computes and the meters its feedback port gives. The
 # pictures go to OUT, one per plugin and screen; the checks are by value: a curve of points, a meter reading.
 #
-#   ZYNTHIAN_OMX_PANEL_RENDER=.../libomx-panel-render.so.0 ZYNTHIAN_OMX_PANEL_TOOLS=.../tools PHD_PORT=17556 \
+#   ZYNTHIAN_OMX_PANEL_RENDER=.../libomx-panel-render.so.1 ZYNTHIAN_OMX_PANEL_TOOLS=.../tools PHD_PORT=17556 \
 #   OUT=/tmp/drawn PHD_URIS="clap:/usr/lib/clap/omx-comp.clap#org.openmixer.comp urn:openmixer:eq8" \
 #   python3 -m pytest -s tools/pi/drawn_panel_on_the_pi.py
 #

@@ -13,9 +13,13 @@ import importlib.util
 import json
 import os
 import shutil
+import signal
 import socket
+import sys
 import tempfile
+import threading
 import time
+import types
 import unittest
 from unittest import mock
 
@@ -256,6 +260,321 @@ class Drawn(unittest.TestCase):
         _, fraction, value = changes[0]
         self.assertGreater(fraction, 0.5)
         self.assertAlmostEqual(value, -12.0 + 24.0 * fraction, places=6)  # the value is the travel's, -12..12
+
+
+STUB_READER = os.path.join(HERE, "stub_omx_rta_read.py")
+
+
+def alive(pid):
+    """Whether a process `pid` exists and is not a zombie waiting for its parent."""
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            return f.read().split(") ")[-1][:1] != "Z"
+    except OSError:
+        return False
+
+
+class SpectrumCall(unittest.TestCase):
+    """_LibraryView.set_spectrum (what View.set_spectrum forwards to) against omx-panel 0.14.0's entry: omx_panel_view_set_spectrum(view, display, hz, pre_db, post_db,
+    peak_db, n, mode, delta, db_min, db_max, grid_db), mode omx_panel_tap_mode_t (PRE 0, POST 1, BOTH 2), the delta only
+    with both; the library is libomx-panel-render.so.1, the soname that signature moved to."""
+
+    WINDOW = (-72.0, 0.0, 12.0)
+    FRAME = {"hz": [100.0, 1000.0, 10000.0], "pre": ([-30.0, -24.0, float("-inf")], [-27.0, -21.0, float("-inf")]),
+             "post": ([-30.0, -12.0, float("-inf")], [-27.0, 0.0, float("-inf")]), "diff": [0.0, 12.0, None]}
+
+    class Lib:
+        def __init__(self):
+            self.calls = []
+
+        def omx_panel_view_set_spectrum(self, *args):
+            # what ctypes would pass: arrays read back as lists, NULL as None
+            self.calls.append(tuple(list(a) if hasattr(a, "_length_") else a for a in args))
+            return True
+
+        def omx_panel_view_destroy(self, v):
+            pass
+
+    def view(self):
+        # the renderer process's side of View.set_spectrum (View forwards the call to it): the ctypes call itself
+        v = view._LibraryView.__new__(view._LibraryView)
+        v.lib, v.view = self.Lib(), "the view"
+        return v
+
+    def test_the_library_is_the_soname_the_new_entry_has(self):
+        self.assertEqual(view.LIBRARY, "libomx-panel-render.so.1")
+
+    def test_the_entry_is_declared_with_both_taps_the_mode_and_the_delta(self):
+        lib = types.SimpleNamespace(omx_panel_view_set_spectrum=types.SimpleNamespace())
+        view._declare_spectrum(lib)
+        f = lib.omx_panel_view_set_spectrum
+        self.assertEqual(f.restype, view.ctypes.c_bool)
+        DP = view.ctypes.POINTER(view.ctypes.c_double)
+        self.assertEqual(f.argtypes, [view.ctypes.c_void_p, view.ctypes.c_uint32, DP, DP, DP, DP, view.ctypes.c_uint32,
+                                      view.ctypes.c_int, view.ctypes.c_bool, view.ctypes.c_double, view.ctypes.c_double,
+                                      view.ctypes.c_double])
+
+    def test_each_mode_hands_the_renderer_the_taps_it_shows(self):
+        hz, pre, post = self.FRAME["hz"], self.FRAME["pre"], self.FRAME["post"]
+        for mode, delta, want in (
+                ("pre", False, (pre[0], None, pre[1], 0, False)),
+                ("post", False, (None, post[0], post[1], 1, False)),
+                ("both", False, (pre[0], post[0], post[1], 2, False)),
+                ("both", True, (pre[0], post[0], post[1], 2, True)),
+                ("post", True, (None, post[0], post[1], 1, False))):
+            v = self.view()
+            self.assertTrue(v.set_spectrum(3, self.FRAME, mode, delta, self.WINDOW))
+            self.assertEqual(v.lib.calls, [("the view", 3, hz, *want[:3], 3, *want[3:], *self.WINDOW)], (mode, delta))
+
+    def test_both_with_one_tap_answered_draws_that_tap_alone(self):
+        v = self.view()
+        v.set_spectrum(0, dict(self.FRAME, pre=None), "both", True, self.WINDOW)
+        self.assertEqual(v.lib.calls[-1][3:9], (None, self.FRAME["post"][0], self.FRAME["post"][1], 3, 1, False))
+
+    def test_no_frame_clears_it(self):
+        v = self.view()
+        self.assertTrue(v.set_spectrum(0, None, "both", True, self.WINDOW))
+        self.assertEqual(v.lib.calls, [("the view", 0, None, None, None, None, 0, 1, False, *self.WINDOW)])
+
+    def test_a_mode_that_is_none_of_the_three_is_refused_without_a_call(self):
+        v = self.view()
+        self.assertFalse(v.set_spectrum(0, self.FRAME, "sideways", False, self.WINDOW))
+        self.assertEqual(v.lib.calls, [])
+
+
+@unittest.skipUnless(renderer(), "omx-panel's renderer is not installed")
+class SpectrumDrawn(unittest.TestCase):
+    """The renderer itself: the modes and the delta change the pixels, and the delta is refused without both."""
+
+    W, H = 480, 300
+    WINDOW = (-72.0, 0.0, 12.0)
+
+    def frame(self):
+        hz = [20.0 * 1000.0 ** (k / 15) for k in range(16)]
+        post = [-30.0 - (6.0 if 6 <= k <= 9 else 0.0) for k in range(16)]
+        pre = [-30.0] * 16
+        return {"hz": hz, "pre": (pre, [p + 3 for p in pre]), "post": (post, [p + 3 for p in post]), "diff": None}
+
+    def view(self):
+        layout = fixture("omx-eq8")["layout"]
+        part, displays = view.screen_part(layout, {layout["controls"][0]["symbol"]})
+        return view.View(part), displays
+
+    def test_both_and_the_delta_each_draw_something_else(self):
+        v, displays = self.view()
+        d = next(iter(displays))
+        f = self.frame()
+        pics = {}
+        for mode, delta in (("post", False), ("both", False), ("both", True)):
+            self.assertTrue(v.set_spectrum(d, f, mode, delta, self.WINDOW), (mode, delta))
+            pics[(mode, delta)] = v.draw(self.W, self.H)[0]  # the pixels; the second item is the rectangles it repainted
+        self.assertNotEqual(pics[("post", False)], pics[("both", False)], "PRE's dim line is drawn in both")
+        self.assertNotEqual(pics[("both", False)], pics[("both", True)], "the delta's wedges are drawn")
+        self.assertTrue(v.set_spectrum(d, f, "post", False, self.WINDOW))
+        self.assertEqual(v.draw(self.W, self.H)[0], pics[("post", False)], "and post alone comes back")
+
+
+class FakeView:
+    """What SpectrumFeed hands frames to: each set_spectrum call, recorded, accepted for the displays it has."""
+
+    def __init__(self, displays=(0,)):
+        self.displays, self.calls = set(displays), []
+
+    def set_spectrum(self, display, frame, mode, delta, window):
+        self.calls.append((display, frame, mode, delta, window))
+        return display in self.displays
+
+
+class SpectrumLines(unittest.TestCase):
+    """The reader's JSON lines (spec §3: {"at", "rate", "hz", "post": {"db", "peak"}, "pre": {...}, "diff"})."""
+
+    def test_a_frame_is_read_with_silence_as_minus_infinity(self):
+        f = view.rta_frame('{"at":4,"rate":48000,"hz":[20,200,2000],"post":{"db":[-30,null,-12],"peak":[-27,null,0]}}')
+        self.assertEqual(f["hz"], [20.0, 200.0, 2000.0])
+        self.assertEqual(f["post"], ([-30.0, float("-inf"), -12.0], [-27.0, float("-inf"), 0.0]))
+        self.assertIsNone(f["pre"])
+        self.assertIsNone(f["diff"])
+
+    def test_a_line_that_is_no_frame_is_none(self):
+        for bad in ("", "not a frame", "{}", '{"hz":[20,10],"post":{"db":[1,2],"peak":[1,2]}}',
+                    '{"hz":[20,200],"post":{"db":[1],"peak":[1,2]}}', '{"hz":[20,200]}',
+                    '{"hz":[0,200],"post":{"db":[1,2],"peak":[1,2]}}', '{"hz":[20,200],"post":{"db":["x",2],"peak":[1,2]}}'):
+            self.assertIsNone(view.rta_frame(bad), bad)
+
+    def test_the_taps_follow_the_mode(self):
+        self.assertEqual(view.rta_argv("post", ["fx:out_1"], ["fx:in_1"], 64, exe="r"), ["r", "--post", "fx:out_1", "--bands", "64"])
+        self.assertEqual(view.rta_argv("pre", ["fx:out_1"], ["fx:in_1", "fx:in_2"], 32, exe="r"),
+                         ["r", "--pre", "fx:in_1", "--pre", "fx:in_2", "--bands", "32"])
+        self.assertEqual(view.rta_argv("both", ["fx:out_1"], ["fx:in_1"], 64, exe="r"),
+                         ["r", "--post", "fx:out_1", "--pre", "fx:in_1", "--bands", "64"])
+
+    def ports(self, pattern, is_input=None):
+        """A graph of two clients, fx (two audio ins, two audio outs and a MIDI in) and other; the pattern as jack's."""
+        graph = [("fx:in_1", True, True), ("fx:in_2", True, True), ("fx:out_1", False, True), ("fx:out_2", False, True),
+                 ("fx:midi_in", True, False), ("other:out_1", False, True)]
+        return [types.SimpleNamespace(name=n, is_audio=audio, is_input=inp) for n, inp, audio in graph
+                if n.startswith(pattern.lstrip("^").replace("\\", "")) and (is_input is None or inp == is_input)]
+
+    def test_a_client_of_its_own_answers_both_taps(self):
+        self.assertEqual(view.rta_taps("fx", [5], 5, self.ports), (["fx:out_1", "fx:out_2"], ["fx:in_1", "fx:in_2"], None))
+
+    def test_inside_a_grouped_chain_only_the_ends_answer(self):
+        self.assertEqual(view.rta_taps("fx", [3, 4, 5], 3, self.ports), ([], ["fx:in_1", "fx:in_2"], None), "the first: pre only")
+        self.assertEqual(view.rta_taps("fx", [3, 4, 5], 5, self.ports), (["fx:out_1", "fx:out_2"], [], None), "the last: post only")
+        post, pre, refusal = view.rta_taps("fx", [3, 4, 5], 4, self.ports)
+        self.assertEqual((post, pre), ([], []), "a middle member is never given another signal's spectrum")
+        self.assertEqual(refusal, "no spectrum inside a grouped chain")
+
+    def test_no_client_answers_nothing(self):
+        self.assertEqual(view.rta_taps(None, [5], 5, self.ports)[:2], ([], []))
+
+    def test_the_level_window_is_omx_dsps_declaration(self):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        # the shape omx-dsp installs: its kernel declarations' rta.json, the constants under "constants"
+        os.makedirs(os.path.join(root, "3", "omx-dsp", "kernels"))
+        with open(os.path.join(root, "3", "omx-dsp", "kernels", "rta.json"), "w") as f:
+            json.dump({"constants": {"RTA_LEVEL_DB_MIN": {"kind": "scalar", "unit": "dB", "value": -90},
+                                     "RTA_LEVEL_DB_MAX": {"kind": "scalar", "unit": "dB", "value": 6},
+                                     "RTA_LEVEL_GRID_DB": {"kind": "scalar", "unit": "dB", "value": 6}}}, f)
+        self.assertEqual(view.rta_window(root), (-90.0, 6.0, 6.0))
+        with self.assertLogs(level="WARNING"):
+            self.assertIsNone(view.rta_window(os.path.join(root, "nowhere")))
+
+    def test_a_mode_whose_taps_are_not_answered_reads_nothing(self):
+        self.assertIsNone(view.rta_argv("post", [], ["fx:in_1"], 64, exe="r"))
+        self.assertIsNone(view.rta_argv("both", ["fx:out_1"], [], 64, exe="r"))
+        self.assertIsNone(view.rta_argv("sideways", ["fx:out_1"], ["fx:in_1"], 64, exe="r"))
+
+
+class SpectrumReader(unittest.TestCase):
+    """The reader as the panel's child (spec §6): started while a curve panel is shown, its frames handed to the view,
+    ended and reaped on close, whatever it does."""
+
+    WINDOW = (-72.0, 0.0, 12.0)
+
+    def feed(self, env=None, mode="post", fake=None, argv=None):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        pidfile = os.path.join(tmp, "pid")
+        patch = mock.patch.dict(os.environ, dict(env or {}, STUB_RTA_PIDFILE=pidfile))
+        patch.start()
+        self.addCleanup(patch.stop)
+        argv = argv or [sys.executable, STUB_READER] + view.rta_argv(mode, ["fx:out_1"], ["fx:in_1"], 16, exe="omx-rta-read")[1:]
+        fake = fake or FakeView()
+        f = view.SpectrumFeed(fake, [0], argv, mode, False, self.WINDOW)
+        self.addCleanup(f.stop)
+        return f, fake, pidfile
+
+    def pid(self, pidfile):
+        deadline = time.monotonic() + 5
+        while not os.path.exists(pidfile) or not open(pidfile).read():
+            self.assertLess(time.monotonic(), deadline, "the reader never started")
+            time.sleep(0.01)
+        return int(open(pidfile).read())
+
+    def first(self, f):
+        deadline = time.monotonic() + 5
+        while not f.apply():
+            self.assertLess(time.monotonic(), deadline, "no frame reached the view")
+            time.sleep(0.01)
+
+    def test_a_curve_panel_shows_the_readers_spectrum(self):
+        f, fake, _ = self.feed()
+        self.assertTrue(f.start())
+        self.first(f)
+        display, frame, mode, delta, window = fake.calls[-1]
+        self.assertEqual((display, mode, delta, window), (0, "post", False, self.WINDOW))
+        self.assertEqual(len(frame["hz"]), 16)
+        self.assertEqual(frame["post"][0][:2], [-30.0, -31.0])
+        self.assertFalse(f.apply(), "no new frame, nothing handed again")
+
+    def test_until_the_first_line_nothing_is_handed(self):
+        f, fake, _ = self.feed()
+        self.assertFalse(f.apply())
+        self.assertEqual(fake.calls, [])
+
+    def test_the_reader_is_gone_after_close(self):
+        f, _, pidfile = self.feed()
+        f.start()
+        self.first(f)
+        pid = self.pid(pidfile)
+        self.assertTrue(alive(pid))
+        f.stop()
+        self.assertFalse(alive(pid), "the reader outlived the panel")
+        self.assertFalse(f.running)
+        f.stop()  # twice is nothing
+
+    def test_a_reader_that_ignores_sigterm_is_still_gone_after_close(self):
+        f, _, pidfile = self.feed(env={"STUB_RTA_IGNORE_TERM": "1"})
+        f.start()
+        self.first(f)
+        pid = self.pid(pidfile)
+        self.addCleanup(lambda: alive(pid) and os.kill(pid, signal.SIGKILL))  # a failed stop leaves no stray
+        # bounded: a stop that only asks would wait on the reader for ever; this test fails instead of hanging
+        stopping = threading.Thread(target=f.stop, kwargs={"grace": 0.3}, daemon=True)
+        stopping.start()
+        stopping.join(5)
+        self.assertFalse(stopping.is_alive(), "stop() still waits on a reader deaf to SIGTERM after 5 s")
+        self.assertFalse(alive(pid), "a reader deaf to SIGTERM outlived the panel")
+
+    def test_the_reader_runs_in_its_own_process_group(self):
+        f, _, pidfile = self.feed()
+        f.start()
+        pid = self.pid(pidfile)
+        self.assertEqual(os.getpgid(pid), pid)
+        self.assertNotEqual(os.getpgid(pid), os.getpgid(0))
+
+    def test_a_reader_that_ends_by_itself_leaves_no_spectrum_and_is_said_once(self):
+        f, fake, pidfile = self.feed(env={"STUB_RTA_EXIT_AFTER": "2"})
+        with self.assertLogs(level="WARNING") as logs:
+            f.start()
+            deadline = time.monotonic() + 5
+            while f.running:
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(0.01)
+            f.apply()
+        self.assertEqual(len([m for m in logs.output if "omx-rta-read" in m]), 1, logs.output)
+        self.assertIn("status 3", logs.output[0])
+        self.assertFalse(alive(self.pid(pidfile)), "reaped")
+        self.assertEqual(fake.calls[-1][1], None, "the spectrum is cleared once the reader is gone")
+
+    def test_a_line_that_is_no_frame_is_skipped(self):
+        f, fake, _ = self.feed(env={"STUB_RTA_BAD_FIRST": "1"})
+        f.start()
+        self.first(f)
+        self.assertTrue(all(c[1] is None or len(c[1]["hz"]) == 16 for c in fake.calls))
+
+    def test_a_missing_reader_is_named_and_nothing_runs(self):
+        f, fake, _ = self.feed(argv=["/nowhere/omx-rta-read", "--post", "fx:out_1", "--bands", "16"])
+        with self.assertLogs(level="WARNING") as logs:
+            self.assertFalse(f.start())
+        self.assertIn("omx-rta-read", logs.output[0])
+        self.assertFalse(f.running)
+        self.assertEqual(fake.calls, [])
+
+    def test_both_hands_pre_post_and_the_mode(self):
+        f, fake, _ = self.feed(mode="both")
+        f.start()
+        self.first(f)
+        _, frame, mode, _, _ = fake.calls[-1]
+        self.assertEqual(mode, "both")
+        self.assertEqual(frame["pre"][0][0], float("-inf"))
+        self.assertEqual(len(frame["diff"]), 16)
+
+    def test_a_display_the_view_refuses_is_said_once_and_not_fed_again(self):
+        f, fake, _ = self.feed(fake=FakeView(displays=()))
+        with self.assertLogs(level="WARNING") as logs:
+            f.start()
+            deadline = time.monotonic() + 5
+            while len(fake.calls) < 1:
+                f.apply()
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(0.01)
+            time.sleep(0.1)
+            f.apply()
+        self.assertEqual(len(fake.calls), 1, "a refused display is not fed every frame")
+        self.assertEqual(len([m for m in logs.output if "spectrum" in m]), 1, logs.output)
 
 
 class Feedback(unittest.TestCase):

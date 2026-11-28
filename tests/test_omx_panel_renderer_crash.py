@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #
 # A crash in omx-panel's renderer leaves the UI running (zynthian-ui#44). The panel view loads
-# libomx-panel-render.so.0 with ctypes; a fault inside it (a null pointer in omx_panel_view_draw) must stop the renderer,
+# libomx-panel-render.so.1 with ctypes; a fault inside it (a null pointer in omx_panel_view_draw) must stop the renderer,
 # never the UI's process. The panel says the renderer stopped and is drawn as strips; the next open draws again.
 #
 # The crash: a stub renderer, built here from C, with every function the view declares and an omx_panel_view_draw that
