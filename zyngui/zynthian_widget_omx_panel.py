@@ -204,9 +204,11 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
                 else:
                     view.set_value(i, self.fraction(z), z.get_value2label())
             for k, display in self.display_map.items():
-                points = engine.curve(display)
+                points, stems = engine.curve_drawing(display)
                 if len(points) >= 2:
                     view.set_curve(k, points)
+                if stems is not None:  # a delay's taps: its time_response has no point but these
+                    view.set_stems(k, stems)
         now = time.monotonic()
         for i, sym in enumerate(view.meters):
             value = engine.meter(sym)
