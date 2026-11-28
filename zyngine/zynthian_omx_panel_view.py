@@ -4,7 +4,7 @@
 # ZYNTHIAN PROJECT: Zynthian Engine (zynthian_omx_panel_view)
 #
 # A plugin's panel drawn by omx-panel's renderer, omx-panel's own C library for drawing a panel
-# (libomx-panel-render.so.0, omx-panel's renderer/include/omx_panel_render.h): its bars, its curves and its meters,
+# (libomx-panel-render.so.1, omx-panel's renderer/include/omx_panel_render.h): its bars, its curves and its meters,
 # in the omx look. This module is the ctypes door to it, and the host's side the renderer leaves to the host: which
 # part of the panel a screen shows, the curve_bind line plugin-hostd draws a display's points from, and the reply
 # of curve_points. Nothing here draws or computes a point: the renderer draws, plugin-hostd computes (omx-dsp's
@@ -17,7 +17,8 @@
 # belong to Tk's thread (in_owner_thread), where the widgets make them. That shared memory is the one buffer every draw
 # of a view goes into (zynthian-ui#59): with omx-panel#78's omx_panel_view_draw_dirty the renderer repaints only the
 # cells that changed in it and says where, and PanelImage blits only those. This file is that process too (run as
-# `python3 zynthian_omx_panel_view.py --serve <fd>`): it imports nothing but the standard library.
+# `python3 zynthian_omx_panel_view.py --serve <fd>`): it imports nothing but the standard library, and its sibling
+# zynthian_contract_dir.py by its file, which imports nothing else either.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 #
@@ -27,10 +28,12 @@
 # ******************************************************************************
 
 import ctypes
+import importlib.util
 import json
 import logging
 import math
 import os
+import re
 import shutil
 import signal
 import socket
@@ -40,7 +43,14 @@ import tempfile
 import threading
 from multiprocessing import connection, shared_memory
 
-LIBRARY = "libomx-panel-render.so.0"
+# where omx-contract's contract directory is (zynthian_contract_dir), loaded from beside this file: this file also runs
+# as a process of its own and as a file a test loads, where there is no zyngine package to import it from
+_spec = importlib.util.spec_from_file_location("zynthian_contract_dir",
+                                               os.path.join(os.path.dirname(os.path.abspath(__file__)), "zynthian_contract_dir.py"))
+zynthian_contract_dir = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(zynthian_contract_dir)
+
+LIBRARY = "libomx-panel-render.so.1"
 # the look, the geometry and the font a view is made from: omx-panel's tools directory as the package installs it
 TOOLS_DIR = "/usr/share/omx-panel/tools"
 
@@ -148,12 +158,32 @@ def _declare(lib):
             ("omx_panel_word_name", S, [ctypes.c_int])):
         f = getattr(lib, name)
         f.restype, f.argtypes = res, args
+    # a time_response's taps (omx_panel_view_set_stems, omx-panel 0.13.8): a renderer without it draws no tap, nothing else
+    stems = getattr(lib, "omx_panel_view_set_stems", None)
+    if stems is not None:
+        stems.restype = B
+        stems.argtypes = [P, U, DP, DP, DP, S, U]
     # the dirty draw (omx-panel#78): a renderer released before it has no such symbol, and the full draw is then the only
     # draw; no other shape of it is taken
     dirty = getattr(lib, "omx_panel_view_draw_dirty", None)
     if dirty is not None:
         dirty.restype = B
         dirty.argtypes = [P, ctypes.POINTER(_Buffer), ctypes.POINTER(_Rect), ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+    _declare_spectrum(lib)
+
+
+# omx_panel_tap_mode_t: the console's tap modes, by the word the widget keeps
+TAP_MODES = {"pre": 0, "post": 1, "both": 2}
+
+
+def _declare_spectrum(lib):
+    """The spectrum layer (omx-panel 0.14.0, libomx-panel-render.so.1): both taps, the mode and the delta. A renderer
+    without it draws every panel, with no spectrum under a curve."""
+    f = getattr(lib, "omx_panel_view_set_spectrum", None)
+    if f is not None:
+        P, U, D, B = ctypes.c_void_p, ctypes.c_uint32, ctypes.c_double, ctypes.c_bool
+        DP = ctypes.POINTER(ctypes.c_double)
+        f.restype, f.argtypes = B, [P, U, DP, DP, DP, DP, U, ctypes.c_int, B, D, D, D]
 
 
 def _word_name(word):
@@ -244,6 +274,40 @@ class _LibraryView:
         xs = (ctypes.c_double * n)(*(p[0] for p in points))
         ys = (ctypes.c_double * n)(*(p[1] for p in points))
         return self.lib.omx_panel_view_set_curve(self.view, display, xs, ys, n)
+
+    def set_spectrum(self, display, frame, mode, delta, window):
+        """The spectrum under display `display`'s curve: a frame of rta_frame() (None clears it), drawn in the console's
+        `mode` (pre, post or both) with or without the `delta` (both only), on the level window (db_min, db_max,
+        grid_db). Both with one tap answered draws that tap alone. False for a mode that is none of the three, a display
+        the renderer refuses (no log axis) and a renderer without the layer."""
+        f = getattr(self.lib, "omx_panel_view_set_spectrum", None)
+        if f is None or not window or mode not in TAP_MODES:
+            return False
+        if frame is None:
+            return bool(f(self.view, display, None, None, None, None, 0, TAP_MODES["post"], False, *window))
+        pre, post = frame.get("pre"), frame.get("post")
+        if mode == "both" and not (pre and post):
+            mode = "post" if post else "pre"
+        elif mode == "post" and not post:
+            mode = "pre"
+        if mode == "pre" and not pre:
+            return bool(f(self.view, display, None, None, None, None, 0, TAP_MODES["post"], False, *window))
+        n = len(frame["hz"])
+        arr = ctypes.c_double * n
+        filled = pre if mode == "pre" else post
+        return bool(f(self.view, display, arr(*frame["hz"]), arr(*pre[0]) if mode != "post" else None,
+                      arr(*post[0]) if mode != "pre" else None, arr(*filled[1]), n, TAP_MODES[mode],
+                      bool(delta) and mode == "both", *window))
+
+    def set_stems(self, display, stems):
+        """The taps of a time_response display, curve_stems()'s (time ms, level dB, shade, letter); none clears them.
+        False for a renderer with no stems, or stems it refuses."""
+        set_stems = getattr(self.lib, "omx_panel_view_set_stems", None)
+        if set_stems is None:
+            return False
+        n = len(stems)
+        ts, dbs, shades = ((ctypes.c_double * n)(*(s[k] for s in stems)) for k in range(3))
+        return set_stems(self.view, display, ts, dbs, shades, "".join(s[3] for s in stems).encode(), n)
 
     def set_surface(self, width, height, scale=1.0):
         self.size = (width, height)
@@ -511,6 +575,13 @@ class View:
     def set_curve(self, display, points):
         return self._call("set_curve", display, [tuple(p) for p in points])
 
+    def set_spectrum(self, display, frame, mode, delta, window):
+        """The spectrum under display `display`'s curve, drawn by the renderer's process (_LibraryView.set_spectrum)."""
+        return bool(self._call("set_spectrum", display, frame, mode, delta, window))
+
+    def set_stems(self, display, stems):
+        return self._call("set_stems", display, [tuple(s) for s in stems])
+
     def set_surface(self, width, height, scale=1.0):
         self.size = (width, height)
         return self._call("set_surface", width, height, scale)
@@ -574,27 +645,82 @@ def screen_part(layout, keys):
 
 # ---- The curve a display draws: plugin-hostd computes it from a binding (protocol 0.5, curve_bind / curve_points) ----
 
-CONTRACT_PATH = "/usr/share/omx-contract/contract.d"
-_curve_words = {}  # contract directory => (display kinds, role words)
+_curve_words = {}  # curve.json => (display kinds, role words)
 
 
 def curve_words(root=None):
     """(the display kinds drawn from a curve, the role words a curve is bound by) as omx-dsp declares them:
     CURVE_DISPLAYS and CURVE_ROLES of the curve.json its contract package installs, in the wire's spelling (snake
     case, the description's own words). A role of the description that is none of these (attack, release) is not
-    bound; one the family's curve does not read (a compressor's mix) is bound and draws nothing. Two empty tuples when the declaration cannot be read: no display is a curve then."""
-    root = root or (os.environ.get("OMX_CONTRACT_PATH") or CONTRACT_PATH).split(":")[0]
-    if root not in _curve_words:
+    bound; one the family's curve does not read (a compressor's mix) is bound and draws nothing. Two empty tuples when the declaration cannot be read: no display is a curve then.
+    The file is <contractdir>/omx-dsp/primitives/curve.json, in the contract directory given or else the installed
+    one (zynthian_contract_dir)."""
+    path = zynthian_contract_dir.find("omx-dsp", "primitives", "curve.json", dirs=None if root is None else [root])
+    if path is None:
+        logging.warning("omx-dsp's curve.json is in no contract directory: no curve is drawn")
+        return (), ()
+    if path not in _curve_words:
         def wire(ids):
             return tuple("".join("_" + c.lower() if c.isupper() else c for c in i) for i in ids)
         try:
-            with open(os.path.join(root, "3", "omx-dsp", "primitives", "curve.json")) as f:
+            with open(path) as f:
                 doc = json.load(f)
-            _curve_words[root] = wire(doc["CURVE_DISPLAYS"]["ids"]), wire(doc["CURVE_ROLES"]["ids"])
+            _curve_words[path] = wire(doc["CURVE_DISPLAYS"]["ids"]), wire(doc["CURVE_ROLES"]["ids"])
         except (OSError, ValueError, KeyError, TypeError) as e:
             logging.warning("omx-dsp's curve.json is not readable (%s): no curve is drawn", e)
             return (), ()
-    return _curve_words[root]
+    return _curve_words[path]
+
+
+# ---- The words of a plugin's own panel: omx-panel's domain `panel`, read by code ----
+
+PANEL_DOMAIN = ("panel", "panel.json")  # <contract dir>/panel/panel.json, installed by omx-panel-contract
+_panel_words = {}  # (contract directory, item) => {code: word}
+
+
+def panel_words(item, root=None):
+    """{code: word} of a words item of omx-panel's domain `panel` (PANEL_DISPLAY_KINDS, PANEL_DISPLAY_SOURCES), each
+    word's `x-code` as the domain document of the contract directory declares it (OMX_CONTRACT_PATH's first, else the
+    installed one). {} when the document cannot be read, said once."""
+    root = root or next(iter(zynthian_contract_dir.contract_dirs()), "")
+    if (root, item) not in _panel_words:
+        try:
+            with open(os.path.join(root, *PANEL_DOMAIN)) as f:
+                words = json.load(f)["components"]["schemas"][item]["oneOf"]
+            _panel_words[root, item] = {w["x-code"]: w["const"] for w in words}
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            logging.warning("omx-panel's domain panel has no readable %s in %s (%s): a panel's numbers stay numbers",
+                            item, root, e)
+            _panel_words[root, item] = {}
+    return _panel_words[root, item]
+
+
+def panel_word(item, value, root=None):
+    """A display's kind or source of a plugin's own panel as its word: omx-clap-scan prints the number (omx-clap-core
+    keeps no panel words), the word's code in `item` of the panel domain; a word is read as it is. A number the item
+    has no word for stays the number, so it matches no word."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return panel_words(item, root).get(value, value)
+    return value
+
+
+_curve_legs = {}  # curve.json => leg words
+
+
+def curve_legs(root=None):
+    """The leg words a delay's tap lands on, omx-dsp's CURVE_LEGS of the curve.json curve_words reads, in their order
+    (the first is the dry tap's, on both legs); () when the declaration cannot be read, said once per file."""
+    path = zynthian_contract_dir.find("omx-dsp", "primitives", "curve.json", dirs=None if root is None else [root])
+    if path is None:
+        return ()
+    if path not in _curve_legs:
+        try:
+            with open(path) as f:
+                _curve_legs[path] = tuple(json.load(f)["CURVE_LEGS"]["ids"])
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            logging.warning("omx-dsp's curve.json declares no readable CURVE_LEGS (%s): no tap is drawn", e)
+            _curve_legs[path] = ()
+    return _curve_legs[path]
 
 
 def curve_bind_line(instance, index, description):
@@ -620,16 +746,46 @@ def curve_bind_line(instance, index, description):
 
 
 def curve_points(reply):
-    """The points of a curve_points reply ('<count> <x>,<y> ...'), ascending in x; [] for a reply that is not one."""
+    """The points of a curve_points reply, ascending in x; [] for a reply that is not one. The reply is
+    '<count> <marks> <x>,<y> ...' (plugin-hostd-protocol's curve-points-reply): the marks are one word after the count,
+    '-' when none, each band a feedback corrector planted otherwise; a delay's taps follow the points ('stems ...').
+    Neither is a point: the marks and the taps are not drawn here."""
     words = reply.split()
     try:
         n = int(words[0])
-        points = [tuple(float(v) for v in w.split(",")) for w in words[1:n + 1]]
+        if len(words) < 2 or words[1].count(",") == 1:
+            return []  # no marks word: a reply of another grammar
+        points = [tuple(float(v) for v in w.split(",")) for w in words[2:n + 2]]
     except (IndexError, ValueError):
         return []
     if len(points) != n or any(len(p) != 2 or not all(math.isfinite(v) for v in p) for p in points):
         return []
     return points
+
+
+def curve_stems(reply):
+    """The taps of a curve_points reply, each (time ms, level dB, shade 0..1, letter) as omx-panel's renderer takes a
+    stem (omx_panel_view_set_stems); None for a reply with no taps or a malformed one. A delay's time_response answers
+    them after the points, 'stems <count> <t>,<dB>,<shade>,<leg> ...' (plugin-hostd-protocol's curve-points-reply).
+    The letter is the leg's, as CURVE_LEGS says it (curve_legs): none for the first, the dry tap's on both legs, else
+    the leg word's initial; a leg word it does not hold refuses the reply."""
+    words = reply.split()
+    if "stems" not in words:
+        return None
+    at = words.index("stems")
+    legs = curve_legs()
+    try:
+        int(words[0])
+        n = int(words[at + 1])
+        stems = []
+        for w in words[at + 2:]:
+            t, db, shade, leg = w.split(",")
+            stems.append((float(t), float(db), float(shade), " " if leg == legs[0] else leg[0].upper()))
+            if leg not in legs or not all(math.isfinite(v) for v in stems[-1][:3]):
+                return None
+    except (IndexError, ValueError):
+        return None
+    return stems if len(stems) == n else None
 
 
 def output_set(line):
@@ -641,6 +797,200 @@ def output_set(line):
         return int(words[1]), words[2], float(words[3])
     except ValueError:
         return None
+
+
+# ---- The spectrum under a curve: omx-rta-read as the panel's child (the Zynthian RTA's reader and wiring) ----
+
+READER = "omx-rta-read"
+MODES = ("pre", "post", "both")
+
+
+def rta_argv(mode, post_ports, pre_ports, bands, exe=None):
+    """The reader's command line for the console's `mode`: --post for post, --pre for pre, both for both, each port
+    named; None when the mode is none of these or a tap it shows is not answered (a tap nobody shows is never read)."""
+    if mode not in MODES or (mode != "pre" and not post_ports) or (mode != "post" and not pre_ports):
+        return None
+    argv = [exe or os.environ.get("ZYNTHIAN_OMX_RTA_READ", READER)]
+    for tap, ports in (("--post", post_ports if mode != "pre" else []), ("--pre", pre_ports if mode != "post" else [])):
+        for port in ports:
+            argv += [tap, port]
+    return argv + ["--bands", str(int(bands))]
+
+
+def rta_taps(client, sharing, instance, get_ports):
+    """(post ports, pre ports, refusal) of `instance` (spec §3.3): the audio outputs of its jack client for POST, the
+    audio inputs for PRE. `sharing` is the instances the client runs, in chain order ([instance] for a client of its
+    own): only the LAST answers POST and only the FIRST answers PRE, so a member inside a grouped chain answers neither
+    and is refused by name, never given another signal's spectrum. `get_ports` is jack's (pattern, is_input)."""
+    if not client:
+        return [], [], "no jack client"
+    first, last = (not sharing or sharing[0] == instance), (not sharing or sharing[-1] == instance)
+
+    def audio(is_input):
+        return [p.name for p in get_ports(f"^{re.escape(client)}:", is_input=is_input) if getattr(p, "is_audio", True)]
+    post, pre = audio(False) if last else [], audio(True) if first else []
+    return post, pre, None if (first or last) else "no spectrum inside a grouped chain"
+
+
+RTA_PATH = ("omx-dsp", "kernels", "rta.json")  # omx-dsp's package of the contract directory, <contractdir>/omx-dsp/
+_rta_window_said = set()  # the contract roots whose rta.json was said unreadable
+
+
+def rta_window(root=None):
+    """(db_min, db_max, grid_db): the level window omx-dsp declares (RTA_LEVEL_DB_MIN, RTA_LEVEL_DB_MAX,
+    RTA_LEVEL_GRID_DB of the rta.json its contract package installs), never restated here; None, said once, when it
+    cannot be read, and no spectrum is drawn then. The file is <contractdir>/omx-dsp/kernels/rta.json, in the contract
+    directory given or else the installed one (zynthian_contract_dir)."""
+    try:
+        path = zynthian_contract_dir.find(*RTA_PATH, dirs=None if root is None else [root])
+        if path is None:
+            raise OSError(f"no contract directory holds {os.path.join(*RTA_PATH)}")
+        with open(path) as f:
+            doc = json.load(f)["constants"]
+
+        def number(key):
+            v = doc[key]
+            v = v.get("value") if isinstance(v, dict) else v
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+                raise ValueError(f"{key} is no number")
+            return float(v)
+        window = number("RTA_LEVEL_DB_MIN"), number("RTA_LEVEL_DB_MAX"), number("RTA_LEVEL_GRID_DB")
+        if not (window[0] < window[1] and window[2] > 0):
+            raise ValueError(f"{window} is no level window")
+        return window
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
+        if root not in _rta_window_said:
+            _rta_window_said.add(root)
+            logging.warning("omx-dsp's rta.json is not readable (%s): no spectrum is drawn", e)
+        return None
+
+
+def rta_bands(width_px):
+    """As many bands as the display's width supports: one per 6 px, 16 to 64."""
+    return max(16, min(64, int(width_px) // 6))
+
+
+def _levels(values, n):
+    if not isinstance(values, list) or len(values) != n:
+        raise ValueError("a level list of another length")
+    out = []
+    for v in values:
+        if v is None:
+            out.append(float("-inf"))
+        elif isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
+            out.append(float(v))
+        else:
+            raise ValueError("a level that is no number")
+    return out
+
+
+def rta_frame(line):
+    """One of the reader's lines as {"hz", "post": (db, peak) | None, "pre": (db, peak) | None, "diff": [...] | None},
+    a null level as -INFINITY (silence); None for a line that is no frame."""
+    try:
+        doc = json.loads(line)
+        hz = doc["hz"]
+        if not isinstance(hz, list) or len(hz) < 2:
+            return None
+        hz = [float(h) for h in hz]
+        if not all(math.isfinite(h) and h > 0 for h in hz) or any(b <= a for a, b in zip(hz, hz[1:])):
+            return None
+        frame = {"hz": hz, "post": None, "pre": None, "diff": None}
+        for tap in ("post", "pre"):
+            if doc.get(tap) is not None:
+                frame[tap] = (_levels(doc[tap]["db"], len(hz)), _levels(doc[tap]["peak"], len(hz)))
+        if frame["post"] is None and frame["pre"] is None:
+            return None
+        if doc.get("diff") is not None:
+            frame["diff"] = _levels(doc["diff"], len(hz))
+        return frame
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return None
+
+
+class SpectrumFeed:
+    """The reader of one shown panel: a child in its own process group, its stdout read by a thread that keeps the
+    newest frame; apply() hands that frame to the view's displays on the caller's (the UI's) thread, at most once per
+    frame; stop() ends the child (SIGTERM, then SIGKILL after `grace`) and reaps it. A reader that ends by itself clears
+    the spectrum and is said once by its exit status; a missing reader is named once and nothing runs."""
+
+    def __init__(self, view, displays, argv, mode, delta, window):
+        self.view, self.displays, self.argv = view, list(displays), list(argv)
+        self.mode, self.delta, self.window = mode, bool(delta), window
+        self.proc = self.thread = None
+        self.lock = threading.Lock()
+        self.frame = None
+        self.fresh = False      # a frame (or the end) the view has not been given
+        self.ended = None       # the reader's exit status once it ended by itself
+        self.refused = set()    # displays the view refused: said once, not fed again
+        self.stopping = False
+
+    @property
+    def running(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    def start(self):
+        try:
+            self.proc = subprocess.Popen(self.argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                         stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
+        except OSError as e:
+            logging.warning("%s cannot be started (%s): the panel shows no spectrum", READER, e)
+            self.proc = None
+            return False
+        self.thread = threading.Thread(target=self._read, name="omx-rta-read", daemon=True)
+        self.thread.start()
+        return True
+
+    def _read(self):
+        proc = self.proc
+        for line in proc.stdout:
+            frame = rta_frame(line)
+            if frame is not None:
+                with self.lock:
+                    self.frame, self.fresh = frame, True
+        status = proc.wait()
+        if not self.stopping:
+            logging.warning("%s ended by itself with status %s: the panel shows no spectrum", READER, status)
+            with self.lock:
+                self.frame, self.fresh, self.ended = None, True, status
+
+    def apply(self):
+        """Hand the newest frame (or the end's empty spectrum) to the view; True when the view was given anything."""
+        with self.lock:
+            if not self.fresh:
+                return False
+            frame, self.fresh = self.frame, False
+        given = False
+        for d in self.displays:
+            if d in self.refused:
+                continue
+            if self.view.set_spectrum(d, frame, self.mode, self.delta, self.window):
+                given = True
+            elif frame is not None:
+                self.refused.add(d)
+                logging.warning("the renderer refuses a spectrum on display %s: it is not fed again", d)
+        return given
+
+    def stop(self, grace=1.0):
+        proc, self.stopping = self.proc, True
+        if proc is None:
+            return
+        if proc.poll() is None:
+            for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, 5.0)):
+                try:
+                    os.killpg(proc.pid, sig)
+                except ProcessLookupError:
+                    break
+                try:
+                    proc.wait(wait)
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+        proc.wait()
+        if self.thread is not None:
+            self.thread.join(2.0)
+        proc.stdout.close()
+        self.proc = self.thread = None
 
 
 if __name__ == "__main__" and sys.argv[1:2] == ["--serve"]:

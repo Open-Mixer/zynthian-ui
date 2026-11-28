@@ -1,0 +1,1491 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openmixer.org/contract/param",
+  "x-omx-contract": "0.23",
+  "info": {
+    "title": "The standard parameter words: the units, what each measures, and the scales",
+    "version": "0.1.0",
+    "x-owner": "omx-contract",
+    "x-stability": "experimental"
+  },
+  "components": {
+    "schemas": {
+      "PARAM_SCALES": {
+        "description": "How a host draws a parameter: linear, logarithmic (a frequency, a time) or in discrete steps. The words omx-plugins' declarations and plugin-hostd's protocol use; a travel names its own with `scale`.",
+        "x-since": "0.1.0",
+        "oneOf": [
+          {
+            "const": "linear",
+            "title": "linear",
+            "description": "The value is linear in position.",
+            "x-code": 0
+          },
+          {
+            "const": "log",
+            "title": "log",
+            "description": "The value is geometric in position; both bounds are positive.",
+            "x-code": 1
+          },
+          {
+            "const": "stepped",
+            "title": "stepped",
+            "description": "The whole numbers from min to max, step 1.",
+            "x-code": 2
+          }
+        ],
+        "x-kind": "set",
+        "x-default": "linear"
+      },
+      "PARAM_UNITS": {
+        "description": "The one list of standard units (the owner's ruling of 2026-11-20, standard vocabulary in one place; docs/units.md): each word's `x-symbol` is its symbol as written (`%`, `\"\"`, `dB/oct`), the word a name the wire can carry, its `x-dimension` what it measures (a word of PARAM_UNIT_DIMENSIONS) and its group its scope (a word of PARAM_UNIT_SCOPES). The schema's $defs.unit enum is the ids (consts) of the `param` units and $defs.descriptorUnit those of the `descriptor` units and `unknown`, in this order (tools/unit-enum.mjs): the id is the wire word, the `x-symbol` its display rendering only (C2, plugin-hostd#215 D1/D2). A word's code is its position in the list, not a wire number (the wire codes are omx-clap's, the unit codes of org.openmixer.param-contract/1): a reader takes the words, so a unit removed shifts the codes after it (omx-contract#167: `x` went, `coef` is the plain multiplier). A level's own spellings (an LV2 unit, a CLAP unit code) map onto these ids at that level.",
+        "x-since": "0.1.0",
+        "x-why": "The unit list is declared once (omx-panel docs/behaviour-core.md, decision 3): the panel core and descriptor validation read one list.",
+        "x-groups": "PARAM_UNIT_SCOPES",
+        "oneOf": [
+          {
+            "const": "dB",
+            "title": "db",
+            "description": "Decibels, a gain or a level relative to unity.",
+            "x-code": 0,
+            "x-text": "Decibels, a gain or a level relative to unity.",
+            "x-group": "param",
+            "x-symbol": "dB",
+            "x-dimension": "gain"
+          },
+          {
+            "const": "dBFS",
+            "title": "dbfs",
+            "description": "Decibels relative to digital full scale.",
+            "x-code": 1,
+            "x-text": "Decibels relative to digital full scale.",
+            "x-group": "param",
+            "x-symbol": "dBFS",
+            "x-dimension": "level"
+          },
+          {
+            "const": "ms",
+            "title": "ms",
+            "description": "Milliseconds.",
+            "x-code": 2,
+            "x-text": "Milliseconds.",
+            "x-group": "param",
+            "x-symbol": "ms",
+            "x-dimension": "time"
+          },
+          {
+            "const": "s",
+            "title": "s",
+            "description": "Seconds.",
+            "x-code": 3,
+            "x-text": "Seconds.",
+            "x-group": "param",
+            "x-symbol": "s",
+            "x-dimension": "time"
+          },
+          {
+            "const": "min",
+            "title": "min",
+            "description": "Minutes.",
+            "x-code": 4,
+            "x-text": "Minutes.",
+            "x-group": "param",
+            "x-symbol": "min",
+            "x-dimension": "time"
+          },
+          {
+            "const": "Hz",
+            "title": "hz",
+            "description": "Hertz, a frequency.",
+            "x-code": 5,
+            "x-text": "Hertz, a frequency.",
+            "x-group": "param",
+            "x-symbol": "Hz",
+            "x-dimension": "frequency"
+          },
+          {
+            "const": "oct",
+            "title": "oct",
+            "description": "Octaves, a bandwidth or an interval.",
+            "x-code": 6,
+            "x-text": "Octaves, a bandwidth or an interval.",
+            "x-group": "param",
+            "x-symbol": "oct",
+            "x-dimension": "pitch"
+          },
+          {
+            "const": "cents",
+            "title": "cents",
+            "description": "Cents, a hundredth of a semitone.",
+            "x-code": 7,
+            "x-text": "Cents, a hundredth of a semitone.",
+            "x-group": "param",
+            "x-symbol": "cents",
+            "x-dimension": "pitch"
+          },
+          {
+            "const": "st",
+            "title": "st",
+            "description": "Semitones.",
+            "x-code": 8,
+            "x-text": "Semitones.",
+            "x-group": "param",
+            "x-symbol": "st",
+            "x-dimension": "pitch"
+          },
+          {
+            "const": "percent",
+            "title": "percent",
+            "description": "Percent.",
+            "x-code": 9,
+            "x-text": "Percent.",
+            "x-group": "param",
+            "x-symbol": "%",
+            "x-dimension": "none"
+          },
+          {
+            "const": "none",
+            "title": "none",
+            "description": "No unit: a ratio or a fraction.",
+            "x-code": 10,
+            "x-text": "No unit: a ratio or a fraction.",
+            "x-group": "param",
+            "x-symbol": "",
+            "x-dimension": "none"
+          },
+          {
+            "const": "dBPerOct",
+            "title": "dbPerOct",
+            "description": "A slope in dB per octave (a tilt).",
+            "x-code": 11,
+            "x-text": "A slope in dB per octave (a tilt).",
+            "x-group": "param",
+            "x-symbol": "dB/oct",
+            "x-dimension": "slope"
+          },
+          {
+            "const": "LUFS",
+            "title": "lufs",
+            "description": "A loudness (ITU-R BS.1770).",
+            "x-code": 12,
+            "x-text": "A loudness (ITU-R BS.1770).",
+            "x-group": "param",
+            "x-symbol": "LUFS",
+            "x-dimension": "loudness"
+          },
+          {
+            "const": "dBPerS",
+            "title": "dbPerS",
+            "description": "A gain change per second.",
+            "x-code": 13,
+            "x-text": "A gain change per second.",
+            "x-group": "param",
+            "x-symbol": "dB/s",
+            "x-dimension": "rate"
+          },
+          {
+            "const": "dBTP",
+            "title": "dbtp",
+            "description": "Decibels true peak, a level measured between the samples (ITU-R BS.1770).",
+            "x-code": 14,
+            "x-text": "Decibels true peak, a level measured between the samples (ITU-R BS.1770).",
+            "x-group": "descriptor",
+            "x-symbol": "dBTP",
+            "x-dimension": "level"
+          },
+          {
+            "const": "dBu",
+            "title": "dbu",
+            "description": "Decibels relative to 0.7746 volts RMS, an analogue level.",
+            "x-code": 15,
+            "x-text": "Decibels relative to 0.7746 volts RMS, an analogue level.",
+            "x-group": "descriptor",
+            "x-symbol": "dBu",
+            "x-dimension": "level"
+          },
+          {
+            "const": "LU",
+            "title": "lu",
+            "description": "Loudness units, a loudness difference or range (EBU R 128).",
+            "x-code": 16,
+            "x-text": "Loudness units, a loudness difference or range (EBU R 128).",
+            "x-group": "descriptor",
+            "x-symbol": "LU",
+            "x-dimension": "loudness"
+          },
+          {
+            "const": "kHz",
+            "title": "khz",
+            "description": "Kilohertz, a frequency.",
+            "x-code": 17,
+            "x-text": "Kilohertz, a frequency.",
+            "x-group": "descriptor",
+            "x-symbol": "kHz",
+            "x-dimension": "frequency"
+          },
+          {
+            "const": "MHz",
+            "title": "mhz",
+            "description": "Megahertz, a frequency.",
+            "x-code": 18,
+            "x-text": "Megahertz, a frequency.",
+            "x-group": "descriptor",
+            "x-symbol": "MHz",
+            "x-dimension": "frequency"
+          },
+          {
+            "const": "frames",
+            "title": "frames",
+            "description": "Audio frames, one sample on each channel.",
+            "x-code": 19,
+            "x-text": "Audio frames, one sample on each channel.",
+            "x-group": "param",
+            "x-symbol": "frames",
+            "x-dimension": "count"
+          },
+          {
+            "const": "bpm",
+            "title": "bpm",
+            "description": "Beats per minute, a tempo.",
+            "x-code": 20,
+            "x-text": "Beats per minute, a tempo.",
+            "x-group": "descriptor",
+            "x-symbol": "bpm",
+            "x-dimension": "tempo"
+          },
+          {
+            "const": "bar",
+            "title": "bar",
+            "description": "Bars, a musical length.",
+            "x-code": 21,
+            "x-text": "Bars, a musical length.",
+            "x-group": "descriptor",
+            "x-symbol": "bar",
+            "x-dimension": "musical-time"
+          },
+          {
+            "const": "beat",
+            "title": "beat",
+            "description": "Beats, a musical length.",
+            "x-code": 22,
+            "x-text": "Beats, a musical length.",
+            "x-group": "descriptor",
+            "x-symbol": "beat",
+            "x-dimension": "musical-time"
+          },
+          {
+            "const": "m",
+            "title": "m",
+            "description": "Metres, a length.",
+            "x-code": 23,
+            "x-text": "Metres, a length.",
+            "x-group": "descriptor",
+            "x-symbol": "m",
+            "x-dimension": "length"
+          },
+          {
+            "const": "cm",
+            "title": "cm",
+            "description": "Centimetres, a length.",
+            "x-code": 24,
+            "x-text": "Centimetres, a length.",
+            "x-group": "descriptor",
+            "x-symbol": "cm",
+            "x-dimension": "length"
+          },
+          {
+            "const": "mm",
+            "title": "mm",
+            "description": "Millimetres, a length.",
+            "x-code": 25,
+            "x-text": "Millimetres, a length.",
+            "x-group": "descriptor",
+            "x-symbol": "mm",
+            "x-dimension": "length"
+          },
+          {
+            "const": "km",
+            "title": "km",
+            "description": "Kilometres, a length.",
+            "x-code": 26,
+            "x-text": "Kilometres, a length.",
+            "x-group": "descriptor",
+            "x-symbol": "km",
+            "x-dimension": "length"
+          },
+          {
+            "const": "inch",
+            "title": "inch",
+            "description": "Inches, a length.",
+            "x-code": 27,
+            "x-text": "Inches, a length.",
+            "x-group": "descriptor",
+            "x-symbol": "inch",
+            "x-dimension": "length"
+          },
+          {
+            "const": "mile",
+            "title": "mile",
+            "description": "Miles, a length.",
+            "x-code": 28,
+            "x-text": "Miles, a length.",
+            "x-group": "descriptor",
+            "x-symbol": "mile",
+            "x-dimension": "length"
+          },
+          {
+            "const": "deg",
+            "title": "degree",
+            "description": "Degrees, an angle.",
+            "x-code": 29,
+            "x-text": "Degrees, an angle.",
+            "x-group": "descriptor",
+            "x-symbol": "deg",
+            "x-dimension": "angle"
+          },
+          {
+            "const": "midiNote",
+            "title": "midiNote",
+            "description": "A MIDI note number.",
+            "x-code": 30,
+            "x-text": "A MIDI note number.",
+            "x-group": "descriptor",
+            "x-symbol": "midiNote",
+            "x-dimension": "pitch"
+          },
+          {
+            "const": "ratio",
+            "title": "ratio",
+            "description": "A ratio n:1, a compressor's or an expander's.",
+            "x-code": 31,
+            "x-text": "A ratio n:1, a compressor's or an expander's.",
+            "x-group": "descriptor",
+            "x-symbol": "ratio",
+            "x-dimension": "ratio"
+          },
+          {
+            "const": "coef",
+            "title": "coef",
+            "description": "A coefficient, a plain multiplier with no unit of its own.",
+            "x-code": 32,
+            "x-text": "A coefficient, a plain multiplier with no unit of its own.",
+            "x-group": "param",
+            "x-symbol": "coef",
+            "x-dimension": "none"
+          },
+          {
+            "const": "us",
+            "title": "us",
+            "description": "Microseconds.",
+            "x-code": 33,
+            "x-text": "Microseconds.",
+            "x-group": "descriptor",
+            "x-symbol": "us",
+            "x-dimension": "time"
+          },
+          {
+            "const": "bytes",
+            "title": "bytes",
+            "description": "Bytes.",
+            "x-code": 34,
+            "x-text": "Bytes.",
+            "x-group": "descriptor",
+            "x-symbol": "bytes",
+            "x-dimension": "information"
+          },
+          {
+            "const": "nsPerSample",
+            "title": "nsPerSample",
+            "description": "Nanoseconds per sample, a processing cost.",
+            "x-code": 35,
+            "x-text": "Nanoseconds per sample, a processing cost.",
+            "x-group": "descriptor",
+            "x-symbol": "ns/sample",
+            "x-dimension": "time-per-sample"
+          },
+          {
+            "const": "plainCount",
+            "title": "plainCount",
+            "description": "A plain count, with no unit.",
+            "x-code": 36,
+            "x-text": "A plain count, with no unit.",
+            "x-group": "descriptor",
+            "x-symbol": "count",
+            "x-dimension": "count"
+          },
+          {
+            "const": "flag",
+            "title": "flag",
+            "description": "A yes or a no: one when on, zero when off.",
+            "x-code": 37,
+            "x-text": "A yes or a no: one when on, zero when off.",
+            "x-group": "descriptor",
+            "x-symbol": "flag",
+            "x-dimension": "none"
+          }
+        ],
+        "x-kind": "words",
+        "x-dimensions": "PARAM_UNIT_DIMENSIONS"
+      },
+      "PARAM_UNIT_DIMENSIONS": {
+        "description": "What a unit of PARAM_UNITS measures (docs/units.md, The dimensions): two units of one dimension measure the same kind of quantity (ms and s, Hz and kHz), so a reader can tell which units a value may be shown in. The word `count` has the key `counted`: OMX_PARAM_UNIT_DIMENSIONS_COUNT is the number of words.",
+        "x-since": "0.1.0",
+        "oneOf": [
+          {
+            "const": "none",
+            "title": "none",
+            "description": "No dimension: a plain number, a multiplier or a yes or a no.",
+            "x-code": 0,
+            "x-text": "No dimension: a plain number, a multiplier or a yes or a no."
+          },
+          {
+            "const": "time",
+            "title": "time",
+            "description": "A time.",
+            "x-code": 1,
+            "x-text": "A time."
+          },
+          {
+            "const": "frequency",
+            "title": "frequency",
+            "description": "A frequency.",
+            "x-code": 2,
+            "x-text": "A frequency."
+          },
+          {
+            "const": "gain",
+            "title": "gain",
+            "description": "A gain: a level relative to another.",
+            "x-code": 3,
+            "x-text": "A gain: a level relative to another."
+          },
+          {
+            "const": "level",
+            "title": "level",
+            "description": "A level against a fixed reference.",
+            "x-code": 4,
+            "x-text": "A level against a fixed reference."
+          },
+          {
+            "const": "loudness",
+            "title": "loudness",
+            "description": "A loudness or a loudness difference.",
+            "x-code": 5,
+            "x-text": "A loudness or a loudness difference."
+          },
+          {
+            "const": "pitch",
+            "title": "pitch",
+            "description": "A pitch or a pitch interval.",
+            "x-code": 6,
+            "x-text": "A pitch or a pitch interval."
+          },
+          {
+            "const": "angle",
+            "title": "angle",
+            "description": "An angle.",
+            "x-code": 7,
+            "x-text": "An angle."
+          },
+          {
+            "const": "length",
+            "title": "length",
+            "description": "A length in space.",
+            "x-code": 8,
+            "x-text": "A length in space."
+          },
+          {
+            "const": "tempo",
+            "title": "tempo",
+            "description": "A tempo.",
+            "x-code": 9,
+            "x-text": "A tempo."
+          },
+          {
+            "const": "musical-time",
+            "title": "musicalTime",
+            "description": "A length in musical time; it depends on the meter.",
+            "x-code": 10,
+            "x-text": "A length in musical time; it depends on the meter."
+          },
+          {
+            "const": "count",
+            "title": "counted",
+            "description": "A number of things (frames, a plain count).",
+            "x-code": 11,
+            "x-text": "A number of things."
+          },
+          {
+            "const": "slope",
+            "title": "slope",
+            "description": "A change of level per octave.",
+            "x-code": 12,
+            "x-text": "A change of level per octave."
+          },
+          {
+            "const": "rate",
+            "title": "rate",
+            "description": "A change of gain per unit of time.",
+            "x-code": 13,
+            "x-text": "A change of gain per unit of time."
+          },
+          {
+            "const": "ratio",
+            "title": "ratio",
+            "description": "A ratio n:1.",
+            "x-code": 14,
+            "x-text": "A ratio n:1."
+          },
+          {
+            "const": "information",
+            "title": "information",
+            "description": "An amount of data.",
+            "x-code": 15,
+            "x-text": "An amount of data."
+          },
+          {
+            "const": "time-per-sample",
+            "title": "timePerSample",
+            "description": "A processing cost per sample, never a duration.",
+            "x-code": 16,
+            "x-text": "A processing cost per sample, never a duration."
+          }
+        ],
+        "x-kind": "words"
+      },
+      "PARAM_UNIT_SCOPES": {
+        "description": "Where a unit of PARAM_UNITS may be stated (docs/units.md, Q16 ruled: the split is kept): `param`, a unit of the items, the schema's $defs.unit; `descriptor`, a unit only a descriptor's control states, the schema's $defs.descriptorUnit.",
+        "x-since": "0.1.0",
+        "oneOf": [
+          {
+            "const": "param",
+            "title": "param",
+            "description": "A unit of the items: the schema's $defs.unit, and a descriptor takes it too.",
+            "x-code": 0,
+            "x-text": "A unit of the items, which a descriptor states too."
+          },
+          {
+            "const": "descriptor",
+            "title": "descriptor",
+            "description": "A unit only a descriptor's control states: the schema's $defs.descriptorUnit.",
+            "x-code": 1,
+            "x-text": "A unit only a descriptor's control states."
+          }
+        ],
+        "x-kind": "words"
+      },
+      "PARAM_UNITS_CLAP_ENCODED": {
+        "description": "The standard units the CLAP extension org.openmixer.param-contract/1 encodes (docs/units.md, V23d B2): the ids that have a unit code at the CLAP level, each a word of PARAM_UNITS taken from it, in its order. omx-panel reads it to know whether a unit can be served; omx-clap's map check holds its code-to-id mapping onto it. The codes are omx-clap's; this item names none.",
+        "x-since": "0.1.0",
+        "x-why": "A reader that asks whether a unit can be served reads omx-contract only, the innermost layer, so nothing reads outward to omx-clap (coordinator ruling B2, 2026-11-22). Derived by tools/clap-encoded.mjs, never typed.",
+        "oneOf": [
+          {
+            "const": "dB",
+            "title": "db",
+            "description": "Decibels, a gain or a level relative to unity.",
+            "x-code": 0,
+            "x-text": "Decibels, a gain or a level relative to unity.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "db"
+              }
+            ]
+          },
+          {
+            "const": "dBFS",
+            "title": "dbfs",
+            "description": "Decibels relative to digital full scale.",
+            "x-code": 1,
+            "x-text": "Decibels relative to digital full scale.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "dbfs"
+              }
+            ]
+          },
+          {
+            "const": "ms",
+            "title": "ms",
+            "description": "Milliseconds.",
+            "x-code": 2,
+            "x-text": "Milliseconds.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "ms"
+              }
+            ]
+          },
+          {
+            "const": "s",
+            "title": "s",
+            "description": "Seconds.",
+            "x-code": 3,
+            "x-text": "Seconds.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "s"
+              }
+            ]
+          },
+          {
+            "const": "min",
+            "title": "min",
+            "description": "Minutes.",
+            "x-code": 4,
+            "x-text": "Minutes.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "min"
+              }
+            ]
+          },
+          {
+            "const": "Hz",
+            "title": "hz",
+            "description": "Hertz, a frequency.",
+            "x-code": 5,
+            "x-text": "Hertz, a frequency.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "hz"
+              }
+            ]
+          },
+          {
+            "const": "oct",
+            "title": "oct",
+            "description": "Octaves, a bandwidth or an interval.",
+            "x-code": 6,
+            "x-text": "Octaves, a bandwidth or an interval.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "oct"
+              }
+            ]
+          },
+          {
+            "const": "cents",
+            "title": "cents",
+            "description": "Cents, a hundredth of a semitone.",
+            "x-code": 7,
+            "x-text": "Cents, a hundredth of a semitone.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "cents"
+              }
+            ]
+          },
+          {
+            "const": "st",
+            "title": "st",
+            "description": "Semitones.",
+            "x-code": 8,
+            "x-text": "Semitones.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "st"
+              }
+            ]
+          },
+          {
+            "const": "percent",
+            "title": "percent",
+            "description": "Percent.",
+            "x-code": 9,
+            "x-text": "Percent.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "percent"
+              }
+            ]
+          },
+          {
+            "const": "none",
+            "title": "none",
+            "description": "No unit: a ratio or a fraction.",
+            "x-code": 10,
+            "x-text": "No unit: a ratio or a fraction.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "none"
+              }
+            ]
+          },
+          {
+            "const": "dBPerOct",
+            "title": "dbPerOct",
+            "description": "A slope in dB per octave (a tilt).",
+            "x-code": 11,
+            "x-text": "A slope in dB per octave (a tilt).",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "dbPerOct"
+              }
+            ]
+          },
+          {
+            "const": "LUFS",
+            "title": "lufs",
+            "description": "A loudness (ITU-R BS.1770).",
+            "x-code": 12,
+            "x-text": "A loudness (ITU-R BS.1770).",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "lufs"
+              }
+            ]
+          },
+          {
+            "const": "dBPerS",
+            "title": "dbPerS",
+            "description": "A gain change per second.",
+            "x-code": 13,
+            "x-text": "A gain change per second.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "dbPerS"
+              }
+            ]
+          },
+          {
+            "const": "dBTP",
+            "title": "dbtp",
+            "description": "Decibels true peak, a level measured between the samples (ITU-R BS.1770).",
+            "x-code": 14,
+            "x-text": "Decibels true peak, a level measured between the samples (ITU-R BS.1770).",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "dbtp"
+              }
+            ]
+          },
+          {
+            "const": "dBu",
+            "title": "dbu",
+            "description": "Decibels relative to 0.7746 volts RMS, an analogue level.",
+            "x-code": 15,
+            "x-text": "Decibels relative to 0.7746 volts RMS, an analogue level.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "dbu"
+              }
+            ]
+          },
+          {
+            "const": "LU",
+            "title": "lu",
+            "description": "Loudness units, a loudness difference or range (EBU R 128).",
+            "x-code": 16,
+            "x-text": "Loudness units, a loudness difference or range (EBU R 128).",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "lu"
+              }
+            ]
+          },
+          {
+            "const": "kHz",
+            "title": "khz",
+            "description": "Kilohertz, a frequency.",
+            "x-code": 17,
+            "x-text": "Kilohertz, a frequency.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "khz"
+              }
+            ]
+          },
+          {
+            "const": "MHz",
+            "title": "mhz",
+            "description": "Megahertz, a frequency.",
+            "x-code": 18,
+            "x-text": "Megahertz, a frequency.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "mhz"
+              }
+            ]
+          },
+          {
+            "const": "frames",
+            "title": "frames",
+            "description": "Audio frames, one sample on each channel.",
+            "x-code": 19,
+            "x-text": "Audio frames, one sample on each channel.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "frames"
+              }
+            ]
+          },
+          {
+            "const": "bpm",
+            "title": "bpm",
+            "description": "Beats per minute, a tempo.",
+            "x-code": 20,
+            "x-text": "Beats per minute, a tempo.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "bpm"
+              }
+            ]
+          },
+          {
+            "const": "bar",
+            "title": "bar",
+            "description": "Bars, a musical length.",
+            "x-code": 21,
+            "x-text": "Bars, a musical length.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "bar"
+              }
+            ]
+          },
+          {
+            "const": "beat",
+            "title": "beat",
+            "description": "Beats, a musical length.",
+            "x-code": 22,
+            "x-text": "Beats, a musical length.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "beat"
+              }
+            ]
+          },
+          {
+            "const": "m",
+            "title": "m",
+            "description": "Metres, a length.",
+            "x-code": 23,
+            "x-text": "Metres, a length.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "m"
+              }
+            ]
+          },
+          {
+            "const": "cm",
+            "title": "cm",
+            "description": "Centimetres, a length.",
+            "x-code": 24,
+            "x-text": "Centimetres, a length.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "cm"
+              }
+            ]
+          },
+          {
+            "const": "mm",
+            "title": "mm",
+            "description": "Millimetres, a length.",
+            "x-code": 25,
+            "x-text": "Millimetres, a length.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "mm"
+              }
+            ]
+          },
+          {
+            "const": "km",
+            "title": "km",
+            "description": "Kilometres, a length.",
+            "x-code": 26,
+            "x-text": "Kilometres, a length.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "km"
+              }
+            ]
+          },
+          {
+            "const": "inch",
+            "title": "inch",
+            "description": "Inches, a length.",
+            "x-code": 27,
+            "x-text": "Inches, a length.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "inch"
+              }
+            ]
+          },
+          {
+            "const": "mile",
+            "title": "mile",
+            "description": "Miles, a length.",
+            "x-code": 28,
+            "x-text": "Miles, a length.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "mile"
+              }
+            ]
+          },
+          {
+            "const": "deg",
+            "title": "degree",
+            "description": "Degrees, an angle.",
+            "x-code": 29,
+            "x-text": "Degrees, an angle.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "degree"
+              }
+            ]
+          },
+          {
+            "const": "midiNote",
+            "title": "midiNote",
+            "description": "A MIDI note number.",
+            "x-code": 30,
+            "x-text": "A MIDI note number.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "midiNote"
+              }
+            ]
+          },
+          {
+            "const": "ratio",
+            "title": "ratio",
+            "description": "A ratio n:1, a compressor's or an expander's.",
+            "x-code": 31,
+            "x-text": "A ratio n:1, a compressor's or an expander's.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "ratio"
+              }
+            ]
+          },
+          {
+            "const": "coef",
+            "title": "coef",
+            "description": "A coefficient, a plain multiplier with no unit of its own.",
+            "x-code": 32,
+            "x-text": "A coefficient, a plain multiplier with no unit of its own.",
+            "x-from": [
+              {
+                "$ref": "https://openmixer.org/contract/param#/components/schemas/PARAM_UNITS",
+                "x-term": "coef"
+              }
+            ]
+          }
+        ],
+        "x-kind": "words"
+      },
+      "PARAM_MEANINGS": {
+        "description": "What a descriptor control does, its ROLE (docs/descriptors.md, \"Meanings\"; ruling R1 of 2026-11-24 on omx-contract#61: declare, don't infer): required on every control, a closed list, one word per meaning. Where LV2's param: vocabulary or lv2:designation has the term the word carries its name. The schema's $defs.meaning enum is these words in this order (tools/unit-enum.mjs). `unknown`: the plugin states none, and a consumer binds nothing to it.",
+        "x-since": "0.1.0",
+        "oneOf": [
+          {
+            "const": "gain",
+            "title": "gain",
+            "description": "A gain, a level change in dB or as a factor (LV2 param:gain).",
+            "x-code": 0,
+            "x-text": "A gain."
+          },
+          {
+            "const": "threshold",
+            "title": "threshold",
+            "description": "The level a dynamics process acts above or below (LV2 param:threshold).",
+            "x-code": 1,
+            "x-text": "A threshold."
+          },
+          {
+            "const": "ratio",
+            "title": "ratio",
+            "description": "A dynamics ratio, n:1 (LV2 param:ratio).",
+            "x-code": 2,
+            "x-text": "A dynamics ratio."
+          },
+          {
+            "const": "attack",
+            "title": "attack",
+            "description": "How fast a process engages (LV2 param:attack).",
+            "x-code": 3,
+            "x-text": "An attack time."
+          },
+          {
+            "const": "release",
+            "title": "release",
+            "description": "How fast a process lets go (LV2 param:release).",
+            "x-code": 4,
+            "x-text": "A release time."
+          },
+          {
+            "const": "hold",
+            "title": "hold",
+            "description": "How long a process holds before it releases (LV2 param:hold).",
+            "x-code": 5,
+            "x-text": "A hold time."
+          },
+          {
+            "const": "decay",
+            "title": "decay",
+            "description": "How fast a sound or an envelope dies away (LV2 param:decay).",
+            "x-code": 6,
+            "x-text": "A decay time."
+          },
+          {
+            "const": "frequency",
+            "title": "frequency",
+            "description": "A frequency: an EQ band's centre, an oscillator's pitch (LV2 param:frequency).",
+            "x-code": 7,
+            "x-text": "A frequency."
+          },
+          {
+            "const": "cutoffFrequency",
+            "title": "cutoffFrequency",
+            "description": "A filter's cutoff frequency (LV2 param:cutoffFrequency).",
+            "x-code": 8,
+            "x-text": "A filter's cutoff frequency."
+          },
+          {
+            "const": "resonance",
+            "title": "resonance",
+            "description": "A filter's resonance (LV2 param:resonance).",
+            "x-code": 9,
+            "x-text": "A filter's resonance."
+          },
+          {
+            "const": "bypass",
+            "title": "bypass",
+            "description": "On when the process is bypassed (LV2 param:bypass); the inverse of enabled.",
+            "x-code": 10,
+            "x-text": "On when the process is bypassed."
+          },
+          {
+            "const": "wetDryRatio",
+            "title": "wetDryRatio",
+            "description": "The mix of a wet and a dry signal (LV2 param:wetDryRatio).",
+            "x-code": 11,
+            "x-text": "The mix of a wet and a dry signal."
+          },
+          {
+            "const": "delay",
+            "title": "delay",
+            "description": "A delay time (LV2 param:delay).",
+            "x-code": 12,
+            "x-text": "A delay time."
+          },
+          {
+            "const": "enabled",
+            "title": "enabled",
+            "description": "On when the process is on (LV2 lv2:enabled); the inverse of bypass.",
+            "x-code": 13,
+            "x-text": "On when the process is on."
+          },
+          {
+            "const": "range",
+            "title": "range",
+            "description": "How far a process may act: a gate's or an expander's range.",
+            "x-code": 14,
+            "x-text": "A gate's or an expander's range."
+          },
+          {
+            "const": "knee",
+            "title": "knee",
+            "description": "How gradually a dynamics process engages around its threshold.",
+            "x-code": 15,
+            "x-text": "A dynamics knee."
+          },
+          {
+            "const": "hysteresis",
+            "title": "hysteresis",
+            "description": "The gap between a gate's opening and closing levels.",
+            "x-code": 16,
+            "x-text": "A gate's hysteresis."
+          },
+          {
+            "const": "makeup",
+            "title": "makeup",
+            "description": "The gain applied after a dynamics process.",
+            "x-code": 17,
+            "x-text": "A makeup gain."
+          },
+          {
+            "const": "lookahead",
+            "title": "lookahead",
+            "description": "How far ahead a process reads its input.",
+            "x-code": 18,
+            "x-text": "A lookahead time."
+          },
+          {
+            "const": "ceiling",
+            "title": "ceiling",
+            "description": "The level a limiter's output never exceeds.",
+            "x-code": 19,
+            "x-text": "A limiter's ceiling."
+          },
+          {
+            "const": "output",
+            "title": "output",
+            "description": "The output level of a process.",
+            "x-code": 20,
+            "x-text": "An output level."
+          },
+          {
+            "const": "q",
+            "title": "q",
+            "description": "An EQ band's or a filter's quality factor.",
+            "x-code": 21,
+            "x-text": "A quality factor, Q."
+          },
+          {
+            "const": "bandwidth",
+            "title": "bandwidth",
+            "description": "An EQ band's or a filter's width, in octaves; q is its quality factor.",
+            "x-code": 22,
+            "x-text": "A bandwidth, in octaves."
+          },
+          {
+            "const": "slope",
+            "title": "slope",
+            "description": "How steeply a filter or a shelf rolls off.",
+            "x-code": 23,
+            "x-text": "A filter's slope."
+          },
+          {
+            "const": "width",
+            "title": "width",
+            "description": "A stereo width.",
+            "x-code": 24,
+            "x-text": "A stereo width."
+          },
+          {
+            "const": "drive",
+            "title": "drive",
+            "description": "How hard a saturation or distortion is driven.",
+            "x-code": 25,
+            "x-text": "A drive amount."
+          },
+          {
+            "const": "tone",
+            "title": "tone",
+            "description": "A tone control: a brightness or a darkness.",
+            "x-code": 26,
+            "x-text": "A tone control."
+          },
+          {
+            "const": "rate",
+            "title": "rate",
+            "description": "The rate of a modulation, such as an LFO's speed.",
+            "x-code": 27,
+            "x-text": "A modulation rate."
+          },
+          {
+            "const": "depth",
+            "title": "depth",
+            "description": "The depth of a modulation.",
+            "x-code": 28,
+            "x-text": "A modulation depth."
+          },
+          {
+            "const": "feedback",
+            "title": "feedback",
+            "description": "How much of a process's output feeds back into its input.",
+            "x-code": 29,
+            "x-text": "A feedback amount."
+          },
+          {
+            "const": "spread",
+            "title": "spread",
+            "description": "How far voices or taps are spread apart.",
+            "x-code": 30,
+            "x-text": "A spread."
+          },
+          {
+            "const": "predelay",
+            "title": "predelay",
+            "description": "The delay before a reverb's tail.",
+            "x-code": 31,
+            "x-text": "A reverb's predelay."
+          },
+          {
+            "const": "size",
+            "title": "size",
+            "description": "A reverb's room size.",
+            "x-code": 32,
+            "x-text": "A room size."
+          },
+          {
+            "const": "damping",
+            "title": "damping",
+            "description": "How fast a reverb's high frequencies die away.",
+            "x-code": 33,
+            "x-text": "A reverb's damping."
+          },
+          {
+            "const": "lowCut",
+            "title": "lowCut",
+            "description": "A low cut, a high-pass corner.",
+            "x-code": 34,
+            "x-text": "A low cut."
+          },
+          {
+            "const": "highCut",
+            "title": "highCut",
+            "description": "A high cut, a low-pass corner.",
+            "x-code": 35,
+            "x-text": "A high cut."
+          },
+          {
+            "const": "shift",
+            "title": "shift",
+            "description": "A pitch or a frequency shift.",
+            "x-code": 36,
+            "x-text": "A pitch or frequency shift."
+          },
+          {
+            "const": "fine",
+            "title": "fine",
+            "description": "A fine adjustment of another control.",
+            "x-code": 37,
+            "x-text": "A fine adjustment."
+          },
+          {
+            "const": "sync",
+            "title": "sync",
+            "description": "On when a time follows the host's tempo.",
+            "x-code": 38,
+            "x-text": "On when a time follows the tempo."
+          },
+          {
+            "const": "division",
+            "title": "division",
+            "description": "A note division a tempo-synced time takes.",
+            "x-code": 39,
+            "x-text": "A note division."
+          },
+          {
+            "const": "listen",
+            "title": "listen",
+            "description": "On when the process's side signal is heard alone.",
+            "x-code": 40,
+            "x-text": "On when the side signal is heard alone."
+          },
+          {
+            "const": "shape",
+            "title": "shape",
+            "description": "A choice of waveform or curve shape.",
+            "x-code": 41,
+            "x-text": "A choice of shape."
+          },
+          {
+            "const": "model",
+            "title": "model",
+            "description": "A choice of the modelled unit.",
+            "x-code": 42,
+            "x-text": "A choice of model."
+          },
+          {
+            "const": "algorithm",
+            "title": "algorithm",
+            "description": "A choice of algorithm.",
+            "x-code": 43,
+            "x-text": "A choice of algorithm."
+          },
+          {
+            "const": "mode",
+            "title": "mode",
+            "description": "A choice of mode.",
+            "x-code": 44,
+            "x-text": "A choice of mode."
+          },
+          {
+            "const": "type",
+            "title": "type",
+            "description": "A choice of type, such as a filter's.",
+            "x-code": 45,
+            "x-text": "A choice of type."
+          },
+          {
+            "const": "pingpong",
+            "title": "pingpong",
+            "description": "On when a delay bounces between the channels.",
+            "x-code": 46,
+            "x-text": "On when a delay bounces between the channels."
+          },
+          {
+            "const": "amount",
+            "title": "amount",
+            "description": "How strongly a process acts, from none to all of it: a balancer's pull toward its target.",
+            "x-code": 47,
+            "x-text": "How strongly a process acts."
+          },
+          {
+            "const": "number",
+            "title": "number",
+            "description": "How many of a repeated part a process runs: voices, delay taps, bands or stages.",
+            "x-code": 48,
+            "x-text": "A number of voices, taps, bands or stages."
+          },
+          {
+            "const": "balance",
+            "title": "balance",
+            "description": "Where a signal sits between two sides: a pan between the left and right channels, or one part's level against another's.",
+            "x-code": 49,
+            "x-text": "A pan or a balance between two sides."
+          },
+          {
+            "const": "link",
+            "title": "link",
+            "description": "How a process ties its channels together: on when they act as one, or a choice of how they are linked.",
+            "x-code": 50,
+            "x-text": "A channel link."
+          },
+          {
+            "const": "solo",
+            "title": "solo",
+            "description": "On when one part of a process is heard alone, the others silent; listen is the side signal heard alone.",
+            "x-code": 51,
+            "x-text": "On when one part is heard alone."
+          },
+          {
+            "const": "order",
+            "title": "order",
+            "description": "The order a chain's stages run in.",
+            "x-code": 52,
+            "x-text": "A stage order."
+          },
+          {
+            "const": "acceleration",
+            "title": "acceleration",
+            "description": "How fast a moving part changes speed: a rotor's spin-up and slow-down.",
+            "x-code": 53,
+            "x-text": "An acceleration."
+          },
+          {
+            "const": "dispersion",
+            "title": "dispersion",
+            "description": "How far a process spreads a sound's frequencies apart in time: a spring's chirp.",
+            "x-code": 54,
+            "x-text": "A dispersion."
+          },
+          {
+            "const": "window",
+            "title": "window",
+            "description": "How long a stretch of signal a process reads or turns at once: a loudness window, a reverse reverb's swell.",
+            "x-code": 55,
+            "x-text": "A window length."
+          },
+          {
+            "const": "unknown",
+            "title": "unknown",
+            "description": "The plugin states no meaning: the control has no role and is bound to nothing.",
+            "x-code": 56,
+            "x-text": "The plugin states no meaning."
+          }
+        ],
+        "x-kind": "words"
+      },
+      "PARAM_FILTER_RESPONSES": {
+        "description": "The response of the filter a descriptor control sets (docs/descriptors.md, \"Filter responses\"; omx-contract#208): optional on a control, a closed list, one word per shape. omx-dsp's EQ design reads these words' codes for the section kinds it builds (omx_eq_kind, through this item's render), so a word's code is the integer a kernel reads for it and is never moved. A consumer finds an EQ's edges by these words (highpass, lowpass), never by a word in a control's name. The schema's $defs.filterResponse enum is these words in this order (tools/unit-enum.mjs).",
+        "x-since": "0.1.0",
+        "oneOf": [
+          {
+            "const": "peaking",
+            "title": "peaking",
+            "description": "A peaking response, a bell: a boost or a cut around a centre frequency.",
+            "x-code": 0,
+            "x-text": "A peaking filter."
+          },
+          {
+            "const": "lowShelf",
+            "title": "lowShelf",
+            "description": "A low shelf: a boost or a cut of everything below a corner frequency.",
+            "x-code": 1,
+            "x-text": "A low shelf."
+          },
+          {
+            "const": "highShelf",
+            "title": "highShelf",
+            "description": "A high shelf: a boost or a cut of everything above a corner frequency.",
+            "x-code": 2,
+            "x-text": "A high shelf."
+          },
+          {
+            "const": "highpass",
+            "title": "highpass",
+            "description": "A high-pass: passes what is above its cutoff and cuts what is below it, an EQ's low edge.",
+            "x-code": 3,
+            "x-text": "A high-pass filter."
+          },
+          {
+            "const": "lowpass",
+            "title": "lowpass",
+            "description": "A low-pass: passes what is below its cutoff and cuts what is above it, an EQ's high edge.",
+            "x-code": 4,
+            "x-text": "A low-pass filter."
+          },
+          {
+            "const": "notch",
+            "title": "notch",
+            "description": "A notch: a narrow null at its centre frequency.",
+            "x-code": 5,
+            "x-text": "A notch filter."
+          },
+          {
+            "const": "bandpass",
+            "title": "bandpass",
+            "description": "A band-pass: passes a band around its centre frequency and cuts either side of it.",
+            "x-code": 6,
+            "x-text": "A band-pass filter."
+          },
+          {
+            "const": "allpass1",
+            "title": "allpass1",
+            "description": "A first-order all-pass: every frequency at unity gain, its phase turned around a corner frequency.",
+            "x-code": 7,
+            "x-text": "A first-order all-pass filter."
+          },
+          {
+            "const": "allpass2",
+            "title": "allpass2",
+            "description": "A second-order all-pass: every frequency at unity gain, its phase turned around a centre frequency.",
+            "x-code": 8,
+            "x-text": "A second-order all-pass filter."
+          }
+        ],
+        "x-kind": "words"
+      }
+    }
+  }
+}

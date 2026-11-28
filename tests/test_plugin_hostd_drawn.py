@@ -11,7 +11,9 @@
 import json
 import os
 import shutil
+import tempfile
 import unittest
+from unittest import mock
 
 import sys
 
@@ -105,6 +107,42 @@ class drawn_view(plugin_hostd_case):
             _, proc = self.drawn_plugin(panel={"plugin": {"format": "lv2", "id": "urn:test:big"}, "panel": declared})
         self.assertEqual(self.gr_bar(proc.engine.drawn[0]), [None, None])
         self.assertTrue([m for m in logs.output if "meter 3" in m])
+
+    def coded_panel(self, root=os.path.join(PANEL_FIXTURES, "contract.d")):
+        """omx-comp 0.21.1's own panel as plugin-hostd files it from omx-clap-scan 0.35.1, which prints each display's
+        kind as its code (omx-clap-core keeps no panel words): the transfer curve is kind 1 and reads meters 1 and 2,
+        the gain-reduction bar is kind 0 and reads meter 0. The codes are read through the panel domain of the contract
+        directory `root` (the fixture is omx-panel's contract.d/panel/panel.json, its two display items). Each drawn
+        display's meters by symbol."""
+        patch = mock.patch.dict(os.environ, {"OMX_CONTRACT_PATH": root})
+        patch.start()
+        self.addCleanup(patch.stop)
+        with open(os.path.join(PANEL_FIXTURES, "omx-comp-0.21.1.panel.json")) as f:
+            filed = json.load(f)
+        self.assertEqual([d["kind"] for d in filed["panel"]["displays"]], [1, 0], "the fixture is in the scan's shape")
+        _, proc = self.drawn_plugin(panel=dict(filed, plugin={"format": "lv2", "id": "urn:test:big"}))
+        layout = proc.engine.drawn[0]
+        return {d["kind"]: [layout["meters"][k]["symbol"] if k is not None else None for k in d["meters"]]
+                for d in layout["displays"]}
+
+    def test_a_panel_that_gives_its_display_kinds_as_codes_gives_each_display_its_meters(self):
+        self.assertEqual(self.coded_panel(),
+                         {"transfer_curve": ["compIn", "compOut"], "gain_reduction_bar": ["compGr", None]})
+
+    def test_a_display_kinds_code_is_the_one_the_panel_domain_declares(self):
+        # the domain decides, not a table of this tree: with the codes of transfer_curve and gain_reduction_bar
+        # swapped, kind 1 is the bar's
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        with open(os.path.join(PANEL_FIXTURES, "contract.d", "panel", "panel.json")) as f:
+            doc = json.load(f)
+        for w in doc["components"]["schemas"]["PANEL_DISPLAY_KINDS"]["oneOf"]:
+            w["x-code"] = {0: 1, 1: 0}.get(w["x-code"], w["x-code"])
+        os.makedirs(os.path.join(root, "panel"))
+        with open(os.path.join(root, "panel", "panel.json"), "w") as f:
+            json.dump(doc, f)
+        self.assertEqual(self.coded_panel(root),
+                         {"transfer_curve": ["compGr", None], "gain_reduction_bar": ["compIn", "compOut"]})
 
     def refused_panel(self, how):
         os.environ["OMX_PANEL_STUB_PANEL_REFUSED"] = how
@@ -206,6 +244,20 @@ class drawn_view(plugin_hostd_case):
         fake.forget_curves()
         self.assertEqual(len(engine.curve(0)), 2, "bound again and drawn")
         self.assertEqual(len([l for l in fake.lines if l.startswith("curve_bind")]), 2)
+
+    def test_a_delays_taps_are_read_with_its_points(self):
+        # a delay's time_response answers no point but its taps ('stems ...'): curve_drawing hands both to the widget,
+        # which gives the taps to the renderer; before, they were read past and the delay's frame stayed empty
+        fake, proc = self.drawn_plugin()
+        engine = proc.engine
+        engine.drawn[1].update(family="delay", displays=[{"kind": "time_response", "section": 0, "source": "family"}],
+                               roles=[{"role": "time", "index": 0, "symbol": "p0", "unit": "ms"},
+                                      {"role": "feedback", "index": 0, "symbol": "p1", "unit": "none"}])
+        fake.params[engine.instance]["p0"] = 300.0
+        self.assertEqual(engine.curve_drawing(0), ([], [(0.0, 0.0, 1.0, " "), (300.0, -6.02, 0.5, "L")]))
+        self.assertEqual(engine.curve(0), [], "and no point")
+        self.assertEqual([l for l in fake.lines if l.startswith("curve_bind")],
+                         [f"curve_bind {engine.instance} 0 time_response delay time=p0:ms feedback=p1:none"])
 
     def test_a_display_that_is_no_curve_asks_nothing(self):
         fake, proc = self.drawn_plugin()

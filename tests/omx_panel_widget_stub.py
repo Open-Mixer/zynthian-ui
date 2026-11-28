@@ -36,7 +36,8 @@ def load_widget(**config_values):
 
     class base:
         def __init__(self, parent):
-            self.width, self.height, self.processor = 1, 1, None
+            # shown: zynthian_widget_base's flag, which the widget reads to start the spectrum of a shown panel
+            self.width, self.height, self.processor, self.shown = 1, 1, None, False
 
         def set_processor(self, processor):
             self.processor = processor

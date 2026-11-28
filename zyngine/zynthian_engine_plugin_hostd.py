@@ -12,6 +12,7 @@
 # version 2 of the License, or any later version. See the LICENSE.txt file.
 # ******************************************************************************
 
+import functools
 import io
 import os
 import re
@@ -30,6 +31,7 @@ import subprocess
 
 import zynautoconnect
 from zyngine.zynthian_signal_manager import zynsigman
+from zyngine import zynthian_contract_dir
 from zyngine import zynthian_plugin_hostd_protocol
 from zyngine import zynthian_plugin_hostd_grouping
 from zyngine import zynthian_plugin_hostd_estimate
@@ -523,6 +525,15 @@ def head_client(members):
     except Exception as e:
         logging.debug(f"plugin-hostd client of {members} not read from the graph => {e}")
     return {i: daemon.engines[members[0]].jackname for i in members}
+
+
+def rta_sharing(processor):
+    """The instances run as `processor`'s jack client, in chain order (the order its worker runs them: the members
+    lists clients are made from are the chain's); [its instance] for a client of its own. The RTA's taps read it
+    (zynthian_omx_panel_view.rta_taps): only the first member answers PRE and only the last POST."""
+    client = processor.get_jackname()
+    shared = [i for i, c in daemon.clients.get(processor.chain_id, {}).items() if c == client]
+    return shared or [processor.engine.instance]
 
 
 class member_info:
@@ -1036,8 +1047,8 @@ def own_panel(path):
 def panel_meters(layout, panel):
     """`layout` with the meters the plugin's own panel declares, when plugin-hostd's panel reply carries them
     (clap.meters/1): the layout's meters are the panel's, in its order, each with describe's facts of the meter of
-    that symbol, and each display's meter ids are the panel's display's, indices into those meters (the gain-reduction
-    bar reads its meter 0). An id beyond them is said once and drawn as none. A panel that carries no meters leaves
+    that symbol, and each display's meter ids are the panel's display of that kind's, indices into those meters (the
+    gain-reduction bar reads its meter 0); a kind the panel gives as a code is read as its word first. An id beyond them is said once and drawn as none. A panel that carries no meters leaves
     describe's meters and their ids as they are."""
     try:
         with open(panel) as f:
@@ -1052,9 +1063,9 @@ def panel_meters(layout, panel):
     for m in meters:
         symbol = str(m.get("symbol") or m.get("id"))
         drawn.append({**m, **facts.get(symbol, {}), "symbol": symbol})
-    own = {}
+    own = {}  # the panel's displays by kind word: omx-clap-scan prints the kind's code (panel_view.panel_word)
     for d in declared.get("displays") or []:
-        own.setdefault(d.get("kind"), []).append(d)
+        own.setdefault(panel_view.panel_word("PANEL_DISPLAY_KINDS", d.get("kind")), []).append(d)
     displays = []
     for d in layout.get("displays") or []:
         mine = own.get(d.get("kind")) or []
@@ -1075,6 +1086,34 @@ def panel_meters(layout, panel):
 def panel_args(panel):
     """describe's arguments for the plugin's own panel file (own_panel), none without one."""
     return ["--panel", panel] if panel else []
+
+
+@functools.lru_cache(maxsize=None)
+def unit_symbols():
+    """{unit word: its symbol} as the contract states them: omx-contract-data's param domain, PARAM_UNITS, each word's
+    `x-symbol` (`none` is "", `percent` "%", `dBPerOct` "dB/oct"). Empty, said once, when no contract directory holds it."""
+    path = zynthian_contract_dir.domain("param")
+    try:
+        with open(path) as f:
+            units = json.load(f)["components"]["schemas"]["PARAM_UNITS"]["oneOf"]
+        return {u["const"]: u["x-symbol"] for u in units}
+    except (TypeError, OSError, ValueError, KeyError) as e:
+        log_once("unit symbols", "the contract's unit symbols are not readable (%s, %s): a unit is shown as its word", path, e)
+        return {}
+
+
+def unit_symbol(word):
+    """The symbol a unit word (param_info's, a descriptor travel's) is shown as: the contract's, verbatim; nothing for no
+    unit; a word the contract does not list as it is."""
+    if word in (None, "", "-", "unknown"):
+        return ""
+    return unit_symbols().get(word, word)
+
+
+def control_title(label, unit):
+    """A controller's title: its label, then its unit's symbol when it has one ("Trim dB", "Input", "Mix %")."""
+    symbol = unit_symbol(unit)
+    return f"{label} {symbol}" if symbol else label
 
 
 def served_symbol(control):
@@ -1408,31 +1447,43 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
 
     def curve(self, display):
         """The points of display `display` of the description, as plugin-hostd computes them from the plugin's values
-        now (curve_bind once, then curve_points); [] when it draws none (its reply says why, logged once)."""
+        now (curve_drawing's points); [] when it draws none."""
+        return self.curve_drawing(display)[0]
+
+    def curve_drawing(self, display):
+        """(the points, the taps) of display `display` of the description, as plugin-hostd computes them from the
+        plugin's values now (curve_bind once, then curve_points): the points as curve_points() reads them, the taps a
+        delay's time_response answers as curve_stems() reads them, None when the reply has none. ([], None) when it
+        draws nothing (its reply says why, logged once)."""
         if not self.drawn or self.instance is None:
-            return []
+            return [], None
         description = self.drawn[1]
         line = panel_view.curve_bind_line(self.instance, display, description)
         if not line:
-            return []
+            return [], None
         for attempt in (0, 1):
             try:
                 if self.curves_bound.get(display) != line:
                     daemon.call(line)
                     self.curves_bound[display] = line
-                return panel_view.curve_points(daemon.call(command("curve_points", self.instance, display, 96))[1])
+                reply = daemon.call(command("curve_points", self.instance, display, 96))[1]
+                return panel_view.curve_points(reply), panel_view.curve_stems(reply)
             except plugin_hostd_error as e:
                 # a respawned instance lost its binding: bind again, once
                 self.curves_bound.pop(display, None)
                 if attempt or e.code != protocol.find("reply.plugin-hostd.curve-term-missing"):
                     log_once(("curve", self.plugin_uri, display), "plugin-hostd draws no curve %s for %s: %s", display,
                              self.plugin_uri, e)
-                    return []
+                    return [], None
             except (OSError, plugin_hostd_down, plugin_hostd_timeout) as e:
                 log_once(("curve", self.plugin_uri, display), "plugin-hostd draws no curve %s for %s: %s", display,
                          self.plugin_uri, e)
-                return []
-        return []
+                return [], None
+        return [], None
+
+    def rta_sharing(self, processor):
+        """The instances processor's jack client runs, in chain order (rta_sharing)."""
+        return rta_sharing(processor)
 
     def meter(self, symbol):
         """The last reading of output `symbol` (a meter) from the feedback port, None until one came. The monitor is
@@ -1670,8 +1721,7 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
                     w = info.split()
                     o.update(unit=w[0], scale=w[1], min=float(w[2]), max=float(w[3]), default=float(w[4]))
                 value = values.get(symbol)
-                unit = o["unit"] if o["unit"] not in (None, "", "-", "unknown") else ""
-                zopts = {"name": f"{label} {unit}" if unit else label, "group_symbol": f"page{k}",
+                zopts = {"name": control_title(label, o["unit"]), "camel_title": False, "group_symbol": f"page{k}",
                          "group_name": page_name, "display_priority": priority, "value_min": o["min"],
                          "value_max": o["max"], "value_default": o["default"], "is_logarithmic": o["scale"] == "log",
                          "is_integer": o["scale"] == "stepped"}

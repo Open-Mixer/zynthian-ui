@@ -11,6 +11,12 @@
 # pointer, the wheel and the keys with the same gesture vocabulary; plugin-hostd computes each curve's points and its
 # feedback port gives the meters. Without the renderer the strips below are drawn, and the reason is logged once.
 #
+# Under a curve the renderer can draw the measured spectrum (the Zynthian RTA's wiring): while the
+# panel is shown and a display takes one, omx-rta-read runs as the panel's child, reading the taps the mode shows
+# (the console's pre | post | both, and the delta), and the newest frame is handed to the view on each refresh. The
+# child is ended and reaped when the panel is hidden, rebuilt or destroyed; a tap the mode shows that the engine
+# does not answer, or a missing reader, leaves the curve without a spectrum, said once.
+#
 # Each control is a strip that moves with omx-panel's one gesture vocabulary (zynthian_panel_gestures): press and drag,
 # Shift for fine, the wheel and the arrow keys for a step (Shift for five), double-click or Backspace for the declared
 # default, a tap to select, a long press for `more`. The unit and the taper are the control's own; every number is
@@ -27,6 +33,8 @@ import logging
 import time
 import tkinter
 
+import zynautoconnect
+
 from zyngine import zynthian_omx_panel_view as panel_view
 from zyngine import zynthian_panel_gestures as gestures
 from zyngine import zynthian_position_law as position_law
@@ -37,6 +45,13 @@ from zyngui import zynthian_gui_omx_panel_image as panel_image
 from zyngui.zynthian_widget_base import zynthian_widget_base
 
 MARGIN = 10
+_said = set()
+
+
+def log_once(key, msg, *args):
+    if key not in _said:
+        _said.add(key)
+        logging.warning(msg, *args)
 
 
 class zynthian_widget_omx_panel(zynthian_widget_base):
@@ -67,6 +82,8 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         self.drawn_state = None
         self.panel_image = None  # the panel on the canvas, blitted where a draw changed (panel_image.PanelImage)
         self.meter_at = {}
+        self.spectrum = None  # the panel's omx-rta-read child (panel_view.SpectrumFeed) while it is shown
+        self.rta_mode, self.rta_delta = "post", False
         try:  # Tk sees one pointer; a multi-touch screen's fingers come from the evdev slots (a pinch needs two)
             self.touch = touch.EvdevSource()
         except touch.NoTouchDevice as e:
@@ -130,18 +147,20 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
     def page_keys(self):
         """The layout symbols of the controls on the screen, by their controller."""
         engine = self.processor.engine if self.processor else None
+        drawn = getattr(engine, "drawn", None)
+        by_param = layout_keys(drawn[0]) if drawn else {}
         keys = {}
         for z in self.zctrls():
             if z is None:  # a blank slot
                 continue
-            sym = str(z.symbol)
-            keys[engine_key(sym)] = z
+            keys[engine_key(str(z.symbol), by_param)] = z
         return keys
 
     def build_drawn(self):
         """The renderer's view of the part of the panel this screen shows; False when there is none to draw."""
         engine = self.processor.engine if self.processor else None
         drawn = getattr(engine, "drawn", None)
+        self.stop_spectrum()
         if self.drawn:
             self.drawn.close()
         self.drawn = self.drawn_state = None
@@ -165,7 +184,8 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         view.set_title("", engine.name)
         view.set_surface(self.width, self.height)
         self.controls = []  # (view index, controller)
-        all_zctrls = {engine_key(str(sym)): z for sym, z in engine.zctrls.items()}
+        by_param = layout_keys(drawn[0])
+        all_zctrls = {engine_key(str(sym), by_param): z for sym, z in engine.zctrls.items()}
         for i, key in enumerate(view.symbols):
             z = all_zctrls.get(key)
             if z is None:
@@ -177,7 +197,63 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         self.drawn = view
         self.drawn_page = tuple(sorted(keys))
         self.meter_at = {}
+        if self.shown:
+            self.start_spectrum()
         return True
+
+    # ---- The spectrum under a curve ----
+
+    def start_spectrum(self):
+        """Start the reader for the shown view when one of its displays takes a spectrum (the renderer says which: an
+        empty spectrum is refused on a display with no log axis) and the engine answers the taps the mode shows."""
+        self.stop_spectrum()
+        view = self.drawn
+        window = panel_view.rta_window()
+        if not view or not window:
+            return False
+        displays = [k for k in self.display_map if view.set_spectrum(k, None, self.rta_mode, self.rta_delta, window)]
+        if not displays:
+            return False
+        engine = self.processor.engine
+        post, pre, refusal = panel_view.rta_taps(self.processor.get_jackname(), getattr(engine, "rta_sharing", lambda p: [])(self.processor),
+                                                 getattr(engine, "instance", None), zynautoconnect.get_ports)
+        argv = panel_view.rta_argv(self.rta_mode, post, pre, panel_view.rta_bands(self.width))
+        if argv is None:
+            log_once(("rta", engine.name, self.rta_mode), "%s shows no %s spectrum: %s", engine.name, self.rta_mode,
+                     refusal or "its taps are not answered")
+            return False
+        self.spectrum = panel_view.SpectrumFeed(view, displays, argv, self.rta_mode, self.rta_delta, window)
+        if not self.spectrum.start():
+            self.spectrum = None
+            return False
+        return True
+
+    def stop_spectrum(self):
+        """End and reap the reader, if one runs."""
+        feed, self.spectrum = self.spectrum, None
+        if feed:
+            feed.stop()
+
+    def set_rta_mode(self, mode, delta=False):
+        """The console's mode and delta: a change ends the reader and starts it with the taps the new mode shows."""
+        if (mode, bool(delta)) != (self.rta_mode, self.rta_delta):
+            self.rta_mode, self.rta_delta = mode, bool(delta)
+            if self.spectrum or self.shown:
+                self.start_spectrum()
+
+    def show(self):
+        was = self.shown
+        super().show()
+        if not was and self.drawn:
+            self.start_spectrum()
+
+    def hide(self):
+        self.stop_spectrum()
+        super().hide()
+
+    def destroy(self):
+        self.stop_spectrum()
+        super().destroy()
 
     def fraction(self, z):
         if z.position_law:
@@ -204,9 +280,13 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
                 else:
                     view.set_value(i, self.fraction(z), z.get_value2label())
             for k, display in self.display_map.items():
-                points = engine.curve(display)
+                points, stems = engine.curve_drawing(display)
                 if len(points) >= 2:
                     view.set_curve(k, points)
+                if stems is not None:  # a delay's taps: its time_response has no point but these
+                    view.set_stems(k, stems)
+        if self.spectrum and self.spectrum.apply():
+            changed = True
         now = time.monotonic()
         for i, sym in enumerate(view.meters):
             value = engine.meter(sym)
@@ -338,11 +418,24 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
             c.create_text(w - MARGIN, y + h * 0.15, anchor="e", text=zctrl.get_value2label(), fill=zynthian_gui_config.color_tx)
 
 
-def engine_key(symbol):
-    """The layout's own key of a plugin-hostd controller (omx-panel's keyOf, what `describe --layout` names a control by):
-    a CLAP parameter's number is p<number>, an LV2 port keeps its symbol. A CLAP plugin whose descriptor states a symbol
-    is keyed by that symbol in the layout, which this cannot know from the controller alone: the layout's `param` is the
-    join for it (#47)."""
+def layout_keys(layout):
+    """{a controller's symbol: the layout's key of its control}, by the layout's `param` (#47). omx-panel's layout
+    (`describe --layout`) names a CLAP control by the symbol its parameter contract states (omx-comp's thresholdDb) and
+    carries the parameter's number as `param`, which is what plugin-hostd's controller of it is keyed by ("0")."""
+    keys = {}
+    for c in layout.get("controls") or []:
+        param = c.get("param")
+        if isinstance(param, int) and not isinstance(param, bool) and c.get("symbol") is not None:
+            keys[str(param)] = str(c["symbol"])
+    return keys
+
+
+def engine_key(symbol, by_param=None):
+    """The layout's own key of a plugin-hostd controller: the control whose `param` is the controller's number
+    (layout_keys); else, for a layout that carries no `param`, omx-panel's keyOf: a CLAP parameter's number is
+    p<number>, an LV2 port keeps its symbol."""
+    if by_param and symbol in by_param:
+        return by_param[symbol]
     return f"p{symbol}" if symbol.isdigit() else symbol
 
 
