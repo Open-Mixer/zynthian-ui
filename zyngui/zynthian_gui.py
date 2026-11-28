@@ -35,7 +35,7 @@ from queue import Empty, SimpleQueue
 from pathlib import Path
 from time import monotonic
 from datetime import datetime
-from threading import Thread, Lock, Event
+from threading import Thread, Lock, RLock, Event
 from websocket_server import WebsocketServer
 
 # Zynthian specific modules
@@ -178,7 +178,7 @@ class zynthian_gui:
         self.screen_history = []
         self.current_screen = None
         self.screen_timer_id = None
-        self.screen_lock = Lock()           # Lock object to avoid concurrence problems when showing/closing screens
+        self.screen_lock = RLock()          # Reentrant lock object to avoid concurrence problems when showing/closing screens
         self.current_processor = None
 
         self.state_manager = zynthian_state_manager()
@@ -839,21 +839,24 @@ class zynthian_gui:
     def close_screen(self, screen=None):
         """ Closes the current screen or optionally the specified screen """
 
-        if screen is None:
-            screen = self.get_current_screen()
-        self.prune_screen_history(screen, soft=False)
-        try:
-            last_screen = self.screen_history.pop()
-        except:
-            last_screen = "root"
+        # Hold the screen lock while history is popped and the previous screen is shown,
+        # so another thread (e.g. busy thread closing loading screen) can't interleave.
+        with self.screen_lock:
+            if screen is None:
+                screen = self.get_current_screen()
+            self.prune_screen_history(screen, soft=False)
+            try:
+                last_screen = self.screen_history.pop()
+            except:
+                last_screen = "root"
 
-        if last_screen not in self.screens:
-            logging.error(f"Can't back to screen '{last_screen}'. It doesn't exist!")
-            last_screen = "root"
-        elif last_screen in ("mixer", "launcher"):
-            last_screen = "root"
-        logging.debug(f"CLOSE SCREEN '{self.current_screen}' => Back to '{last_screen}'")
-        self.show_screen(last_screen)
+            if last_screen not in self.screens:
+                logging.error(f"Can't back to screen '{last_screen}'. It doesn't exist!")
+                last_screen = "root"
+            elif last_screen in ("mixer", "launcher"):
+                last_screen = "root"
+            logging.debug(f"CLOSE SCREEN '{self.current_screen}' => Back to '{last_screen}'")
+            self.show_screen(last_screen)
 
     def reset_screen_history(self):
         self.screen_history = []
@@ -1078,21 +1081,30 @@ class zynthian_gui:
                     logging.error(f"Help file '{fpath}' doesn't exist.")
             return
 
-        # Get help page for the current view
-        try:
-            # Ask screen object
-            curscreen_obj = self.get_current_screen_obj()
-            fpath = get_fpath(curscreen_obj.get_help_fpath())
-        except:
-            # Else use view name
-            fpath = get_fpath(f"{self.current_screen}.html")
+        # Get help page for the current view: the view gives a list of candidate pages, from the
+        # most specific to the most generic, and the first one that exists is shown.
+        screen = str(self.current_screen)
+        candidates = []
+        curscreen_obj = self.get_current_screen_obj()
+        if callable(getattr(curscreen_obj, "get_help_fpath", None)):
+            try:
+                res = curscreen_obj.get_help_fpath(screen)
+                if isinstance(res, str):
+                    candidates.append(res)
+                elif res:
+                    candidates += [fp for fp in res if fp]
+            except Exception as e:
+                logging.warning(f"Can't get help page for '{screen}' => {e}")
+        # Views without their own lookup (e.g. fullscreen modals) use the view name
+        candidates.append(f"{screen}.html")
 
-        if fpath and Path(fpath).exists():
-            self.screens['help'].load_file(fpath)
-            return
+        for fpath in candidates:
+            fpath = get_fpath(fpath)
+            if fpath and Path(fpath).exists():
+                self.screens['help'].load_file(fpath)
+                return
 
-        topic = str(self.current_screen).split("/")[-1]
-        logging.warning(f"No help for '{topic}'")
+        logging.warning(f"No help for '{screen}' (tried {', '.join(candidates)})")
 
     # TODO: Rename - this is called for various chain manipulation purposes
     def modify_chain(self, status=None):
@@ -3681,7 +3693,10 @@ class zynthian_gui:
                 # Show loading screen if busy and busy message
                 if self.current_screen != "loading":
                     if busy_message:
-                        self.show_loading(busy_message, busy_details)
+                        with self.screen_lock:
+                            # Re-check under lock: busy may have ended and another screen shown meanwhile
+                            if self.state_manager.is_busy() and self.current_screen != "loading":
+                                self.show_loading(busy_message, busy_details)
                 else:
                     busy_error = self.state_manager.get_busy_error()
                     if busy_error:
@@ -3701,7 +3716,11 @@ class zynthian_gui:
             else:
                 busy_timeout = 0
                 if self.current_screen == "loading":
-                    self.close_screen("loading")
+                    with self.screen_lock:
+                        # Re-check under lock: another thread may have shown a new screen after
+                        # ending busy (e.g. alsa_mixer from audio_in). Don't close that one.
+                        if self.current_screen == "loading" and not self.state_manager.is_busy():
+                            self.close_screen("loading")
 
             try:
                 if self.current_screen:
@@ -3784,6 +3803,7 @@ class zynthian_gui:
 
         zynswitch_cuia_ts = [None] * zynthian_gui_config.num_zynswitches
         zynswitch_repeat = {}
+        zynswitch_wake = set()  # Switches pressed to wake from power save, until released
         zynpot_repeat = {}
         repeat_delay = 3  # Quantity of repeat intervals to delay before triggering auto repeat
         repeat_interval = 0.15  # Auto repeat interval in seconds
@@ -3828,6 +3848,22 @@ class zynthian_gui:
                     # zynswitch has parameters: [switch, action] where action is P(ressed), R(eleased), S(hort), B(old), L(ong), X or Y
                     i = int(params[0])
                     t = params[1]
+                    # A switch pressed during power save wakes the UI. Its push and short actions are
+                    # ignored but bold and long actions still operate.
+                    if self.state_manager.power_save_mode or i in zynswitch_wake:
+                        self.state_manager.set_event_flag()
+                        if t == 'P':
+                            zynswitch_wake.add(i)
+                            zynswitch_cuia_ts[i] = monotonic()
+                            continue
+                        zynswitch_wake.discard(i)
+                        if t == 'R':
+                            if zynswitch_cuia_ts[i] is None:
+                                continue
+                            t = self.zynswitch_timing(int(1000000 * (monotonic() - zynswitch_cuia_ts[i])))
+                        if t == 'S':
+                            zynswitch_cuia_ts[i] = None
+                            continue
                     if t == 'R':
                         if zynswitch_cuia_ts[i] is None:
                             if i in zynswitch_repeat:

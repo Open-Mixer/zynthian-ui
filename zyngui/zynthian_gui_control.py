@@ -682,7 +682,24 @@ class zynthian_gui_control(zynthian_gui_selector):
                     zgui_ctrl.zctrl.is_dirty = False
         if self.mode == 'control':
             for k, widget in self.widgets.items():
+                if widget.shown:
+                    self.refresh_widget_processor(widget)
                 widget.update()
+
+    def refresh_widget_processor(self, widget):
+        """Rebind a widget whose processor was replaced.
+
+        Reloading a processor (chain_manager.reload_processor) replaces the processor object, keeping its id.
+        A widget instance can still hold the old one (removed => no chain, engine stopped) when it's displayed
+        again without show_widget, and would keep polling a stopped engine. Cheap: one dict lookup.
+        """
+        proc = widget.processor
+        if proc is None or proc.chain is not None:
+            return
+        new_proc = self.chain_manager.processors.get(proc.id)
+        if new_proc is not None and new_proc is not proc:
+            logging.debug(f"Widget processor {proc.id} was replaced => rebinding")
+            widget.set_processor(new_proc)
 
     # --------------------------------------------------------------------------
     # CUIA => Pass CUIA to widget
@@ -1110,16 +1127,26 @@ class zynthian_gui_control(zynthian_gui_selector):
         else:
             self.select_path.set(self.chain_manager.get_active_chain().get_title())
 
-    def get_help_fpath(self):
-        try:
-            proc = self.zyngui.get_current_processor()
-            # Help page declared by the processor's widget (e.g. zyngui:help in the LV2 data)
+    def get_processor_help_fpaths(self):
+        """ Help pages of the current processor: the one declared by its widget (e.g. zyngui:help in
+            the LV2 data) and the one named after it (e.g. common/sooperlooper.html)
+        """
+        fpaths = []
+        proc = self.zyngui.get_current_processor()
+        if proc:
             fpath = getattr(proc.engine, "custom_gui_help_fpath", None)
-            if fpath and os.path.isfile(fpath):
-                return fpath
-            return proc.name.lower() + ".html"
-        except:
-            return super().get_help_fpath()
+            if fpath:
+                fpaths.append(fpath)
+            fpaths.append(proc.name.lower().replace(" ", "_") + ".html")
+        return fpaths
+
+    def get_help_fpath(self, screen):
+        if self.param_editor_zctrl:
+            return ["parameter_editor.html"]
+        # Views sharing this screen (tempo, alsa_mixer, audio_player, audio2midi) have their own page
+        if screen != "control":
+            return [f"{screen}.html"] + self.get_processor_help_fpaths() + ["chain_control.html"]
+        return self.get_processor_help_fpaths() + ["chain_control.html", "selector.html"]
 
     # --------------------------------------------------------------------------
     # ZynVoice TTS
