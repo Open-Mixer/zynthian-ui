@@ -130,12 +130,13 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
     def page_keys(self):
         """The layout symbols of the controls on the screen, by their controller."""
         engine = self.processor.engine if self.processor else None
+        drawn = getattr(engine, "drawn", None)
+        by_param = layout_keys(drawn[0]) if drawn else {}
         keys = {}
         for z in self.zctrls():
             if z is None:  # a blank slot
                 continue
-            sym = str(z.symbol)
-            keys[engine_key(sym)] = z
+            keys[engine_key(str(z.symbol), by_param)] = z
         return keys
 
     def build_drawn(self):
@@ -165,7 +166,8 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
         view.set_title("", engine.name)
         view.set_surface(self.width, self.height)
         self.controls = []  # (view index, controller)
-        all_zctrls = {engine_key(str(sym)): z for sym, z in engine.zctrls.items()}
+        by_param = layout_keys(drawn[0])
+        all_zctrls = {engine_key(str(sym), by_param): z for sym, z in engine.zctrls.items()}
         for i, key in enumerate(view.symbols):
             z = all_zctrls.get(key)
             if z is None:
@@ -338,11 +340,24 @@ class zynthian_widget_omx_panel(zynthian_widget_base):
             c.create_text(w - MARGIN, y + h * 0.15, anchor="e", text=zctrl.get_value2label(), fill=zynthian_gui_config.color_tx)
 
 
-def engine_key(symbol):
-    """The layout's own key of a plugin-hostd controller (omx-panel's keyOf, what `describe --layout` names a control by):
-    a CLAP parameter's number is p<number>, an LV2 port keeps its symbol. A CLAP plugin whose descriptor states a symbol
-    is keyed by that symbol in the layout, which this cannot know from the controller alone: the layout's `param` is the
-    join for it (#47)."""
+def layout_keys(layout):
+    """{a controller's symbol: the layout's key of its control}, by the layout's `param` (#47). omx-panel's layout
+    (`describe --layout`) names a CLAP control by the symbol its parameter contract states (omx-comp's thresholdDb) and
+    carries the parameter's number as `param`, which is what plugin-hostd's controller of it is keyed by ("0")."""
+    keys = {}
+    for c in layout.get("controls") or []:
+        param = c.get("param")
+        if isinstance(param, int) and not isinstance(param, bool) and c.get("symbol") is not None:
+            keys[str(param)] = str(c["symbol"])
+    return keys
+
+
+def engine_key(symbol, by_param=None):
+    """The layout's own key of a plugin-hostd controller: the control whose `param` is the controller's number
+    (layout_keys); else, for a layout that carries no `param`, omx-panel's keyOf: a CLAP parameter's number is
+    p<number>, an LV2 port keeps its symbol."""
+    if by_param and symbol in by_param:
+        return by_param[symbol]
     return f"p{symbol}" if symbol.isdigit() else symbol
 
 
