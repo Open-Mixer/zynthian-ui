@@ -665,11 +665,16 @@ def curve_bind_line(instance, index, description):
 
 
 def curve_points(reply):
-    """The points of a curve_points reply ('<count> <x>,<y> ...'), ascending in x; [] for a reply that is not one."""
+    """The points of a curve_points reply, ascending in x; [] for a reply that is not one. The reply is
+    '<count> <marks> <x>,<y> ...' (plugin-hostd-protocol's curve-points-reply): the marks are one word after the count,
+    '-' when none, each band a feedback corrector planted otherwise; a delay's taps follow the points ('stems ...').
+    Neither is a point: the marks and the taps are not drawn here."""
     words = reply.split()
     try:
         n = int(words[0])
-        points = [tuple(float(v) for v in w.split(",")) for w in words[1:n + 1]]
+        if len(words) < 2 or words[1].count(",") == 1:
+            return []  # no marks word: a reply of another grammar
+        points = [tuple(float(v) for v in w.split(",")) for w in words[2:n + 2]]
     except (IndexError, ValueError):
         return []
     if len(points) != n or any(len(p) != 2 or not all(math.isfinite(v) for v in p) for p in points):
