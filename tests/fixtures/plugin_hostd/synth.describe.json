@@ -58,6 +58,24 @@
     "meters": [],
     "roles": [],
     "displays": [],
+    "words": {
+      "meters": {
+        "labelKey": "panel.label.meters",
+        "label": "Meters"
+      },
+      "more": {
+        "labelKey": "panel.label.more",
+        "label": "More"
+      },
+      "unheld": {
+        "labelKey": "panel.label.unheld",
+        "label": "unheld"
+      },
+      "gainReduction": {
+        "labelKey": "panel.label.gain.reduction",
+        "label": "Gain reduction"
+      }
+    },
     "pages": [
       {
         "section": null,

@@ -29,10 +29,10 @@ ROOT = os.path.dirname(HERE)
 FIXTURES = os.path.join(HERE, "fixtures", "plugin_hostd")
 ENGINE = os.path.join("zyngine", "zynthian_engine_plugin_hostd.py")
 # omx-eq8 (omx-plugins 0.19.3's descriptor, through omx-panel's corpus) and calf-mbc (omx-panel's Calf-multiband-compressor-
-# shaped test descriptor) are recorded from omx-panel v0.15.1 (3cace582), which carries the group model (omx-panel#63, #71),
-# the commit the workflow builds, under the contract set the workflow installs from the channel (omx-contract-data 3.20.2,
-# plugin-hostd-contract 0.20.8, omx-plugins-contract 0.19.3, whose role meanings make omx-eq8 an EQ; omx-dsp-contract 0.33.1,
-# omx-clap-core-contract 0.33.1, plugin-db-contract 0.4.7, plugin-hostd-protocol-contract 0.7.0).
+# shaped test descriptor), and every other recording, are recorded from omx-panel v0.17.2, the tag the workflow builds (the
+# version omx-panel-contract has on the channel levels), under the contract set the workflow installs from staging and
+# devel-wave-2026-11-27-n3 over -bc2 (omx-contract-data 0.24.1, plugin-hostd-contract 0.22.4, omx-plugins-contract 0.21.1,
+# omx-dsp-contract 0.34.4, omx-clap-contract 0.36.0, plugin-db-contract 0.5.2, plugin-hostd-protocol-contract 0.21.4).
 NAMES = ("big", "synth", "eq", "authored", "omx-eq8", "calf-mbc")
 
 

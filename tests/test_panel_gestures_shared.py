@@ -38,6 +38,16 @@ def omx_panel(*path):
         raise AssertionError(f"omx-panel is absent ({e}): install it or set {pg.ENV_TABLE}")
 
 
+def omx_panel_gesture_scripts():
+    """omx-panel's parity scripts: fixtures/gestures/scripts.json from omx-panel 0.17 on (the file its package ships),
+    test/fixtures/gestures/scripts.json in the trees before it."""
+    for rel in (("fixtures", "gestures", "scripts.json"), ("test", "fixtures", "gestures", "scripts.json")):
+        path = omx_panel(*rel)
+        if os.path.exists(path):
+            return path
+    return omx_panel("fixtures", "gestures", "scripts.json")
+
+
 def read(path, what):
     try:
         with open(path) as f:
@@ -47,7 +57,7 @@ def read(path, what):
 
 
 def scripts():
-    return read(omx_panel("test", "fixtures", "gestures", "scripts.json"), "omx-panel's gesture scripts")["scripts"]
+    return read(omx_panel_gesture_scripts(), "omx-panel's gesture scripts")["scripts"]
 
 
 class Member:
