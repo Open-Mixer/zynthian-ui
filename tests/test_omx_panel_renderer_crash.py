@@ -76,7 +76,7 @@ if sys.argv[4]:
     os.environ["ZYNTHIAN_OMX_PANEL_RENDER"] = sys.argv[4]
     again = view.View(layout)
     again.set_surface(64, 32)
-    print("again:", len(again.draw(64, 32)), flush=True)
+    print("again:", len(again.draw(64, 32)[0]), flush=True)
 print("ui alive", flush=True)
 """
 
@@ -149,7 +149,7 @@ class FakeView:
         if FakeView.crash:
             raise self.stopped("omx-panel's renderer stopped (SIGSEGV)")
         self.drew += 1
-        return bytes(w * h * 4)
+        return bytes(w * h * 4), None
 
 
 class WidgetOverAStoppedRenderer(unittest.TestCase):

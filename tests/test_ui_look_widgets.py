@@ -202,7 +202,7 @@ class FakeView:
         if FakeView.stop_at_draw:
             raise FakeView.module.RendererStopped("omx-panel's renderer stopped (SIGSEGV); the panel is drawn again when it is opened again")
         self.draws.append((w, h))
-        return frame(w, h)
+        return frame(w, h), None
 
 
 def frame(w, h):
@@ -665,7 +665,7 @@ class RealRenderer(unittest.TestCase):
         self.assertEqual(self.ctrl.value_plot, 0.5)  # the pointer stands at 12 o'clock
         pointer, surface = rgb(KNOB_POINTER), rgb(VINTAGE_ROLES["--surface"])
         # the renderer's own pixels: opaque, in the look's colours
-        raw = Image.frombuffer("RGBA", (self.W, self.H), view.draw(self.W, self.H), "raw", "RGBA", 0, 1)
+        raw = Image.frombuffer("RGBA", (self.W, self.H), view.draw(self.W, self.H)[0], "raw", "RGBA", 0, 1)
         self.assertIn(pointer, self.ray(raw), "the pointer is tokens.css's --knob-pointer")
         self.assertNotIn(rgb(VINTAGE_ROLES["--accent"]), self.ray(raw), "the pointer is not the accent")
         self.assertIn(surface + (255,), self.beside(raw))
@@ -689,7 +689,7 @@ class RealRenderer(unittest.TestCase):
         other.set_title("", "")
         other.set_surface(self.W, self.H)
         other.set_value(0, 0.5, "0.50")
-        raw = Image.frombuffer("RGBA", (self.W, self.H), other.draw(self.W, self.H), "raw", "RGBA", 0, 1)
+        raw = Image.frombuffer("RGBA", (self.W, self.H), other.draw(self.W, self.H)[0], "raw", "RGBA", 0, 1)
         self.assertIn(rgb("#123456"), self.ray(raw))
         self.assertNotIn(rgb(KNOB_POINTER), self.ray(raw))
         self.assertIn(rgb("#654321") + (255,), self.beside(raw))

@@ -133,7 +133,7 @@ class TwoThreadsOneRenderer(StubRenderer):
         def plot():  # the plot task: the page's panel, drawn again and again
             try:
                 while not done.is_set():
-                    n = len(plotted.draw(W, H))
+                    n = len(plotted.draw(W, H)[0])  # (pixels, rects): the pixels
                     if n != W * H * 4:
                         said.append(f"plot: a draw answered {n} bytes")
                         return
@@ -190,7 +190,7 @@ class TheRendererIsStartedAgain(StubRenderer):
         library it is given (a process loads its library once)."""
         self.library(self.quiet)
         v = self.view.View(self.layout)
-        self.assertEqual(len(v.draw(W, H)), W * H * 4)
+        self.assertEqual(len(v.draw(W, H)[0]), W * H * 4)
         self.assertIsNone(v.host.process.poll(), "the renderer drew and is running")
         self.end()
 
@@ -438,7 +438,7 @@ class PanelView:
 
     def draw(self, w, h):
         self.drew += 1
-        return bytes(w * h * 4)
+        return bytes(w * h * 4), None
 
 
 class ThePanelIsBuiltByTksThread(unittest.TestCase):
