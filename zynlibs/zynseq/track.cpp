@@ -186,7 +186,7 @@ SEQ_EVENT* Track::getEvent(uint32_t nCount) {
                 bool skip = get_skip_from_freq(pEvent->getPlayFreq(), nCount);
                 // Play chance (probability) => concatenated with frequency calc
                 if (!skip) {
-                    if (unsigned(RAND_MAX * pPattern->getPlayChance() * pEvent->getPlayChance()) < rand())
+                    if (skipByChance(pPattern->getPlayChance() * pEvent->getPlayChance()))
                         skip = true;
                 }
                 if (skip) {
@@ -242,7 +242,7 @@ SEQ_EVENT* Track::getEvent(uint32_t nCount) {
                     bool skip = get_skip_from_freq(pEvent->getStutterFreq(), nCount);
                     // Stutter chance (probability) => concatenated with frequency calc
                     if (!skip) {
-                        if (unsigned(RAND_MAX * pEvent->getStutterChance()) < rand())
+                        if (skipByChance(pEvent->getStutterChance()))
                             skip = true;
                     }
                     if (skip)

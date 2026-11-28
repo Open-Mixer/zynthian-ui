@@ -740,7 +740,7 @@ void Pattern::setHumanVelo(float amount) { m_fHumanVelo = amount; }
 
 float Pattern::getHumanVelo() { return m_fHumanVelo; }
 
-void Pattern::setPlayChance(float chance) { m_fPlayChance = chance; }
+void Pattern::setPlayChance(float chance) { m_fPlayChance = clampChance(chance); }
 
 float Pattern::getPlayChance() { return m_fPlayChance; }
 

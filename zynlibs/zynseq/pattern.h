@@ -1,8 +1,16 @@
 #pragma once
 #include "constants.h"
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <vector>
+
+// Probabilities are kept in [0, 1]. Old snapshots stored some chances scaled twice (e.g. 10000 for 100%): clamped.
+inline float clampChance(float chance) { return chance < 0.0f ? 0.0f : (chance > 1.0f ? 1.0f : chance); }
+
+// True if an event with this probability must be skipped. Compared in float: converting an out-of-range float to an
+// integer is undefined (arm64 saturates, x86-64 wraps, e.g. to 0 => every note skipped)
+inline bool skipByChance(float chance) { return chance < 1.0f && rand() >= chance * float(RAND_MAX); }
 
 #define MAX_STUTTER_SPEED 32
 #define STUTTER_VELFX_NONE 0
@@ -180,9 +188,9 @@ class StepEvent {
         setStutterVelfx(velfx);
         setStutterRamp(ramp);
     }
-    void setPlayChance(float chance) { m_fPlayChance = chance; }
+    void setPlayChance(float chance) { m_fPlayChance = clampChance(chance); }
     void setPlayFreq(uint8_t freq) { m_nPlayFreq = freq; }
-    void setStutterChance(float chance) { m_fStutterChance = chance; }
+    void setStutterChance(float chance) { m_fStutterChance = clampChance(chance); }
     void setStutterFreq(uint8_t freq) { m_nStutterFreq = freq; }
 };
 #pragma pack()
