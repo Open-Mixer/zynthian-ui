@@ -80,7 +80,8 @@ class zynthian_gui_selector(zynthian_gui_base):
             fg=self.lb_fg,
             selectbackground=zynthian_gui_config.color_ctrl_bg_on,
             selectforeground=zynthian_gui_config.color_ctrl_tx,
-            selectmode=tkinter.SINGLE)
+            selectmode=tkinter.SINGLE,
+            exportselection=False)  # Else selecting in another listbox clears this one's selection
 
         # Configure layout
         self.tiny_ctrls = tiny_ctrls
@@ -294,10 +295,8 @@ class zynthian_gui_selector(zynthian_gui_base):
     def get_cursel(self):
         cursel = self.listbox.curselection()
         if len(cursel) > 0:
-            index = int(cursel[0])
-        else:
-            index = 0
-        return index
+            return int(cursel[0])
+        return self.index
 
     def select_listbox(self, index, see=True):
         if index <= 0:
@@ -553,10 +552,14 @@ class zynthian_gui_selector(zynthian_gui_base):
             return {"selected": self.index}
         return {"items": [str(row[2]) for row in self.list_data], "selected": self.index}
 
-    def get_help_fpath(self):
+    def get_help_fpath(self, screen):
+        """ Candidate help pages for this view, from the most specific to the most generic
+
+        screen : name of the view shown (several views can share a screen object)
+        """
         if self.param_editor_zctrl:
-            return "parameter_editor.html"
-        return "selector.html"
+            return ["parameter_editor.html"]
+        return [f"{screen}.html", "selector.html"]
 
     # --------------------------------------------------------------------------
     # ZynVoice TTS

@@ -52,7 +52,7 @@ def owner_sources():
             for v in node:
                 walk(v, owner)
 
-    root = os.path.join(CONTRACT_DIR, "3")
+    root = CONTRACT_DIR
     for owner in sorted(os.listdir(root)):
         for name in sorted(os.listdir(os.path.join(root, owner))):
             if name.endswith(".json"):

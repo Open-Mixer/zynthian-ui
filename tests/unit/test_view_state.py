@@ -15,6 +15,8 @@ from zyngui.zynthian_side_chain import zynthian_side_chain
 from zyngui.zynthian_gui_confirm import zynthian_gui_confirm
 from zyngui.zynthian_gui_fullscreen_modal import zynthian_gui_fullscreen_modal
 from zyngui.zynthian_gui_base import zynthian_gui_base
+from zyngui.zynthian_gui_pated_notes import zynthian_gui_pated_notes
+from zyngui.zynthian_gui_pated_cc import zynthian_gui_pated_cc
 
 
 def bare(cls, **attrs):
@@ -93,6 +95,55 @@ def test_fullscreen_modals_and_base_views_report_nothing_by_default():
     assert m.state_key is None and m.get_state() == {} and not m.is_state_shown()
     b = bare(zynthian_gui_base, parent=None, shown=True)
     assert b.state_key is None and b.get_state() == {} and b.get_state_parent() is None
+
+
+PATTERN = {"beats": 4, "steps": 16, "events": [[0, 0.0, 1.0, 0x90, 60, 60, 100, 0, 0, 0, 0, 100, 1, 100, 1]]}
+
+
+def pated(cls, **attrs):
+    reads = []
+    zynseq = SimpleNamespace(get_pattern_data=lambda n: reads.append(n) or PATTERN)
+    view = bare(cls, zynseq=zynseq, pattern=7, selected_cell=[3, 1], phrase=0, sequence=2, channel=2,
+                edit_mode=0, **attrs)
+    return view, reads
+
+
+def test_pattern_notes_editor_reports_pattern_cursor_and_editor_values():
+    keymap_state = {"name": "Chromatic", "keys": None}
+    view, reads = pated(zynthian_gui_pated_notes, keymap=[{"note": 60}, {"note": 62}], chord_mode=1,
+                        keymap_state=keymap_state)
+    assert view.state_key == "zyngui_pated_notes"
+    assert view.get_state() == {"pattern_index": 7, "pattern": PATTERN,
+                                "cursor": {"step": 3, "row": 1, "note": 62},
+                                "phrase": 0, "sequence": 2, "midi_chan": 2, "edit_mode": 0, "chord_mode": 1,
+                                "keymap": keymap_state}
+    assert view.get_state("list") == view.get_state()
+    reads.clear()
+    # Cursor moves don't read the pattern from zynseq
+    assert view.get_state("select") == {"cursor": {"step": 3, "row": 1, "note": 62}}
+    assert reads == []
+
+
+def test_pattern_notes_editor_reports_custom_keymap_names():
+    kit = [{"note": 36, "name": "Kick", "colour": "white"}, {"note": 38, "name": "Snare", "colour": "white"}]
+    libseq = SimpleNamespace(getScale=lambda: 0, getTonic=lambda: 0)
+    view, _ = pated(zynthian_gui_pated_notes, keymap=[])
+    view.zynseq.libseq = libseq
+    view.get_custom_keymap = lambda: ["Drum kit", SimpleNamespace(get_keymap=lambda: kit)]
+    assert view.load_keymap() == "Drum kit"
+    assert view.keymap_state == {"name": "Drum kit", "keys": [[36, "Kick"], [38, "Snare"]]}
+    # Without a custom map it falls back to chromatic: notes are implicit, no keys reported
+    view.get_custom_keymap = lambda: None
+    assert view.load_keymap() == "Chromatic"
+    assert view.keymap_state == {"name": "Chromatic", "keys": None} and len(view.keymap) == 128
+
+
+def test_pattern_cc_editor_reports_the_cc_number():
+    view, _ = pated(zynthian_gui_pated_cc, cc_num=74)
+    assert view.state_key == "zyngui_pated_cc"
+    state = view.get_state()
+    assert state["cursor"] == {"step": 3, "row": 1} and state["cc_num"] == 74
+    json.dumps(state)
 
 
 def test_states_are_json_serializable():

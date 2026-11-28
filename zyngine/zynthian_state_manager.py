@@ -23,6 +23,7 @@
 # ****************************************************************************
 
 import os
+import re
 import ctypes
 import logging
 import traceback
@@ -74,6 +75,10 @@ MAIN_MIXBUS_ID = -1
 ALSA_ID = -2
 AUDIO_PLAYER_ID = -3
 TEMPO_ID = -4
+AUDIO2MIDI_ID = -5
+ROUTER_CHAIN_OUT_RE = re.compile(r"^ZynMidiRouter:ch\d+_out$")  # MIDI router output feeding a chain (zmop)
+AUDIO2MIDI_UID = zynautoconnect.AUDIO2MIDI_UID  # MIDI port UID of the audio to MIDI converter's output 1
+AUDIO2MIDI_UIDS = zynautoconnect.AUDIO2MIDI_UIDS  # MIDI port UID of each output
 
 class zynthian_state_manager:
 
@@ -154,11 +159,13 @@ class zynthian_state_manager:
         self.zynseq = zynseq.zynseq(self)
         self.alsa_mixer_processor = self.chain_manager.add_processor(None, "MX", None, ALSA_ID)
         self.tempo_processor = self.chain_manager.add_processor(None, "TP", None, TEMPO_ID) #TODO: Use zynseq engine directly
+        self.audio2midi_processor = self.chain_manager.add_processor(None, "AM", None, AUDIO2MIDI_ID)
 
         self.audio_recorder = zynthian_audio_recorder(self)
         self.ctrldev_manager = None
         self.audio_player = None
-        self.aubio_in = [1, 2]  # List of aubio inputs
+        self.audio2midi_in = [[], []]  # Audio inputs (physical input indices, mixed) of each converter input
+        self.audio2midi_routes = {}  # Chains (zmops) routed from each converter output (by uid) while it has no port
 
         # List of lists [rate, cb, schedule] for registered regularly repeating callbacks
         self.slow_update_callbacks = []
@@ -1472,7 +1479,7 @@ class zynthian_state_manager:
                         lib_zyncore.zmop_set_transpose_semitone(chain.zmop_index, 0)
 
                 if "midi_in" in chain_state:
-                    chain.midi_in = chain_state["midi_in"]
+                    chain.midi_in = self.fix_chain_router_midi_in(chain, chain_state["midi_in"])
                 if "midi_out" in chain_state:
                     chain.midi_out = chain_state["midi_out"]
                 if "audio_in" in chain_state:
@@ -2065,9 +2072,9 @@ class zynthian_state_manager:
             # Ctrldev driver state
             if uid in ctrldev_state_drivers:
                 mcstate[uid]["ctrldev_state"] = ctrldev_state_drivers[uid]
-            # Aubio state
-            if uid == "AUBIO:in":
-                mcstate[uid]["audio_in"] = self.aubio_in
+            # Audio inputs of the audio to MIDI converter input feeding this output (input 1 => output 1, ...)
+            if uid in AUDIO2MIDI_UIDS:
+                mcstate[uid]["audio_in"] = list(self.audio2midi_in[AUDIO2MIDI_UIDS.index(uid)])
             # Add MIDI mapping
             for key, zctrls in self.chain_manager.midi_cc_binding.items():
                 cc, chan, zmip, chain_id = self.chain_manager.unpack_midi_bind_key(key)
@@ -2076,6 +2083,12 @@ class zynthian_state_manager:
                     mcstate[uid]["midi_learn"][ss_key] = []
                     for zctrl in zctrls:
                         mcstate[uid]["midi_learn"][ss_key].append([zctrl.processor.id, zctrl.symbol])
+
+        # Routing of the audio to MIDI converter outputs while the converter isn't running (e.g. JACK restart)
+        for uid, routes in self.audio2midi_routes.items():
+            if uid not in mcstate:
+                mcstate[uid] = {"routed_chains": list(routes), "midi_learn": {},
+                                "audio_in": list(self.audio2midi_in[AUDIO2MIDI_UIDS.index(uid)])}
 
         mcstate["zynmidi"] = {"midi_learn": {}}
         # Add global / absolute MIDI mapping
@@ -2090,6 +2103,33 @@ class zynthian_state_manager:
 
         return mcstate
 
+    @staticmethod
+    def fix_chain_router_midi_in(chain, midi_in):
+        """Get the MIDI inputs of a chain from its saved state, fed by its own MIDI router output
+
+        A chain's processors are fed by the router output of its zmop ("ZynMidiRouter:chN_out"). The zmop is
+        assigned when the chain is created and may differ from the one in a saved state (e.g. it wasn't free), so
+        a saved router output could be another chain's: the chain would play the other chain's MIDI and not its own.
+
+        chain : Chain object
+        midi_in : MIDI inputs from the saved state
+        Returns : MIDI inputs with any router output replaced by the chain's own (removed if it has no zmop)
+        """
+
+        result = []
+        for src in midi_in:
+            if isinstance(src, str) and ROUTER_CHAIN_OUT_RE.match(src):
+                if chain.zmop_index is None or chain.zmop_index < 0:
+                    logging.warning(f"Chain {chain.chain_id} has no MIDI router output: ignoring MIDI input {src}")
+                    continue
+                own = f"ZynMidiRouter:ch{chain.zmop_index}_out"
+                if src != own:
+                    logging.warning(f"Chain {chain.chain_id} MIDI input {src} isn't its router output: using {own}")
+                src = own
+            if src not in result:
+                result.append(src)
+        return result
+
     def set_midi_capture_state(self, mcstate=None, restore_midi_learn=True):
         """ Set midi input (capture) state: flags, chain routing, etc.
         Args:
@@ -2103,6 +2143,13 @@ class zynthian_state_manager:
                 if uid != "zynmidi":
                     izmip = zynautoconnect.get_midi_in_devid_by_uid(uid, zynthian_gui_config.midi_usb_by_port)
                     if izmip is None:
+                        if uid in AUDIO2MIDI_UIDS:
+                            # Converter not running: routing is applied when it starts
+                            try:
+                                self.audio2midi_routes[uid] = list(state["routed_chains"])
+                            except:
+                                pass
+                            self.set_audio2midi_in_state(uid, state)
                         continue
                     try:
                         lib_zyncore.zmip_set_flag_active_chain(izmip, bool(state["zmip_input_mode"]))
@@ -2118,10 +2165,8 @@ class zynthian_state_manager:
                     except:
                         pass
                     """
-                    try:
-                        self.aubio_in = state["audio_in"]
-                    except:
-                        pass
+                    if uid in AUDIO2MIDI_UIDS:
+                        self.set_audio2midi_in_state(uid, state)
                     zynautoconnect.update_midi_in_dev_mode(izmip)
                     try:
                         # TODO: Use ctrldev_driver=None to disable driver
@@ -2177,6 +2222,7 @@ class zynthian_state_manager:
 
         else:
             zynautoconnect.reset_midi_in_dev_all()
+        self.update_audio2midi_outputs()
 
     # ------------------------------------------------------------------
     # MIDI learning
@@ -2271,7 +2317,7 @@ class zynthian_state_manager:
         self.default_qmidinet()
         self.default_touchosc()
         self.default_bluetooth()
-        self.default_aubionotes()
+        self.start_audio2midi()
 
     # -------------------------------------------------------------------
     # MIDI profile
@@ -2894,65 +2940,114 @@ class zynthian_state_manager:
         else:
             self.stop_bluetooth(False)
 
-    def start_aubionotes(self, save_config=True, wait=0):
-        service = "aubionotes"
-        if zynconf.is_service_active(service):
-            zynthian_gui_config.midi_aubionotes_enabled = 1
-            return
-        if not self.root_access:
-            return
-        self.start_busy("start_aubionotes", "starting AubioNotes")
-        logging.info("STARTING aubionotes")
+    def is_audio2midi_running(self):
+        """Check if the audio to MIDI converter (global processor) is running"""
         try:
-            check_output(["systemctl", "start", service])
-            zynthian_gui_config.midi_aubionotes_enabled = 1
-            # Update MIDI profile
-            if save_config:
-                zynconf.update_midi_profile({
-                    "ZYNTHIAN_MIDI_AUBIONOTES_ENABLED": str(zynthian_gui_config.midi_aubionotes_enabled)
-                })
-            # Call autoconnect after a little time
-            sleep(wait)
-            zynautoconnect.request_midi_connect(True)
+            return self.audio2midi_processor.engine.is_running()
+        except:
+            return False
+
+    def start_audio2midi(self):
+        """Start the audio to MIDI converter (JACK client). It always runs (its ports can be routed) but only
+        analyses the outputs routed to a chain that have a connected audio input, so it costs nothing until used."""
+
+        if self.is_audio2midi_running():
+            return
+        logging.info("STARTING audio to MIDI converter")
+        try:
+            if not self.audio2midi_processor.engine.start_converter():
+                raise Exception("Can't start JACK client")
+        except Exception as e:
+            logging.error(f"Can't start audio to MIDI converter => {e}")
+            return
+        zynautoconnect.request_midi_connect(True)
+        zynautoconnect.request_audio_connect(True)
+
+    def update_audio2midi_outputs(self):
+        """Activate the audio to MIDI converter outputs routed to a chain, deactivate the others (cost no CPU)"""
+
+        try:
+            engine = self.audio2midi_processor.engine
+            zmops = [chain.zmop_index for chain in self.chain_manager.chains.values() if chain.zmop_index is not None]
+            for output, zmip in enumerate(zynautoconnect.get_audio2midi_zmips()):
+                active = zmip is not None and any(lib_zyncore.zmop_get_route_from(zmop, zmip) for zmop in zmops)
+                engine.set_output_active(output, active)
+        except Exception as e:
+            logging.error(f"Can't update audio to MIDI outputs => {e}")
+
+    def set_audio2midi_input(self, channel, audio_in):
+        """Set the audio input of a converter channel
+
+        channel : Channel (0..1): converter input and output
+        audio_in : Physical audio input (1..), 0 for none
+        """
+
+        audio_in = [audio_in] if audio_in else []
+        if audio_in != self.audio2midi_in[channel]:
+            self.audio2midi_in[channel] = audio_in
             zynautoconnect.request_audio_connect()
-        except Exception as e:
-            logging.error(e)
-            self.set_busy_error("ERROR STARTING AubioNotes", e)
-            sleep(2.0)
+        self.refresh_audio2midi_ctrls()
 
-        self.end_busy("start_aubionotes")
-
-    def stop_aubionotes(self, save_config=True, wait=0):
-        service = "aubionotes"
-        if not zynconf.is_service_active(service):
-            zynthian_gui_config.midi_aubionotes_enabled = 0
-            return
-        if not self.root_access:
-            return
-        self.start_busy("stop_aubionotes", "stopping AubioNotes")
-        logging.info("STOPPING aubionotes")
+    def refresh_audio2midi_ctrls(self):
         try:
-            check_output(["systemctl", "stop", service])
-            zynthian_gui_config.midi_aubionotes_enabled = 0
-            # Update MIDI profile
-            if save_config:
-                zynconf.update_midi_profile({
-                    "ZYNTHIAN_MIDI_AUBIONOTES_ENABLED": str(zynthian_gui_config.midi_aubionotes_enabled)
-                })
-            sleep(wait)
+            self.audio2midi_processor.engine.refresh_audio_in_ctrls()
         except Exception as e:
-            logging.error(e)
-            self.set_busy_error("ERROR STOPPING AubioNotes", e)
-            sleep(2.0)
+            logging.warning(f"Can't refresh audio to MIDI controllers => {e}")
 
-        self.end_busy("stop_aubionotes")
+    def audio2midi_default_input(self, output):
+        """Connect the first audio input to the converter channel of an output if the channel has no audio input.
+        Used when the user routes a converter output to a chain, so it works without more setup. Both channels on the
+        same audio input share one detector (with the same detection settings).
 
-    # Start/Stop AubioNotes depending on configuration
-    def default_aubionotes(self):
-        if zynthian_gui_config.midi_aubionotes_enabled:
-            self.start_aubionotes(False)
-        else:
-            self.stop_aubionotes(False)
+        output : Output / channel (0..1)
+        Returns : True if the input was connected
+        """
+
+        if self.audio2midi_in[output]:
+            return False
+        self.set_audio2midi_input(output, 1)
+        return True
+
+    def set_audio2midi_in_state(self, uid, state):
+        """Restore the audio inputs of the converter input feeding an output from its MIDI capture state
+
+        uid : UID of the output's port
+        state : MIDI capture state of the port. No "audio_in": not connected.
+        """
+
+        audio_in = state.get("audio_in", [])
+        index = AUDIO2MIDI_UIDS.index(uid)
+        if audio_in != self.audio2midi_in[index]:
+            self.audio2midi_in[index] = list(audio_in)
+            zynautoconnect.request_audio_connect()
+            self.refresh_audio2midi_ctrls()
+
+    def forget_audio2midi_port(self, zmip, uid):
+        """A converter output's port has gone (converter stopped, e.g. JACK restart): remember its routing and route
+        its zmip to all chains, the default for the device that takes it next
+
+        zmip : MIDI input device index of the port
+        uid : Port UID
+        """
+
+        self.audio2midi_routes[uid] = [zmop for zmop in range(16) if lib_zyncore.zmop_get_route_from(zmop, zmip)]
+        for zmop in range(16):
+            lib_zyncore.zmop_set_route_from(zmop, zmip, 1)
+
+    def restore_audio2midi_port(self, zmip, uid, restored=False):
+        """A converter output's port has appeared: restore its routing, or route it to no chain (by default the
+        outputs aren't analysed: they cost CPU only once routed)
+
+        zmip : MIDI input device index of the port
+        uid : Port UID
+        restored : True if its state (and routing) has been restored from the ZS3
+        """
+
+        routes = self.audio2midi_routes.pop(uid, None)
+        if routes is None and restored:
+            return
+        for zmop in range(16):
+            lib_zyncore.zmop_set_route_from(zmop, zmip, routes is not None and zmop in routes)
 
     # ---------------------------------------------------------------------------
     # Zynthian Config Info

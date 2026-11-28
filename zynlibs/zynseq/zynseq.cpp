@@ -1404,9 +1404,13 @@ const char* convertToJson(const char* filename) {
     return g_pState;
 }
 
-void setPattern(uint32_t id, const char* patn_state) {
-    json jPattern = json::parse(patn_state);
-    Pattern* pPattern = g_seqMan.getPattern(id);
+/** Replace the content of a pattern with the one described by a JSON pattern object
+    (format: see pattern.schema.json). Undo/redo history is reset: it would describe the previous content.
+    @param  pPattern    Pattern to load
+    @param  jPattern    Parsed pattern object (non-const: missing keys / short arrays must keep throwing
+                        json type errors, as they always did, not hit undefined behaviour)
+*/
+static void patternFromJson(Pattern* pPattern, json& jPattern) {
     pPattern->clear();
     pPattern->setBeatsInPattern(jPattern.value("beats", 4));
     pPattern->setStepsPerBeat(jPattern.value("steps", 16) / pPattern->getBeatsInPattern());
@@ -1449,6 +1453,69 @@ void setPattern(uint32_t id, const char* patn_state) {
             pEvent->setStutterFreq(jEvent[14]);
         }
     }
+    pPattern->resetSnapshots();
+}
+
+/** Describe the content of a pattern as a JSON pattern object (format: see pattern.schema.json).
+    Inverse of patternFromJson(): patternFromJson(p, patternToJson(p)) leaves the content unchanged.
+    @param  pPattern    Pattern to describe
+    @retval json        Pattern object. "events" is always present (empty array for an empty pattern)
+*/
+static json patternToJson(Pattern* pPattern) {
+    json jPatn;
+    uint32_t nBeats = pPattern->getBeatsInPattern();
+    jPatn["beats"] = nBeats;
+    jPatn["steps"] = nBeats * pPattern->getStepsPerBeat();
+    jPatn["scale"] = pPattern->getScale();
+    jPatn["tonic"] = pPattern->getTonic();
+    jPatn["refNote"] = pPattern->getRefNote();
+    jPatn["zoom"] = pPattern->getZoom();
+    json jCcnum = json::array();
+    for (uint8_t ccnum = 0; ccnum < 128; ++ccnum)
+        jCcnum.push_back(pPattern->getInterpolateCC(ccnum));
+    jPatn["ccnum"] = jCcnum;
+    jPatn["quantize"] = pPattern->getQuantizeNotes();
+    jPatn["swingDiv"] = pPattern->getSwingDiv();
+    jPatn["swing"] = pPattern->getSwingAmount();
+    jPatn["humanTime"] = pPattern->getHumanTime();
+    jPatn["humanVel"] = pPattern->getHumanVelo();
+    jPatn["chance"] = int(pPattern->getPlayChance() * 100);
+    jPatn["events"] = json::array();
+    uint32_t nEvent = 0;
+    while (StepEvent* pEvent = pPattern->getEventAt(nEvent++)) {
+        json jEvt;
+        // Event Position (step)
+        jEvt.push_back(pEvent->getPosition());
+        jEvt.push_back(pEvent->getOffset());
+        jEvt.push_back(pEvent->getDuration());
+        jEvt.push_back(pEvent->getCommand());
+        jEvt.push_back(pEvent->getValue1start());
+        jEvt.push_back(pEvent->getValue1end());
+        jEvt.push_back(pEvent->getValue2start());
+        jEvt.push_back(pEvent->getValue2end());
+        jEvt.push_back(pEvent->getStutterSpeed());
+        jEvt.push_back(pEvent->getStutterVelfx());
+        jEvt.push_back(pEvent->getStutterRamp());
+        jEvt.push_back(int(pEvent->getPlayChance() * 100));
+        jEvt.push_back(pEvent->getPlayFreq());
+        jEvt.push_back(int(pEvent->getStutterChance() * 100));
+        jEvt.push_back(pEvent->getStutterFreq());
+        jPatn["events"].push_back(jEvt);
+    }
+    return jPatn;
+}
+
+void setPattern(uint32_t id, const char* patn_state) {
+    json jPattern = json::parse(patn_state);
+    patternFromJson(g_seqMan.getPattern(id), jPattern);
+}
+
+const char* getPatternState(uint32_t id) {
+    std::string json_str = patternToJson(g_seqMan.getPattern(id)).dump();
+    free(g_pState);
+    g_pState = (char*)malloc(json_str.size() + 1);
+    std::strcpy(g_pState, json_str.c_str());
+    return g_pState;
 }
 
 bool setState(const char* state) {
@@ -1467,51 +1534,7 @@ bool setState(const char* state) {
         if (j.contains("patns")) {
             for (auto& [key, jPattern]: j["patns"].items()) {
                 uint32_t id = std::stoi(key);
-                //!@todo We could reuse setPattern but that means encoding and re-decoding the json
-                Pattern* pPattern = g_seqMan.getPattern(id);
-                pPattern->clear();
-                pPattern->setBeatsInPattern(jPattern.value("beats", 4));
-                pPattern->setStepsPerBeat(jPattern.value("steps", 16) / pPattern->getBeatsInPattern());
-                pPattern->setScale(jPattern.value("scale", 0));
-                pPattern->setTonic(jPattern.value("tonic", 0));
-                pPattern->setRefNote(jPattern.value("refNote", 60));
-                pPattern->setZoom(jPattern.value("zoom", 0));
-                if (jPattern.contains("ccnum")) {
-                    for (uint8_t ccnum = 0; ccnum < 128; ++ccnum)
-                        pPattern->setInterpolateCC(ccnum, jPattern["ccnum"][ccnum]);
-                }
-                pPattern->setQuantizeNotes(jPattern.value("quantize", 0));
-                pPattern->setSwingDiv(jPattern.value("swingDiv", 1));
-                pPattern->setSwingAmount(jPattern.value("swing", 0.0));
-                pPattern->setHumanTime(jPattern.value("humanTime", 0.0));
-                pPattern->setHumanVelo(jPattern.value("humanVel", 0.0));
-                pPattern->setPlayChance(float(jPattern.value("chance", 100)) / 100);
-                for (auto& jEvent: jPattern["events"]) {
-                    uint32_t nStep = jEvent[0];
-                    float fOffset = jEvent[1];
-                    float fDuration = jEvent[2];
-                    uint8_t nCommand = jEvent[3];
-                    uint8_t nValue1start = jEvent[4];
-                    uint8_t nValue2start = jEvent[6];
-                    StepEvent* pEvent = pPattern->addEvent(nStep, nCommand, nValue1start, nValue2start, fDuration, fOffset);
-                    pEvent->setValue1end(jEvent[5]);
-                    pEvent->setValue2end(jEvent[7]);
-                    pEvent->setStutterSpeed(jEvent[8]);
-                    pEvent->setStutterVelfx(jEvent[9]);
-                    // Legacy format
-                    if (jEvent.size() == 11) {
-                        pEvent->setPlayChance(float(jEvent[10]) / 100);
-                    }
-                    // Extended parameters: stutter speed-ramp, play freq, stutter chance, stutter freq
-                    else {
-                        pEvent->setStutterRamp(jEvent[10]);
-                        pEvent->setPlayChance(float(jEvent[11]) / 100);
-                        pEvent->setPlayFreq(jEvent[12]);
-                        pEvent->setStutterChance(float(jEvent[13]) / 100);
-                        pEvent->setStutterFreq(jEvent[14]);
-                    }
-                }
-                pPattern->resetSnapshots();
+                patternFromJson(g_seqMan.getPattern(id), jPattern);
             }
         }
         if (j.contains("scenes")) {
@@ -1575,12 +1598,13 @@ bool setState(const char* state) {
                         // Backward compatibility =>
                         // Older vangelis sequences used FOLLOW_ACTION_RELATIVE for endless loop.
                         // Currently, endless loop is flagged with repeat=255
-                        if (jSeq.value("followAction", FOLLOW_ACTION_NONE) != FOLLOW_ACTION_NONE) {
-                            pSequence->setRepeat(255);
-                        }
-                        else {
-                            pSequence->setRepeat(jSeq.value("repeat", 1));
-                        }
+                        // Sequences loop by default (repeat=255), so "repeat" may be omitted. An explicit repeat=0
+                        // (disabled) is never overridden: getState() writes followAction=RELATIVE for every
+                        // sequence created by insertPhrase(), including the disabled ones.
+                        uint8_t nRepeat = jSeq.value("repeat", 255);
+                        if (nRepeat != 0 && jSeq.value("followAction", FOLLOW_ACTION_NONE) != FOLLOW_ACTION_NONE)
+                            nRepeat = 255;
+                        pSequence->setRepeat(nRepeat);
                         // Store the follow configuration to apply after all sequences have been created
                         std::array<int16_t, 6> followAction;
                         followAction[0] = nPhrase;
@@ -1648,48 +1672,8 @@ const char* getState() {
     while ((nPattern = g_seqMan.getNextPattern(nPattern)) != -1) {
         Pattern* pPattern = g_seqMan.getPattern(nPattern);
         // Only save patterns with content
-        if (pPattern->getEventAt(0)) {
-            json jPatn;
-            uint32_t nBeats = pPattern->getBeatsInPattern();
-            jPatn["beats"] = nBeats;
-            jPatn["steps"] = nBeats * pPattern->getStepsPerBeat();
-            jPatn["scale"] = pPattern->getScale();
-            jPatn["tonic"] = pPattern->getTonic();
-            jPatn["refNote"] = pPattern->getRefNote();
-            jPatn["zoom"] = pPattern->getZoom();
-            json jCcnum = json::array();
-            for (uint8_t ccnum = 0; ccnum < 128; ++ccnum)
-                jCcnum.push_back(pPattern->getInterpolateCC(ccnum));
-            jPatn["ccnum"] = jCcnum;
-            jPatn["quantize"] = pPattern->getQuantizeNotes();
-            jPatn["swingDiv"] = pPattern->getSwingDiv();
-            jPatn["swing"] = pPattern->getSwingAmount();
-            jPatn["humanTime"] = pPattern->getHumanTime();
-            jPatn["humanVel"] = pPattern->getHumanVelo();
-            jPatn["chance"] = int(pPattern->getPlayChance() * 100);
-            uint32_t nEvent = 0;
-            while (StepEvent* pEvent = pPattern->getEventAt(nEvent++)) {
-                json jEvt;
-                // Event Position (step)
-                jEvt.push_back(pEvent->getPosition());
-                jEvt.push_back(pEvent->getOffset());
-                jEvt.push_back(pEvent->getDuration());
-                jEvt.push_back(pEvent->getCommand());
-                jEvt.push_back(pEvent->getValue1start());
-                jEvt.push_back(pEvent->getValue1end());
-                jEvt.push_back(pEvent->getValue2start());
-                jEvt.push_back(pEvent->getValue2end());
-                jEvt.push_back(pEvent->getStutterSpeed());
-                jEvt.push_back(pEvent->getStutterVelfx());
-                jEvt.push_back(pEvent->getStutterRamp());
-                jEvt.push_back(int(pEvent->getPlayChance() * 100));
-                jEvt.push_back(pEvent->getPlayFreq());
-                jEvt.push_back(int(pEvent->getStutterChance() * 100));
-                jEvt.push_back(pEvent->getStutterFreq());
-                jPatn["events"].push_back(jEvt);
-            }
-            jState["patns"][std::to_string(nPattern)] = jPatn;
-        }
+        if (pPattern->getEventAt(0))
+            jState["patns"][std::to_string(nPattern)] = patternToJson(pPattern);
     }
 
     // Iterate through scenes

@@ -27,7 +27,8 @@ import restated_declarations as check  # noqa: E402
 TOOL = os.path.join(ROOT, "tools", "restated_declarations.py")
 CONTRACTS = os.path.join(HERE, "fixtures", "restated_contracts")
 MODULE = "zyngine/zynthian_plugin_demo.py"  # a name SCAN matches
-DB = "omx-contract/contract.d/3/plugin-db/db.json"
+DB = "omx-contract/contract.d/plugin-db/plugin-db.json"  # plugin-db 0.5.0: its words are its domains'
+GROUPING = "omx-contract/contract.d/plugin-hostd/grouping/grouping.json"  # plugin-hostd 0.21.0's domain plugin-hostd/grouping
 
 
 def run(*args, env=None):
@@ -93,6 +94,31 @@ class test_restated_literals(unittest.TestCase):
                               ("omx-comp-kernel", "kind set"), ("plan-refused", "word")):
             self.assertIn(role, decl.get(literal, {}), literal)
         self.assertEqual(sorted(decl[literal := "qualified-only"]["word"]), [DB])
+
+    def test_a_word_of_an_owners_domain_is_declared_from_its_domain_file(self):
+        # the sorting pass: an owner's words are its domains (contract.d/<domain>/<leaf>.json, the members of an
+        # item's oneOf), beside the packages' directories; plugin-db installs no package directory
+        decl = check.declared(CONTRACTS)
+        self.assertEqual(sorted(decl["plan-refused"]["word"]), [GROUPING])
+        self.assertEqual(sorted(decl["qualified-only"]["word"]), [DB])
+        self.assertEqual(sorted(decl["rtSafety"]["kind set"]), [DB])
+        for prose in ("Every plugin loads.", "The daemon refused the plan.", "planRefused", "qualifiedOnly"):
+            self.assertNotIn(prose, decl)
+
+    def test_the_owners_are_read_under_their_names_after_the_sorting_pass(self):
+        # omx-clap-core is omx-clap (omx-clap#164): contract.d/omx-clap; plugin-db installs domains only
+        self.assertIn("omx-contract/contract.d/omx-clap", check.CONTRACT_DIRS)
+        self.assertFalse([d for d in check.CONTRACT_DIRS if d.endswith(("/omx-clap-core", "/plugin-db"))], check.CONTRACT_DIRS)
+        self.assertIn("hosting.stability.crash-unattributed", check.declared(CONTRACTS))
+
+    def test_a_root_with_no_domain_is_an_error_naming_it(self):
+        partial = os.path.join(self.tmp, "partial")
+        shutil.copytree(CONTRACTS, partial)
+        for d in ("plugin-db", "plugin-hostd"):
+            shutil.rmtree(os.path.join(partial, "omx-contract", "contract.d", d))
+        out = run("--root", self.tmp, "--left", self.left, "--contracts", partial, "--literals-left", self.allowance)
+        self.assertEqual(out.returncode, 2, out.stdout + out.stderr)
+        self.assertIn(check.DOMAIN_DIRS, out.stderr)
 
     def test_prose_keys_numbers_and_scalars_are_not_declared(self):
         decl = check.declared(CONTRACTS)
@@ -313,10 +339,10 @@ class test_restated_literals(unittest.TestCase):
     def test_a_root_that_lacks_one_owner_is_an_error_naming_it_alone(self):
         partial = os.path.join(self.tmp, "partial")
         shutil.copytree(CONTRACTS, partial)
-        shutil.rmtree(os.path.join(partial, "omx-contract", "contract.d", "3", "plugin-hostd"))
+        shutil.rmtree(os.path.join(partial, "omx-contract", "contract.d", "plugin-hostd"))
         out = run("--root", self.tmp, "--left", self.left, "--contracts", partial, "--literals-left", self.allowance)
         self.assertEqual(out.returncode, 2, out.stdout + out.stderr)
-        self.assertIn("in: omx-contract/contract.d/*/plugin-hostd (install", out.stderr)
+        self.assertIn("in: omx-contract/contract.d/plugin-hostd (install", out.stderr)
         self.assertNotIn("plugin-db", out.stderr)
 
     def test_the_root_comes_from_the_environment_when_no_flag_names_it(self):

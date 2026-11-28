@@ -1,62 +1,55 @@
-"""tools/contract_versions.py: the contract versions the series is built and tested against, declared once in
-contract-versions (`<package> >= <floor>` per line), and the check that what is installed reaches them. Floors only
-(%7's ruling): no ceiling on our own packages, so a newer release the channel serves is never a red here; an installed
-version below its floor (the series cut against an older contract) is named, never read as a failing test."""
+"""tools/contract_versions.py: the contract packages the series is built and tested against, named once in
+contract-versions (`<name> [: <binary package>...]` per line), and the check that each is installed. Names only (owner
+rule, 2026-11-24: no hand-kept floors): the series uses the package the channel publishes, so no line carries a
+version relation; a floor is removed, never bumped."""
 import os
+import re
 
 import pytest
 
 from tools.contract_versions import parse, check, packages as packages_of
 
 DECLARED = """# the contract the series is built and tested against
-plugin-hostd-protocol >= 0.7.0
-plugin-hostd-contract >= 0.20.8
+plugin-hostd-protocol : libplugin-hostd-protocol0 plugin-hostd-protocol-contract
+plugin-hostd-contract
 """
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+RELATION = re.compile(r"[<>=]|\b\d+\.\d+")
 
 
-def test_the_declaration_parses_into_floors():
-    assert parse(DECLARED) == {"plugin-hostd-protocol": "0.7.0", "plugin-hostd-contract": "0.20.8"}
+def test_the_declaration_parses_into_names_and_their_packages():
+    assert parse(DECLARED) == ["plugin-hostd-protocol", "plugin-hostd-contract"]
+    assert packages_of(DECLARED) == {"plugin-hostd-protocol": ["libplugin-hostd-protocol0", "plugin-hostd-protocol-contract"],
+                                     "plugin-hostd-contract": ["plugin-hostd-contract"]}
 
 
-def test_an_installed_set_at_the_floors_is_clean():
-    assert check(parse(DECLARED), {"plugin-hostd-protocol": "0.7.0-1", "plugin-hostd-contract": "0.20.8-1"}) == []
-
-
-def test_a_newer_release_than_any_former_ceiling_is_clean():
-    # the Pi's red (runs 44797059610, 44797067216, 44797088155, 44799607252): 0.7.0 read "at or above the declared
-    # ceiling 0.6"; a release above the floor is the series' contract, whatever its number
-    assert check(parse(DECLARED), {"plugin-hostd-protocol": "1.0.0-1", "plugin-hostd-contract": "0.21.0"}) == []
-
-
-def test_below_the_floor_is_named():
-    assert check(parse(DECLARED), {"plugin-hostd-protocol": "0.6.0-1", "plugin-hostd-contract": "0.20.8"}) == [
-        "plugin-hostd-protocol 0.6.0-1 is below the declared floor 0.7.0"]
+def test_whatever_version_the_channel_serves_is_clean():
+    assert check(parse(DECLARED), {"plugin-hostd-protocol": "0.1.0-1", "plugin-hostd-contract": "9.0.0"}) == []
 
 
 def test_a_declared_package_not_installed_is_named():
-    assert check(parse(DECLARED), {"plugin-hostd-protocol": "0.7.0"}) == ["plugin-hostd-contract is not installed"]
+    assert check(parse(DECLARED), {"plugin-hostd-protocol": "0.8.1"}) == ["plugin-hostd-contract is not installed"]
 
 
-def test_a_line_that_is_not_a_floor_is_an_error():
-    with pytest.raises(ValueError, match="line 2"):
-        parse("# x\nplugin-hostd-protocol 0.7.0\n")
+@pytest.mark.parametrize("line", ["plugin-hostd-protocol >= 0.8.0", "plugin-hostd-protocol >= 0.7.0 < 0.8",
+                                  "plugin-hostd-protocol = 0.8.1", "plugin-hostd-protocol <= 1.0 : python3-x"])
+def test_a_line_with_a_version_relation_is_refused(line):
+    """A floor, a ceiling or a pin is a version this repository keeps by hand: refused, naming the line."""
+    with pytest.raises(ValueError, match="line 2.*version relation"):
+        parse("# x\n%s\n" % line)
 
 
-def test_a_ceiling_is_refused():
-    """A ceiling on our own package is the bound the ruling dropped: a line that carries one is an error naming it."""
-    with pytest.raises(ValueError, match="line 2.*ceiling"):
-        parse("# x\nplugin-hostd-protocol >= 0.7.0 < 0.8\n")
-
-
-def test_the_repository_declares_floors_only():
-    """contract-versions itself: every line a floor, none with a ceiling, and the estimate reply's floor: the
-    10-word form (the four RAM words) is the only one python3-plugin-hostd-protocol 0.7.0 reads."""
+def test_the_repository_names_packages_only():
+    """contract-versions itself: no line carries a version relation or a version, and the names the install step
+    installs are the ones the code imports or reads (the protocol and its client, the daemon's contract, omx-contract's
+    readers)."""
     with open(os.path.join(ROOT, "contract-versions")) as f:
-        floors = parse(f.read())
-    assert floors["plugin-hostd-protocol"] == "0.7.0"
-    assert floors["python3-plugin-hostd-protocol"] == "0.7.0"
+        text = f.read()
+    lines = [line for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+    assert [line for line in lines if RELATION.search(line)] == []
+    assert set(parse(text)) >= {"plugin-hostd-protocol", "plugin-hostd-contract", "python3-plugin-hostd-protocol",
+                                "omx-contract"}
 
 
 def test_the_client_the_runtime_imports_is_declared_and_carries_every_name():
@@ -81,8 +74,6 @@ def test_omx_contract_readers_are_imported_from_python3_omx_contract():
     """The position law and the catalog reader are omx-contract's package omx_contract (python3-omx-contract,
     omx-contract#28): imported as omx_contract.scale and omx_contract.catalog, never as a file found under
     /usr/share/omx-contract, and the package that carries them is declared in contract-versions."""
-    import re
-
     root = ROOT
     with open(os.path.join(root, "contract-versions")) as f:
         assert "python3-omx-contract" in [p for ps in packages_of(f.read()).values() for p in ps]

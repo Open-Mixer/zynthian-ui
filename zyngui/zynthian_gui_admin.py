@@ -29,7 +29,7 @@ from time import sleep
 from threading import Thread
 from curses import A_HORIZONTAL
 from shlex import join as shlex_join
-from subprocess import check_output, run, Popen, PIPE, STDOUT
+from subprocess import check_output, run, Popen, PIPE, STDOUT, DEVNULL
 
 # Zynthian specific modules
 import zynconf
@@ -38,6 +38,7 @@ from zyncoder.zyncore import lib_zyncore
 from zyngui import zynthian_gui_config
 from zyngine import zynthian_plugin_tiers
 from zyngui.zynthian_gui_selector_info import zynthian_gui_selector_info
+from zyngui.zynthian_gui_update_progress import update_running
 
 # -------------------------------------------------------------------------------
 # Zynthian Admin GUI Class
@@ -251,7 +252,10 @@ class zynthian_gui_admin(zynthian_gui_selector_info):
                                    ["Control Voltage configuration.", "settings.png"]))
         if self.state_manager.update_available:
             self.list_data.append((self.update_software, 0, "Update Software",
-                                   ["Updates software from Internet.\n\nThis option is only shown when updates are availale (\u21bb icon in the topbar).\nDon't poweroff while updating!", "update.png"]))
+                                   ["Updates software from Internet.\n\nUpdates are available (\u21bb icon in the topbar).\nDon't poweroff while updating!", "update.png"]))
+        else:
+            self.list_data.append((self.update_software, 0, "Force update (none advertised)",
+                                   ["Runs the software update even though no updates are advertised.\n\nUse this if you believe updates exist that have not been detected.\nDon't poweroff while updating!", "update.png"]))
         # self.list_data.append((self.update_system, 0, "Update Operating System"))
         if zynthian_gui_config.control_test_enabled:
             self.list_data.append((self.control_test, 0, "Test control HW",
@@ -779,15 +783,16 @@ class zynthian_gui_admin(zynthian_gui_selector_info):
 
     def update_software(self):
         logging.info("UPDATE SOFTWARE")
-        self.last_state_action()
-        self.zyngui.show_info("UPDATE SOFTWARE")
-        self.zyngui.add_info("Checking for Internet... ")
-        if run(["ping", "-c1", "-W1", "github.com"]).returncode:
-            self.zyngui.add_info("ERROR: Cannot reach GitHub", "ERROR")
-            self.zyngui.hide_info_timer(5000)
-            return
-        self.zyngui.add_info("SUCCESS\n", "SUCCESS")
-        self.start_command([[self.sys_dir + "/scripts/update_zynthian.sh"]])
+        # Show the progress screen straight away. The update runs as a separate service
+        # (it may stop the UI on low-memory devices) and checks the Internet connection
+        # itself. The update_progress screen follows the update log.
+        self.zyngui.show_update_progress()
+
+        def update_task():
+            self.last_state_action()
+            run([self.sys_dir + "/scripts/update_zynthian.sh"], stdout=DEVNULL, stderr=DEVNULL)
+
+        Thread(target=update_task, name="update software", daemon=True).start()
         self.state_manager.update_available = False
         self.update_available = False
 
@@ -805,7 +810,9 @@ class zynthian_gui_admin(zynthian_gui_selector_info):
 
     def exit_to_console(self):
         logging.info("EXIT TO CONSOLE")
-        self.zyngui.show_splash("Exiting")
+        # A low-memory software update stops the UI: keep showing its progress
+        if not update_running():
+            self.zyngui.show_splash("Exiting")
         self.last_state_action()
         self.zyngui.exit(101)
 

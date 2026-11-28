@@ -47,6 +47,9 @@ jobs:
 
       - name: Add the OpenMixer channel
         uses: Open-Mixer/.github/.github/actions/add-openmixer@openmixer-v1
+        with:
+          # the fork adapts to the wave on staging (omx-contract 0.23: the contract directory has no schema-major level)
+          staging: 'true'
 
       - name: Install plugin-hostd from the channel
         run: |
@@ -65,27 +68,23 @@ jobs:
           # python3-plugin-hostd-protocol: plugin_hostd_protocol, the client the words of a line and the reply codes are
           # read through (#4); python3-omx-contract: omx_contract.scale and omx_contract.catalog, the position law and
           # the catalog reader (#28)
-          # shellcheck disable=SC2086 # one word per pin
-          apt-get install -y -qq --no-install-recommends $pins omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract \
-            plugin-hostd-protocol-l10n-ca python3-plugin-hostd-protocol python3-omx-contract
-          # the contract the series is built and tested against: every declared package at or above its floor
+          # the contract the series is built and tested against (contract-versions): by name, the channel's packages,
+          # no version kept here; then every one of them is installed, and the log says which version
+          # shellcheck disable=SC2086,SC2046 # one word per pin and per package
+          apt-get install -y -qq --no-install-recommends $pins omx-contract-data omx-dsp-contract \
+            $(python3 -m tools.contract_versions --packages)
           python3 -m tools.contract_versions
-          dpkg-query -W plugin-hostd omx-contract-data plugin-hostd-protocol-contract omx-dsp-contract python3-plugin-hostd-protocol \
-            python3-omx-contract
-          # the owners' sentences are read from the vocabularies omx-contract-data's contract directory holds, in the
-          # layout it has from 3.14.0 on (#6), and the catalogs of plugin-hostd-protocol-contract: a floor only (%7's
-          # ruling: no ceiling on our own packages)
-          v=$(dpkg-query -W -f '${Version}' omx-contract-data)
-          dpkg --compare-versions "$v" ge 3.14.0 \
-            || { echo "::error::omx-contract-data $v is not >= 3.14.0"; exit 1; }
+          dpkg-query -W plugin-hostd omx-contract-data omx-dsp-contract
 
       - name: Fetch plugin-db's Python reader and its golden answers
         run: |
           # plugin_db, the reader the menus ask about a plugin (#4), and the golden answers the tests ask it with:
-          # python3-plugin-db from plugin-db 0.3.2 on; until that release from a named commit of its main, and the
-          # log says so. The golden answers always come from the checkout.
-          SHA=4a9d62dce6b64d6fe141880c63905ab8255a9219
-          apt-get install -y -qq --no-install-recommends git ca-certificates
+          # the channel serves no python3-plugin-db, so both come from plugin-db's release tag of the version the
+          # channel serves (plugin-db-contract's), never a named commit; the log says which. The golden answers always
+          # come from the checkout.
+          apt-get install -y -qq --no-install-recommends git ca-certificates plugin-db-contract
+          v=$(dpkg-query -W -f '${Version}' plugin-db-contract)
+          SHA=v${v%%[-~+]*}
           git clone -q https://github.com/Open-Mixer/plugin-db /tmp/plugin-db
           git -C /tmp/plugin-db checkout -q "$SHA"
           test -f /tmp/plugin-db/tests/golden/qualified.json
@@ -95,16 +94,17 @@ jobs:
           else
             test -f /tmp/plugin-db/python/plugin_db/__init__.py
             echo "PYTHONPATH=/tmp/plugin-db/python${PYTHONPATH:+:$PYTHONPATH}" >> "$GITHUB_ENV"
-            echo "READER FROM BRANCH $SHA"
+            echo "READER FROM TAG $SHA (plugin-db-contract $v)"
           fi
 
       - name: Fetch omx-panel's gesture declaration and build its renderer
         run: |
           apt-get install -y -qq --no-install-recommends git ca-certificates build-essential pkgconf libcjson-dev \
             libomx-contract-dev libomxdsp-dev binutils
-          # omx-panel v0.15.1: its renderer holds omx-dsp-devel to a floor (0.32.2) only, and builds against omx-dsp 0.33; it carries the group model
+          # omx-panel v0.16.1: delivered with omx-contract 3.21.0 (which moved the PANEL_* items to omx-panel) and
+          # omx-dsp 0.34.0, the channel's versions; renderer soname still .so.0; it carries the group model
           # (omx-panel#63) the cut tests/fixtures/plugin_hostd records (#71)
-          SHA=3cace582d1da169fe3f6597e6574c3bc23a3cba2
+          SHA=7bd62614462ecaf69a63b3c133c413e152297f74
           git clone -q https://github.com/Open-Mixer/omx-panel /tmp/omx-panel
           git -C /tmp/omx-panel checkout -q "$SHA"
           test -f /tmp/omx-panel/schema/gestures.json
@@ -124,9 +124,9 @@ jobs:
         run: |
           # the owners' contract packages, beside omx-contract-data and plugin-hostd-protocol-contract installed above;
           # omx-panel's schema is the commit fetched above. tools/restated_declarations.py names what a root lacks.
-          apt-get install -y -qq --no-install-recommends omx-clap-core-contract omx-dsp-contract omx-plugins-contract \
+          apt-get install -y -qq --no-install-recommends omx-clap-contract omx-dsp-contract omx-plugins-contract \
             plugin-db-contract $HOSTD_PINS
-          dpkg-query -W omx-clap-core-contract omx-dsp-contract omx-plugins-contract plugin-db-contract plugin-hostd-contract
+          dpkg-query -W omx-clap-contract omx-dsp-contract omx-plugins-contract plugin-db-contract plugin-hostd-contract
           mkdir -p /tmp/contract-root/omx-panel
           ln -s /usr/share/omx-contract /tmp/contract-root/omx-contract
           ln -s /usr/share/plugin-hostd-protocol /tmp/contract-root/plugin-hostd-protocol

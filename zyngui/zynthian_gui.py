@@ -35,7 +35,7 @@ from queue import Empty, SimpleQueue
 from pathlib import Path
 from time import monotonic
 from datetime import datetime
-from threading import Thread, Lock, Event
+from threading import Thread, Lock, RLock, Event
 from websocket_server import WebsocketServer
 
 # Zynthian specific modules
@@ -56,6 +56,7 @@ from zyngui.zynthian_gui_none import zynthian_gui_none
 from zyngui.zynthian_gui_info import zynthian_gui_info
 from zyngui.zynthian_gui_help import zynthian_gui_help
 from zyngui.zynthian_gui_splash import zynthian_gui_splash
+from zyngui.zynthian_gui_update_progress import zynthian_gui_update_progress, update_running
 from zyngui.zynthian_gui_loading import zynthian_gui_loading
 from zyngui.zynthian_gui_option import zynthian_gui_option
 from zyngui.zynthian_gui_confirm import zynthian_gui_confirm
@@ -177,7 +178,7 @@ class zynthian_gui:
         self.screen_history = []
         self.current_screen = None
         self.screen_timer_id = None
-        self.screen_lock = Lock()           # Lock object to avoid concurrence problems when showing/closing screens
+        self.screen_lock = RLock()          # Reentrant lock object to avoid concurrence problems when showing/closing screens
         self.current_processor = None
 
         self.state_manager = zynthian_state_manager()
@@ -185,6 +186,7 @@ class zynthian_gui:
 
         self.debug_thread = None
         self.busy_thread = None
+        self.startup_done = False  # Set when the start task has shown the initial screen
         self.control_thread = None
         self.status_thread = None
         self.cuia_thread = None
@@ -568,6 +570,7 @@ class zynthian_gui:
         self.screens['info'] = zynthian_gui_info()
         self.screens['help'] = zynthian_gui_help()
         self.screens['splash'] = zynthian_gui_splash()
+        self.screens['update_progress'] = zynthian_gui_update_progress()
         self.screens['loading'] = zynthian_gui_loading()
         self.screens['option'] = zynthian_gui_option()
         self.screens['confirm'] = zynthian_gui_confirm()
@@ -608,6 +611,7 @@ class zynthian_gui:
         # Special Control Screens (processor ID < -1)
         self.screens['tempo'] = self.screens['control']
         self.screens['alsa_mixer'] = self.screens['control']
+        self.screens['audio2midi'] = self.screens['control']
         self.screens['audio_player'] = self.screens['control']
 
         #self.screens['arranger'] = zynthian_gui_arranger()
@@ -719,6 +723,7 @@ class zynthian_gui:
 
         # Show initial screen
         self.show_screen(init_screen, zynthian_gui.SCREEN_HMODE_RESET)
+        self.startup_done = True
 
     def hide_screens(self, exclude=None):
         if not exclude:
@@ -760,6 +765,8 @@ class zynthian_gui:
         elif screen == "tempo":
             self.state_manager.tempo_processor.refresh_controllers(params)
             self.current_processor = self.state_manager.tempo_processor
+        elif screen == "audio2midi":
+            self.current_processor = self.state_manager.audio2midi_processor
         elif screen == "audio_player":
             if self.state_manager.audio_player:
                 self.current_processor = self.state_manager.audio_player
@@ -823,27 +830,33 @@ class zynthian_gui:
     def is_shown_alsa_mixer(self):
         return self.current_processor == self.state_manager.alsa_mixer_processor
 
+    def is_shown_audio2midi(self):
+        return self.current_processor == self.state_manager.audio2midi_processor
+
     def is_shown_audio_player(self):
         return self.current_processor == self.state_manager.audio_player
 
     def close_screen(self, screen=None):
         """ Closes the current screen or optionally the specified screen """
 
-        if screen is None:
-            screen = self.get_current_screen()
-        self.prune_screen_history(screen, soft=False)
-        try:
-            last_screen = self.screen_history.pop()
-        except:
-            last_screen = "root"
+        # Hold the screen lock while history is popped and the previous screen is shown,
+        # so another thread (e.g. busy thread closing loading screen) can't interleave.
+        with self.screen_lock:
+            if screen is None:
+                screen = self.get_current_screen()
+            self.prune_screen_history(screen, soft=False)
+            try:
+                last_screen = self.screen_history.pop()
+            except:
+                last_screen = "root"
 
-        if last_screen not in self.screens:
-            logging.error(f"Can't back to screen '{last_screen}'. It doesn't exist!")
-            last_screen = "root"
-        elif last_screen in ("mixer", "launcher"):
-            last_screen = "root"
-        logging.debug(f"CLOSE SCREEN '{self.current_screen}' => Back to '{last_screen}'")
-        self.show_screen(last_screen)
+            if last_screen not in self.screens:
+                logging.error(f"Can't back to screen '{last_screen}'. It doesn't exist!")
+                last_screen = "root"
+            elif last_screen in ("mixer", "launcher"):
+                last_screen = "root"
+            logging.debug(f"CLOSE SCREEN '{self.current_screen}' => Back to '{last_screen}'")
+            self.show_screen(last_screen)
 
     def reset_screen_history(self):
         self.screen_history = []
@@ -948,6 +961,25 @@ class zynthian_gui:
         self.hide_screens(exclude='splash')
         self.screen_lock.release()
 
+    def show_update_progress(self):
+        self.screen_lock.acquire()
+        self.cancel_screen_timer()
+        self.screens['update_progress'].show()
+        self.current_screen = 'update_progress'
+        self.hide_screens(exclude='update_progress')
+        self.screen_lock.release()
+
+    def close_update_progress(self):
+        if self.current_screen == 'update_progress':
+            try:
+                self.close_screen()
+            except Exception as e:
+                logging.error(f"Can't close update progress screen: {e}")
+            if self.current_screen == 'update_progress':
+                self.show_screen_reset("root")
+        else:
+            self.screens['update_progress'].hide()
+
     def show_loading(self, title="", details=""):
         self.screens['loading'].set_title(title)
         self.screens['loading'].set_details(details)
@@ -1049,21 +1081,30 @@ class zynthian_gui:
                     logging.error(f"Help file '{fpath}' doesn't exist.")
             return
 
-        # Get help page for the current view
-        try:
-            # Ask screen object
-            curscreen_obj = self.get_current_screen_obj()
-            fpath = get_fpath(curscreen_obj.get_help_fpath())
-        except:
-            # Else use view name
-            fpath = get_fpath(f"{self.current_screen}.html")
+        # Get help page for the current view: the view gives a list of candidate pages, from the
+        # most specific to the most generic, and the first one that exists is shown.
+        screen = str(self.current_screen)
+        candidates = []
+        curscreen_obj = self.get_current_screen_obj()
+        if callable(getattr(curscreen_obj, "get_help_fpath", None)):
+            try:
+                res = curscreen_obj.get_help_fpath(screen)
+                if isinstance(res, str):
+                    candidates.append(res)
+                elif res:
+                    candidates += [fp for fp in res if fp]
+            except Exception as e:
+                logging.warning(f"Can't get help page for '{screen}' => {e}")
+        # Views without their own lookup (e.g. fullscreen modals) use the view name
+        candidates.append(f"{screen}.html")
 
-        if fpath and Path(fpath).exists():
-            self.screens['help'].load_file(fpath)
-            return
+        for fpath in candidates:
+            fpath = get_fpath(fpath)
+            if fpath and Path(fpath).exists():
+                self.screens['help'].load_file(fpath)
+                return
 
-        topic = str(self.current_screen).split("/")[-1]
-        logging.warning(f"No help for '{topic}'")
+        logging.warning(f"No help for '{screen}' (tried {', '.join(candidates)})")
 
     # TODO: Rename - this is called for various chain manipulation purposes
     def modify_chain(self, status=None):
@@ -1349,13 +1390,18 @@ class zynthian_gui:
     #
     # Each CUIA function should be documented using the Google Docstring spec.
     #
+    # Each CUIA receives a single "params" argument: None or a list of POSITIONAL
+    # values (not keyword arguments). The "Params:" section lists the entries in the
+    # order they appear in the list; the names are only labels. Optional entries
+    # must be trailing: callers can only omit them from the end of the list.
+    #
     # -------------------------------------------------------------------------
     """A short, one-line summary sentence describing what the function does.
 
     An optional longer paragraph providing additional architectural context,
     behavioral edge cases, or relative processing constraints for the AI.
 
-    Args:
+    Params:
         cutoff (int): Description of the cutoff parameter. Include valid ranges
             or mathematical conversion tips here for the LLM.
         resonance (float): Description of the resonance parameter.
@@ -1392,7 +1438,7 @@ class zynthian_gui:
 
         Category: system
 
-        Keyword Args:
+        Params:
             mode (int): 0 to leave the power save mode. Any other value, or none, enters the power save mode.
         """
 
@@ -1411,7 +1457,7 @@ class zynthian_gui:
             Only call this tool with the 'CONFIRM' param when user's command explicitly confirms the action.
             If not sure, call the action without the confirm parameter to ask for confirmation.
 
-        Keyword Args:
+        Params:
             confirm (str) enum["CONFIRM"]: When value is "CONFIRM", zynthian don't ask for confirmation.
         """
 
@@ -1429,7 +1475,7 @@ class zynthian_gui:
             Only call this tool with the 'CONFIRM' param when user's command explicitly confirms the action.
             If not sure, call the action without the confirm parameter to ask for confirmation.
 
-        Keyword Args:
+        Params:
             confirm (str) enum["CONFIRM"]: When value is "CONFIRM", zynthian don't ask for confirmation.
         """
 
@@ -1548,7 +1594,7 @@ class zynthian_gui:
 
         Category: tts
 
-        Kwywords Args:
+        Params:
             text (str) [REQUIRED]: Text to announce.
             replace (bool): True to clear queue and replace with this text
             urgent (bool): True to play next. False to append to end of queue.
@@ -1626,7 +1672,7 @@ class zynthian_gui:
 
         Category: tts
 
-        Keyword Args:
+        Params:
             host (str): IP address of the remote host. Omit all parameters to stop sending.
             port (int): OSC port of the remote host.
             path (str): OSC path (default "/tts").
@@ -1683,7 +1729,7 @@ class zynthian_gui:
             Only call this tool with confirm='CONFIRM' when user's command explicitly confirms the action.
             If not sure, call the action without the confirm parameter to ask for confirmation.
 
-        Keyword Args:
+        Params:
             confirm (str) enum["CONFIRM"]: When value is "CONFIRM", zynthian don't ask for confirmation.
         """
 
@@ -1881,7 +1927,7 @@ class zynthian_gui:
             'fast', 'slow', or 'groove', evaluate if this tool fits the request.
             Unless a decimal number is explictly soecified, always round up calculations to whole integer steps.
 
-        Keyword Args:
+        Params:
             bpm (number) [REQUIRED]: The exact tempo value in beats per minute. Valid ranges are 10 to 400.
                 Relative Changes: Use small relative changes of 1% and big relative changes of 10%.
         """
@@ -1896,7 +1942,7 @@ class zynthian_gui:
 
         Category: transport
 
-        Keyword Args:
+        Params:
             phrase (int) [REQUIRED]: Index of the phrase containing the sequence.
             sequence (int) [REQUIRED]: Index of the sequence within the phrase.
         """
@@ -1911,7 +1957,7 @@ class zynthian_gui:
 
         Category: tempo
 
-        Keyword Args:
+        Params:
             delta (number): BPM to add (default 1).
         """
 
@@ -1929,7 +1975,7 @@ class zynthian_gui:
 
         Category: tempo
 
-        Keyword Args:
+        Params:
             delta (number): BPM to subtract (default 1).
         """
 
@@ -1965,7 +2011,7 @@ class zynthian_gui:
             This action emulates turning an encoder knob. Encoder 3 is the select encoder: on list views it moves the selection.
             The other encoders change the controllers shown on the current view.
 
-        Keyword Args:
+        Params:
             index (int) [REQUIRED]: Encoder index (0-3).
             delta (int) [REQUIRED]: Relative change, positive (clockwise) or negative.
         """
@@ -1987,7 +2033,7 @@ class zynthian_gui:
 
         Category: navigation
 
-        Keyword Args:
+        Params:
             index (int) [REQUIRED]: Encoder index (0-3).
             value (number) [REQUIRED]: Normalized value, from 0.0 to 1.0.
         """
@@ -2008,7 +2054,7 @@ class zynthian_gui:
             This action emulates pushing a hardware button. Switches 0-3 are: 0 -> Menu/Layer, 1 -> Back, 2 -> Snapshot, 3 -> Select.
             Higher indexes are device specific. Prefer the specific CUIAs (BACK, SELECT_ACTION, MENU, ...) when they exist.
 
-        Keyword Args:
+        Params:
             index (int) [REQUIRED]: Switch index.
             action (str) [REQUIRED] enum['S', 'B', 'L', 'P', 'R']: 'S' -> short push, 'B' -> bold push, 'L' -> long push, 'P' -> pressed, 'R' -> released.
         """
@@ -2115,7 +2161,7 @@ class zynthian_gui:
             same as ZYNSWITCH 3 with the same action type. Use SELECT to highlight an item before.
             It can be used to confirm actions.
 
-        Keyword Args:
+        Params:
             t (string) enum['S', 'B', 'L', 'P']: Action type. The enum values means: 'S' -> short, 'B' -> bold, 'L' -> long, 'P' -> push.
         """
 
@@ -2153,7 +2199,7 @@ class zynthian_gui:
             This only moves the selection. Call SELECT_ACTION afterwards to perform the action of the selected item.
             The item indexes are the positions in the "items" list reported by the "screen_state" websocket feedback.
 
-        Keyword Args:
+        Params:
             index (int) [REQUIRED]: Index of the item to highlight.
         """
 
@@ -2172,7 +2218,7 @@ class zynthian_gui:
             The chain can be specified by an index number. If no chain is specified, pass None to use current active chain.
             Internally, chain indexes are 0-based, but users use 1-base.
 
-        Keyword Args:
+        Params:
             chain_index (int) [REQUIRED]: Index of mixer strip in display order. -1 for main mixbus. None for current active chain.
             param_symbol (str) [REQUIRED] enum['level', 'balance', 'gain', 'mute', 'record', 'solo', 'mono', 'pfl', 'ms', 'phase']: The parameter symbol.
             param_value (number or bool) [REQUIRED]: The parameter value. 'level' ranges from 0.0 to 1.0. 'balance' ranges from -1.0 to 1.0. 'gain' ranges from -40 to 40. All the rest are booleans.
@@ -2200,7 +2246,7 @@ class zynthian_gui:
 
         Category: screens
 
-        Keyword Args:
+        Params:
             screen (str) [REQUIRED]: View name, like the "screen" reported by the "screen_state" websocket feedback (mixer, admin, chain_manager, snapshot, zs3, ...).
         """
 
@@ -2212,7 +2258,7 @@ class zynthian_gui:
 
         Category: screens
 
-        Keyword Args:
+        Params:
             screen (str) [REQUIRED]: View name, like the "screen" reported by the "screen_state" websocket feedback (mixer, admin, chain_manager, snapshot, zs3, ...).
         """
 
@@ -2292,6 +2338,22 @@ class zynthian_gui:
 
         self.show_screen("alsa_mixer")
 
+    def cuia_screen_audio2midi(self, params=None):
+        """Show the audio to MIDI converter controls view: the audio input and MIDI output pages of a channel.
+
+        Category: screens
+
+        Params:
+            channel (int, optional): Converter channel, 1 or 2. Defaults to the channel last shown.
+        """
+
+        if params:
+            try:
+                self.state_manager.audio2midi_processor.engine.set_channel(int(params[0]) - 1)
+            except (ValueError, TypeError, AttributeError) as e:
+                logging.warning(f"Can't set audio to MIDI channel => {e}")
+        self.show_screen("audio2midi")
+
     def cuia_screen_launcher(self, params=None):
         """Show the launcher view.
 
@@ -2367,7 +2429,7 @@ class zynthian_gui:
 
         Category: display
 
-        Keyword Args:
+        Params:
             screen (str): Only refresh if this is the current view. Omit it to refresh any view.
         """
 
@@ -2389,7 +2451,7 @@ class zynthian_gui:
         AI Context:
             Intended for key bindings and internal use. The config parameter is a list of button descriptions.
 
-        Keyword Args:
+        Params:
             title (str) [REQUIRED]: Title shown in the topbar.
             config (str) [REQUIRED]: List of dictionaries, each one describing a button.
         """
@@ -2447,7 +2509,7 @@ class zynthian_gui:
         Category: screens
         """
 
-        if self.is_shown_alsa_mixer():
+        if self.is_shown_alsa_mixer() or self.is_shown_audio2midi():
             return
         if self.is_shown_audio_player():
             self.cuia_bank_preset()
@@ -2489,7 +2551,7 @@ class zynthian_gui:
         Category: screens
         """
 
-        if self.is_shown_alsa_mixer():
+        if self.is_shown_alsa_mixer() or self.is_shown_audio2midi():
             return
         if params:
             try:
@@ -2551,7 +2613,7 @@ class zynthian_gui:
         AI Context:
             This overwrites the ZS3. Only call it when the user explicitly asks to save it.
 
-        Keyword Args:
+        Params:
             zs3 (int) [REQUIRED]: ZS3 index, as listed in the subsnapshots (ZS3) view. Key bindings may pass a ZS3 id (str) instead.
         """
 
@@ -2566,7 +2628,7 @@ class zynthian_gui:
 
         Category: zs3
 
-        Keyword Args:
+        Params:
             zs3 (int) [REQUIRED]: ZS3 index, as listed in the subsnapshots (ZS3) view. Key bindings may pass a ZS3 id (str) instead.
         """
 
@@ -2581,7 +2643,7 @@ class zynthian_gui:
 
         Category: zs3
 
-        Keyword Args:
+        Params:
             cycle (bool): True to go back to the first ZS3 after the last one.
         """
 
@@ -2596,7 +2658,7 @@ class zynthian_gui:
 
         Category: zs3
 
-        Keyword Args:
+        Params:
             cycle (bool): True to go to the last ZS3 after the first one.
         """
 
@@ -2613,7 +2675,7 @@ class zynthian_gui:
     def get_midi_learn_screen_obj(self):
         if self.current_screen == "chain_control" and self.screens["chain_control"].subscreen_name == "control":
             return self.screens["chain_control"].subscreen
-        elif self.current_screen in ("alsa_mixer", "midi_key_range"):
+        elif self.current_screen in ("alsa_mixer", "audio2midi", "midi_key_range"):
             return self.screens[self.current_screen]
 
     def cuia_enable_midi_learn_cc(self, params=None):
@@ -2634,7 +2696,7 @@ class zynthian_gui:
 
         Category: midi
 
-        Keyword Args:
+        Params:
             zs3_name (str): Name of the ZS3 to bind. Omit it to learn into a new ZS3.
         """
 
@@ -2710,7 +2772,7 @@ class zynthian_gui:
 
         Category: midi
 
-        Keyword Args:
+        Params:
             index (int) [REQUIRED]: Controller index on the view (0-3).
         """
 
@@ -2724,7 +2786,7 @@ class zynthian_gui:
 
         Category: midi
 
-        Keyword Args:
+        Params:
             index (int) [REQUIRED]: Controller index on the view (0-3).
         """
 
@@ -2741,7 +2803,7 @@ class zynthian_gui:
         AI Context:
             MIDI bindings are lost. Only call it when the user explicitly asks for it.
 
-        Keyword Args:
+        Params:
             index (int): Controller index on the view (0-3). Omit it to unlearn the controller being learned.
         """
 
@@ -2779,7 +2841,7 @@ class zynthian_gui:
         AI Context:
             MIDI bindings are lost. Only call it when the user explicitly asks for it.
 
-        Keyword Args:
+        Params:
             chain_id (int): Chain id. Omit it for the active chain.
         """
 
@@ -2796,7 +2858,7 @@ class zynthian_gui:
 
         Category: navigation
 
-        Keyword Args:
+        Params:
             index (int) [REQUIRED]: Encoder index (0-3).
         """
 
@@ -2815,7 +2877,7 @@ class zynthian_gui:
 
         Category: navigation
 
-        Keyword Args:
+        Params:
             index (int) [REQUIRED]: Encoder index (0-3).
             action (str) [REQUIRED] enum['S', 'B', 'L']: 'S' -> short push, 'B' -> bold push, 'L' -> long push.
         """
@@ -2849,7 +2911,7 @@ class zynthian_gui:
 
         Category: midi
 
-        Keyword Args:
+        Params:
             program (str) [REQUIRED]: Program number (0-127), or "+"/"-" for the next/previous program.
             chan (int): MIDI channel (0-15). Omit it for the active chain's channel.
         """
@@ -2882,7 +2944,7 @@ class zynthian_gui:
         AI Context:
             Intended for key bindings: when the last parameter is 'R' (key released), the release value is sent.
 
-        Keyword Args:
+        Params:
             chan (int) [REQUIRED]: MIDI channel (0-15).
             cc (int) [REQUIRED]: CC number (0-127).
             value (int) [REQUIRED]: CC value (0-127).
@@ -2990,7 +3052,7 @@ class zynthian_gui:
 
         Category: hardware
 
-        Keyword Args:
+        Params:
             volts (number) [REQUIRED]: Volts per octave.
         """
 
@@ -3004,7 +3066,7 @@ class zynthian_gui:
 
         Category: hardware
 
-        Keyword Args:
+        Params:
             note (int) [REQUIRED]: MIDI note number (0-127).
         """
 
@@ -3018,7 +3080,7 @@ class zynthian_gui:
 
         Category: hardware
 
-        Keyword Args:
+        Params:
             volts (number) [REQUIRED]: Volts per octave.
         """
 
@@ -3032,7 +3094,7 @@ class zynthian_gui:
 
         Category: hardware
 
-        Keyword Args:
+        Params:
             note (int) [REQUIRED]: MIDI note number (0-127).
         """
 
@@ -3042,17 +3104,37 @@ class zynthian_gui:
             logging.debug(err)
 
     # -------------------------------------------------------------------
+    # Zynseq CUIAs (patterns)
+    # -------------------------------------------------------------------
+
+    def cuia_set_pattern_json(self, params):
+        """Set pattern data from a json string.
+
+        Category: hardware
+
+        Params:
+            patnum (int) [REQUIRED]: Pattern number.
+            json (str) [REQUIRED]: Pattern data in json format (zynlibs/zynseq/pattern.schema.json)
+        """
+
+        try:
+            self.state_manager.zynseq.set_pattern_json(params[0], params[1])
+        except Exception as err:
+            logging.debug(err)
+
+    # -------------------------------------------------------------------
     # CUIA backend API - TODO: Move to non-gui api
     # -------------------------------------------------------------------
 
     def cuia_api(self, params):
-        """ Access the backend API
-        params (tuple):
-            api: Which api to access: "sm" for state manager, "cm" for chain manager
-            method: Name of method to call
-            params: comma separated list of method parameters
+        """Access the backend API.
 
         Category: system
+
+        Params:
+            api (str): Which api to access: "sm" for state manager, "cm" for chain manager.
+            method (str): Name of method to call.
+            method_params: Any further entries are passed positionally to the method.
         """
 
         try:
@@ -3110,6 +3192,7 @@ class zynthian_gui:
             "audio_player": [["audio_player"], ["midi_cc_range", "midi_cc_single"]],
             "alsa_mixer": [["alsa_mixer"], ["midi_cc_range", "midi_cc_single"]],
             "tempo": [["tempo"], ["midi_cc_range", "midi_cc_single"]],
+            "audio2midi": [["audio2midi"], ["midi_cc_range", "midi_cc_single"]],
             "pated": [["pattern_editor", "pated_cc"], ["midi_prog"]],
             "snapshot": [["snapshot"], []],
             "zs3": [["zs3"], []]
@@ -3597,6 +3680,12 @@ class zynthian_gui:
         busy_timeout = 0
         busy_warn_time = 300
         while not self.exit_flag:
+            # Software update running: its progress screen must stay. No busy screens.
+            # (Not during UI startup: the startup loading screen works as usual)
+            if self.startup_done and (self.current_screen == "update_progress" or update_running()):
+                busy_timeout = 0
+                sleep(0.1)
+                continue
             if self.state_manager.is_busy() and (monotonic() - self.state_manager.busy_ts) > 0.1 :
                 busy_timeout += 1
                 busy_message = self.state_manager.get_busy_message()
@@ -3604,7 +3693,10 @@ class zynthian_gui:
                 # Show loading screen if busy and busy message
                 if self.current_screen != "loading":
                     if busy_message:
-                        self.show_loading(busy_message, busy_details)
+                        with self.screen_lock:
+                            # Re-check under lock: busy may have ended and another screen shown meanwhile
+                            if self.state_manager.is_busy() and self.current_screen != "loading":
+                                self.show_loading(busy_message, busy_details)
                 else:
                     busy_error = self.state_manager.get_busy_error()
                     if busy_error:
@@ -3624,7 +3716,11 @@ class zynthian_gui:
             else:
                 busy_timeout = 0
                 if self.current_screen == "loading":
-                    self.close_screen("loading")
+                    with self.screen_lock:
+                        # Re-check under lock: another thread may have shown a new screen after
+                        # ending busy (e.g. alsa_mixer from audio_in). Don't close that one.
+                        if self.current_screen == "loading" and not self.state_manager.is_busy():
+                            self.close_screen("loading")
 
             try:
                 if self.current_screen:
@@ -3707,6 +3803,7 @@ class zynthian_gui:
 
         zynswitch_cuia_ts = [None] * zynthian_gui_config.num_zynswitches
         zynswitch_repeat = {}
+        zynswitch_wake = set()  # Switches pressed to wake from power save, until released
         zynpot_repeat = {}
         repeat_delay = 3  # Quantity of repeat intervals to delay before triggering auto repeat
         repeat_interval = 0.15  # Auto repeat interval in seconds
@@ -3751,6 +3848,22 @@ class zynthian_gui:
                     # zynswitch has parameters: [switch, action] where action is P(ressed), R(eleased), S(hort), B(old), L(ong), X or Y
                     i = int(params[0])
                     t = params[1]
+                    # A switch pressed during power save wakes the UI. Its push and short actions are
+                    # ignored but bold and long actions still operate.
+                    if self.state_manager.power_save_mode or i in zynswitch_wake:
+                        self.state_manager.set_event_flag()
+                        if t == 'P':
+                            zynswitch_wake.add(i)
+                            zynswitch_cuia_ts[i] = monotonic()
+                            continue
+                        zynswitch_wake.discard(i)
+                        if t == 'R':
+                            if zynswitch_cuia_ts[i] is None:
+                                continue
+                            t = self.zynswitch_timing(int(1000000 * (monotonic() - zynswitch_cuia_ts[i])))
+                        if t == 'S':
+                            zynswitch_cuia_ts[i] = None
+                            continue
                     if t == 'R':
                         if zynswitch_cuia_ts[i] is None:
                             if i in zynswitch_repeat:
@@ -4468,6 +4581,19 @@ class zynthian_gui:
     def start_polling(self):
         self.osc_timeout()
         self.plot_zctrls_task()
+        self.update_progress_task()
+
+    def update_progress_task(self):
+        """Show the software update progress screen while an update is running (from any source)"""
+        if self.exit_flag:
+            return
+        try:
+            # Not while starting: the start task shows the initial screen when it ends
+            if self.startup_done and self.current_screen != 'update_progress' and update_running():
+                self.show_update_progress()
+        except Exception as e:
+            logging.error(e)
+        zynthian_gui_config.top.after(2000, self.update_progress_task)
 
     def after(self, msec, func):
         zynthian_gui_config.top.after(msec, func)

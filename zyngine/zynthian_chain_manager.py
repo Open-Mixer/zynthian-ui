@@ -85,6 +85,7 @@ engine2class = {
     "MR": zynthian_engine_audio_mixer,
     "MX": zynthian_engine_alsa_mixer,
     "TP": zynthian_engine_tempo,
+    "AM": zynthian_engine_audio2midi,
     'CL': zynthian_engine_clippy,
     'PH': zynthian_engine_plugin_hostd
 }
@@ -240,6 +241,14 @@ class zynthian_chain_manager:
             "ENGINE": zynthian_engine_tempo,
             "ENABLED": False
         }
+        cls.engine_info["AM"] = {
+            "NAME": "Audio \u2794 MIDI",
+            "TITLE": "Audio \u2794 MIDI",
+            "TYPE": "Global",
+            "CAT": None,
+            "ENGINE": zynthian_engine_audio2midi,
+            "ENABLED": False
+        }
         # LV2 and CLAP plugins run by plugin-hostd
         plugin_hostd_catalogue(cls.engine_info)
         # Look for an engine class for each one
@@ -356,8 +365,9 @@ class zynthian_chain_manager:
                 zmop_index = self.get_next_free_zmop_index()
             chain.set_zmop_index(zmop_index)
             # Enable all MIDI input devices by default => TODO: Should we allow user to define default routing?
+            # except the audio to MIDI converter outputs: each costs CPU once routed, so they are routed manually
             for zmip in range(MAX_NUM_MIDI_DEVS):
-                lib_zyncore.zmop_set_route_from(chain.zmop_index, zmip, True)
+                lib_zyncore.zmop_set_route_from(chain.zmop_index, zmip, not zynautoconnect.is_audio2midi_zmip(zmip))
             # Enable StepSeq MIDI intput
             lib_zyncore.zmop_set_route_from(chain.zmop_index, ZMIP_STEP_INDEX, True)
             # Enable SMF sequencer MIDI intput

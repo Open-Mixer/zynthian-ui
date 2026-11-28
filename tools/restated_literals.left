@@ -18,3 +18,12 @@ zyngine/zynthian_omx_panel_view.py output_set 1 issue=Open-Mixer/plugin-hostd-pr
 # a grouping reason compared with a decoded word
 zyngine/zynthian_engine_plugin_hostd.py grouping-off 1 issue=Open-Mixer/plugin-hostd#67
 zyngine/zynthian_plugin_hostd_grouping.py plan-refused 1 issue=Open-Mixer/plugin-hostd#67
+
+# words the owners' domains newly declare (the sorting pass): the CLAP feature words of omx-clap's domain clap, which
+# the catalogue maps to its categories, and the worker's binary, a word of plugin-hostd's domain qualification
+zyngine/zynthian_engine_plugin_hostd.py omx-clap-host 1 issue=Open-Mixer/zynthian-ui#105
+zyngine/zynthian_plugin_hostd_catalogue.py audio-effect 1 issue=Open-Mixer/zynthian-ui#105
+zyngine/zynthian_plugin_hostd_catalogue.py drum-machine 1 issue=Open-Mixer/zynthian-ui#105
+zyngine/zynthian_plugin_hostd_catalogue.py pitch-correction 1 issue=Open-Mixer/zynthian-ui#105
+zyngine/zynthian_plugin_hostd_catalogue.py pitch-shifter 1 issue=Open-Mixer/zynthian-ui#105
+zyngine/zynthian_plugin_hostd_catalogue.py transient-shaper 1 issue=Open-Mixer/zynthian-ui#105
