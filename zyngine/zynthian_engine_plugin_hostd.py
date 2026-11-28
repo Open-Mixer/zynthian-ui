@@ -12,6 +12,7 @@
 # version 2 of the License, or any later version. See the LICENSE.txt file.
 # ******************************************************************************
 
+import functools
 import io
 import os
 import re
@@ -30,6 +31,7 @@ import subprocess
 
 import zynautoconnect
 from zyngine.zynthian_signal_manager import zynsigman
+from zyngine import zynthian_contract_dir
 from zyngine import zynthian_plugin_hostd_protocol
 from zyngine import zynthian_plugin_hostd_grouping
 from zyngine import zynthian_plugin_hostd_estimate
@@ -1077,6 +1079,34 @@ def panel_args(panel):
     return ["--panel", panel] if panel else []
 
 
+@functools.lru_cache(maxsize=None)
+def unit_symbols():
+    """{unit word: its symbol} as the contract states them: omx-contract-data's param domain, PARAM_UNITS, each word's
+    `x-symbol` (`none` is "", `percent` "%", `dBPerOct` "dB/oct"). Empty, said once, when no contract directory holds it."""
+    path = zynthian_contract_dir.domain("param")
+    try:
+        with open(path) as f:
+            units = json.load(f)["components"]["schemas"]["PARAM_UNITS"]["oneOf"]
+        return {u["const"]: u["x-symbol"] for u in units}
+    except (TypeError, OSError, ValueError, KeyError) as e:
+        log_once("unit symbols", "the contract's unit symbols are not readable (%s, %s): a unit is shown as its word", path, e)
+        return {}
+
+
+def unit_symbol(word):
+    """The symbol a unit word (param_info's, a descriptor travel's) is shown as: the contract's, verbatim; nothing for no
+    unit; a word the contract does not list as it is."""
+    if word in (None, "", "-", "unknown"):
+        return ""
+    return unit_symbols().get(word, word)
+
+
+def control_title(label, unit):
+    """A controller's title: its label, then its unit's symbol when it has one ("Trim dB", "Input", "Mix %")."""
+    symbol = unit_symbol(unit)
+    return f"{label} {symbol}" if symbol else label
+
+
 def served_symbol(control):
     """The name omx-panel's description serves a descriptor control under (the contract's `symbol`, the stable name a session
     keys the control by): the control's own symbol when it has one, else its id in decimal, the word param_set takes."""
@@ -1670,8 +1700,7 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
                     w = info.split()
                     o.update(unit=w[0], scale=w[1], min=float(w[2]), max=float(w[3]), default=float(w[4]))
                 value = values.get(symbol)
-                unit = o["unit"] if o["unit"] not in (None, "", "-", "unknown") else ""
-                zopts = {"name": f"{label} {unit}" if unit else label, "group_symbol": f"page{k}",
+                zopts = {"name": control_title(label, o["unit"]), "camel_title": False, "group_symbol": f"page{k}",
                          "group_name": page_name, "display_priority": priority, "value_min": o["min"],
                          "value_max": o["max"], "value_default": o["default"], "is_logarithmic": o["scale"] == "log",
                          "is_integer": o["scale"] == "stepped"}
