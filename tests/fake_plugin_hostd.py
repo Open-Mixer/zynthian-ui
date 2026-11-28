@@ -373,7 +373,7 @@ class fake_plugin_hostd:
         return "resp 0"
 
     def verb_curve_points(self, instance, display, points):
-        """The points of a bound display: two, the first term's value at both ends; -537 for no binding."""
+        """The points of a bound display, no mark: two, the first term's value at both ends; -537 for no binding."""
         n = int(instance)
         if n not in self.instances:
             return "resp -3"
@@ -381,7 +381,7 @@ class fake_plugin_hostd:
         if not bound:
             return "resp -537"
         v = self.params[n][bound[2][0].partition("=")[2].partition(":")[0]] if bound[2] else 0.0
-        return f"resp 0 2 20,{v:.2f} 20000,{v:.2f}"
+        return f"resp 0 2 - 20,{v:.2f} 20000,{v:.2f}"  # the marks word after the count: none
 
     def forget_curves(self):
         """What a respawned instance is: its bindings gone."""

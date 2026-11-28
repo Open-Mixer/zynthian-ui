@@ -159,9 +159,19 @@ class CurveBinding(unittest.TestCase):
             self.assertNotIn("older", str(refused.exception))
 
     def test_the_points_of_a_reply(self):
-        self.assertEqual(view.curve_points("3 -80.00,-80.00 -16.00,-17.56 0,-13.50"),
-                         [(-80.0, -80.0), (-16.0, -17.56), (0.0, -13.5)])
-        for bad in ("", "3 1,2 3,4", "2 1,2 nan,4", "x 1,2"):
+        """curve_points' reply is '<count> <marks> <x>,<y> ...' (plugin-hostd-protocol's curve-points-reply): the marks
+        one word after the count, '-' when none, and a delay's taps after the points ('stems ...'). These are the
+        replies the protocol's grammar test holds, and omx-comp's as plugin-hostd 0.22.4 answered it."""
+        self.assertEqual(view.curve_points("8 - -80.00,-80.00 -68.57,-68.57 -57.14,-57.14 -45.71,-45.71 -34.29,-34.29 "
+                                           "-22.86,-22.86 -11.43,-16.36 0,-13.50"),
+                         [(-80.0, -80.0), (-68.57, -68.57), (-57.14, -57.14), (-45.71, -45.71), (-34.29, -34.29),
+                          (-22.86, -22.86), (-11.43, -16.36), (0.0, -13.5)])
+        self.assertEqual(view.curve_points("3 1000,-6.00,2.00,fbs-fixed 20.00,1.00 40.0,2.00 80.0,0.00"),
+                         [(20.0, 1.0), (40.0, 2.0), (80.0, 0.0)], "a mark is no point")
+        self.assertEqual(view.curve_points("2 - 0,-80.00 500.0,-80.00 stems 1 0,0.00,1.000,right"),
+                         [(0.0, -80.0), (500.0, -80.0)], "the taps after the points are no point")
+        self.assertEqual(view.curve_points("0 -"), [])
+        for bad in ("", "3 - 1,2 3,4", "2 - 1,2 nan,4", "x - 1,2", "2 1,2 3,4", "1 -"):
             self.assertEqual(view.curve_points(bad), [], bad)
 
     def test_a_feedback_line(self):
