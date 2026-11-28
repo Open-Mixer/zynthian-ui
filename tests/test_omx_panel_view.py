@@ -48,12 +48,13 @@ class ScreenPart(unittest.TestCase):
     def test_a_band_page_shows_its_section_and_the_curve_above_it(self):
         layout = fixture("omx-eq8")["layout"]
         part, displays = view.screen_part(layout, {"b2_freq", "b2_gain", "b2_q", "b2_on"})
-        self.assertEqual([s["key"] for s in part["sections"]], ["bands.band_1", "bands.band_2"])
+        # omx-panel 0.17 lays the bands out as one matrix section, every band's controls in it
+        self.assertEqual([s["key"] for s in part["sections"]], ["bands.band_1"])
         self.assertEqual([d["kind"] for d in part["displays"]], ["eq_response"])
         self.assertEqual(displays, {0: 0})
         # the controls keep their section, renumbered to the part's
         self.assertEqual({c["symbol"]: c["section"] for c in part["controls"] if c["symbol"].startswith("b2_")},
-                         {"b2_type": 1, "b2_freq": 1, "b2_gain": 1, "b2_q": 1, "b2_on": 1})
+                         {"b2_type": 0, "b2_freq": 0, "b2_gain": 0, "b2_q": 0, "b2_on": 0})
         self.assertTrue(all(0 <= c["section"] < len(part["sections"]) for c in part["controls"]))
 
     def test_a_graphic_eq_page_shows_the_whole_row_of_bars(self):
@@ -82,17 +83,18 @@ class CurveBinding(unittest.TestCase):
         # CURVE_ROLES is one set for every family (0.32.4 added the drive's and the time family's, mix among them): a
         # term the family's curve does not read is no term of it, so the compressor's mix is bound and draws nothing
         line = view.curve_bind_line(7, 0, fixture("omx-comp")["description"])
-        self.assertEqual(line, "curve_bind 7 0 transfer_curve dynamics threshold=thresholdDb:db ratio=ratio:ratio "
-                               "knee=kneeDb:db makeup=makeupDb:db mix=mixPct:pc")
+        # the units are the standard ids the description serves (omx-panel 0.17): curve_bind takes :dB and refuses :db
+        self.assertEqual(line, "curve_bind 7 0 transfer_curve dynamics threshold=thresholdDb:dB ratio=ratio:ratio "
+                               "knee=kneeDb:dB makeup=makeupDb:dB mix=mixPct:percent")
         self.assertNotIn("attack", line)
         self.assertNotIn("release", line)
 
     def test_an_eq_curve_indexes_its_bands(self):
         line = view.curve_bind_line(3, 0, fixture("omx-eq8")["description"]).split()
         self.assertEqual(line[:5], ["curve_bind", "3", "0", "eq_response", "eq"])
-        self.assertIn("hpf_freq=hpf_freq:hz", line)
-        self.assertIn("band_freq.0=b1_freq:hz", line)
-        self.assertIn("band_gain.7=b8_gain:db", line)
+        self.assertIn("hpf_freq=hpf_freq:Hz", line)
+        self.assertIn("band_freq.0=b1_freq:Hz", line)
+        self.assertIn("band_gain.7=b8_gain:dB", line)
 
     def test_shapes_follow_the_role(self):
         d = {"family": "eq", "displays": [{"kind": "eq_response"}],
