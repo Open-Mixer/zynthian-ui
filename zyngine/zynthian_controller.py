@@ -65,6 +65,7 @@ class zynthian_controller:
         self.group_symbol = "params"
         self.group_name = "Params"
         self.readonly = False
+        self.camel_title = True  # the GUI splits the title at a case change (an LV2 symbol's); False for a title of words
 
         if full:
             self.value = 0  # Absolute value of the control
@@ -136,6 +137,8 @@ class zynthian_controller:
                 self.short_name = self.name
         if 'short_name' in options:
             self.short_name = options['short_name']
+        if 'camel_title' in options:
+            self.camel_title = bool(options['camel_title'])
         if 'group_name' in options and options['group_name']:
             self.group_name = options['group_name']
         if 'group_symbol' in options and options['group_symbol'] is not None:
