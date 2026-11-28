@@ -17,7 +17,8 @@
 # belong to Tk's thread (in_owner_thread), where the widgets make them. That shared memory is the one buffer every draw
 # of a view goes into (zynthian-ui#59): with omx-panel#78's omx_panel_view_draw_dirty the renderer repaints only the
 # cells that changed in it and says where, and PanelImage blits only those. This file is that process too (run as
-# `python3 zynthian_omx_panel_view.py --serve <fd>`): it imports nothing but the standard library.
+# `python3 zynthian_omx_panel_view.py --serve <fd>`): it imports nothing but the standard library, and its sibling
+# zynthian_contract_dir.py by its file, which imports nothing else either.
 #
 # Copyright (C) 2026 Pau Aliagas <linuxnow@gmail.com>
 #
@@ -27,6 +28,7 @@
 # ******************************************************************************
 
 import ctypes
+import importlib.util
 import json
 import logging
 import math
@@ -39,6 +41,13 @@ import sys
 import tempfile
 import threading
 from multiprocessing import connection, shared_memory
+
+# where omx-contract's contract directory is (zynthian_contract_dir), loaded from beside this file: this file also runs
+# as a process of its own and as a file a test loads, where there is no zyngine package to import it from
+_spec = importlib.util.spec_from_file_location("zynthian_contract_dir",
+                                               os.path.join(os.path.dirname(os.path.abspath(__file__)), "zynthian_contract_dir.py"))
+zynthian_contract_dir = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(zynthian_contract_dir)
 
 LIBRARY = "libomx-panel-render.so.0"
 # the look, the geometry and the font a view is made from: omx-panel's tools directory as the package installs it
@@ -574,27 +583,31 @@ def screen_part(layout, keys):
 
 # ---- The curve a display draws: plugin-hostd computes it from a binding (protocol 0.5, curve_bind / curve_points) ----
 
-CONTRACT_PATH = "/usr/share/omx-contract/contract.d"
-_curve_words = {}  # contract directory => (display kinds, role words)
+_curve_words = {}  # curve.json => (display kinds, role words)
 
 
 def curve_words(root=None):
     """(the display kinds drawn from a curve, the role words a curve is bound by) as omx-dsp declares them:
     CURVE_DISPLAYS and CURVE_ROLES of the curve.json its contract package installs, in the wire's spelling (snake
     case, the description's own words). A role of the description that is none of these (attack, release) is not
-    bound; one the family's curve does not read (a compressor's mix) is bound and draws nothing. Two empty tuples when the declaration cannot be read: no display is a curve then."""
-    root = root or (os.environ.get("OMX_CONTRACT_PATH") or CONTRACT_PATH).split(":")[0]
-    if root not in _curve_words:
+    bound; one the family's curve does not read (a compressor's mix) is bound and draws nothing. Two empty tuples when the declaration cannot be read: no display is a curve then.
+    The file is <contractdir>/omx-dsp/primitives/curve.json, in the contract directory given or else the installed
+    one (zynthian_contract_dir)."""
+    path = zynthian_contract_dir.find("omx-dsp", "primitives", "curve.json", dirs=None if root is None else [root])
+    if path is None:
+        logging.warning("omx-dsp's curve.json is in no contract directory: no curve is drawn")
+        return (), ()
+    if path not in _curve_words:
         def wire(ids):
             return tuple("".join("_" + c.lower() if c.isupper() else c for c in i) for i in ids)
         try:
-            with open(os.path.join(root, "3", "omx-dsp", "primitives", "curve.json")) as f:
+            with open(path) as f:
                 doc = json.load(f)
-            _curve_words[root] = wire(doc["CURVE_DISPLAYS"]["ids"]), wire(doc["CURVE_ROLES"]["ids"])
+            _curve_words[path] = wire(doc["CURVE_DISPLAYS"]["ids"]), wire(doc["CURVE_ROLES"]["ids"])
         except (OSError, ValueError, KeyError, TypeError) as e:
             logging.warning("omx-dsp's curve.json is not readable (%s): no curve is drawn", e)
             return (), ()
-    return _curve_words[root]
+    return _curve_words[path]
 
 
 def curve_bind_line(instance, index, description):
