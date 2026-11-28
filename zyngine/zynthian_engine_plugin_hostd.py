@@ -1248,6 +1248,100 @@ def probe_descriptor(uri, why):
     return probe_cache[uri]
 
 
+# ---- The descriptions store (omx-panel docs/descriptions-store.md, sections 9 and 11): the description read, not derived ----
+# plugin-hostd names the key a plugin's description is kept under (description_get), omx-panel's Python door reads the
+# entry by that key, and omx-panel cuts the entry into pages (`describe --stored`, describeFromStored over it). Where the
+# store gives nothing (no door, no key, a stale or refused entry, a daemon or an omx-panel without the verb), the
+# plugin's descriptor is described as before.
+
+
+def store_door():
+    """omx-panel's Python door to the descriptions store (omx_panel_store, python3-omx-panel-store); None, said once,
+    when it is not installed."""
+    try:
+        import omx_panel_store
+    except ImportError as e:
+        log_once("omx_panel_store", "omx-panel's descriptions store door is not installed (%s): plugins are described "
+                 "from their descriptors", e)
+        return None
+    return omx_panel_store
+
+
+def stored_entry(key, descriptor):
+    """The store's entry of plugin-hostd's key (sha256, format, uri) as `omx-panel-store get --json` answers it, the body
+    and the repeated groups as JSON. Its source (3.6) is made as plugin-hostd makes it: from an LV2 plugin's bundle,
+    from the descriptor a CLAP plugin's scan wrote. The scope is the store's rule (2): the system layer and the base for
+    root, the user layer above them otherwise. None when the door is not installed, no layer holds the key (a stale
+    entry is none) or the entry is refused: a refused entry is described as before (8)."""
+    door = store_door()
+    if door is None:
+        return None
+    sha256, fmt, uri = key
+    if fmt == "lv2":
+        from zyngine import zynthian_lv2
+        path = zynthian_lv2.get_plugin_bundle(uri)
+    else:
+        path = descriptor
+    if not path:
+        return None
+    try:
+        source = door.source(fmt, path)
+        with door.Store.open(door.SCOPE_SYSTEM if os.geteuid() == 0 else door.SCOPE_USER) as store:
+            entry = store.get(sha256, fmt, uri, source)
+    except (door.StoreError, OSError) as e:
+        log_once(("descriptions store", uri), "the descriptions store gives no entry of %s (%s): it is described from its "
+                 "descriptor", uri, e)
+        return None
+    if entry is None or entry.get("body") is None:
+        return None
+    answer = {k: v for k, v in entry.items() if k != "repeated_groups"}
+    groups = entry.get("repeated_groups")
+    answer.update(body=json.loads(entry["body"]), groups_json=None if groups is None else json.loads(groups))
+    return answer
+
+
+def stored_layout(answer, fmt, width=None, remote=None):
+    """omx-panel's cut of a stored entry into pages of `width` slots, as panel_layout_with cuts a descriptor: `describe
+    --stored <answer> --format <fmt> --pages --per-page <width>`, the host's remote-controls pages handed over as
+    --remote. Returns (pages, {symbol: the description's control}), or None with the reason said once (an omx-panel
+    without describe --stored refuses it as a usage error)."""
+    width = width or SURFACE_WIDTH
+    key = ("stored", json.dumps(answer, sort_keys=True), fmt, width, json.dumps(remote))
+    if key in layout_cache:
+        return layout_cache[key]
+    omx_panel = shutil.which("omx-panel")
+    if not omx_panel:
+        log_once("omx-panel", "omx-panel is not installed: plugin-hostd has no controller pages")
+        return None
+    files = []
+
+    def file_of(doc):
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump(doc, f)
+        files.append(f.name)
+        return f.name
+
+    try:
+        stored = file_of(answer)
+        extra = ["--remote", file_of(remote)] if remote else []
+
+        def run(*args):
+            cmd = [omx_panel, "describe", "--stored", stored, "--format", fmt, *args]
+            return json.loads(subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30).stdout)
+
+        pages = run("--pages", "--per-page", str(width), *extra)
+        controls = run()["description"].get("controls", [])
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.SubprocessError) as e:
+        log_once(("omx-panel describe --stored", omx_panel), "omx-panel describe --stored failed (%s): plugins are "
+                 "described from their descriptors", e)
+        return None
+    finally:
+        for name in files:
+            os.unlink(name)
+    layout_cache[key] = (pages, {str(c["symbol"]): c for c in controls})
+    return layout_cache[key]
+
+
 # ---- The engine: one per processor, its plugin one instance of the shared daemon ----
 
 class zynthian_engine_plugin_hostd(zynthian_engine):
@@ -1550,6 +1644,24 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
             except (plugin_hostd_down, plugin_hostd_timeout):
                 return None
 
+    def description_key(self):
+        """The key plugin-hostd names the plugin's description by in the descriptions store (description_get):
+        (sha256, format, uri), its ask waited for as the descriptor's scan is. None when no layer holds it, and from a
+        daemon or a protocol table that has no description_get."""
+        deadline = time.monotonic() + DESCRIPTOR_WAIT
+        while True:
+            try:
+                reply = daemon.call(command("description_get", uri_word(self.plugin_uri)))[1]
+                key = zynthian_plugin_hostd_protocol.words(reply)
+                return tuple(key[:3]) if len(key) == 4 else None
+            except plugin_hostd_error as e:
+                if e.code == DESCRIPTOR_PENDING and time.monotonic() <= deadline:  # the add's ask still runs
+                    time.sleep(0.25)
+                    continue
+                return None
+            except (zynthian_plugin_hostd_protocol.ProtocolError, plugin_hostd_down, plugin_hostd_timeout):
+                return None
+
     def own_panel(self):
         """The plugin's own panel for omx-panel (own_panel): the document plugin-hostd filed beside the descriptor
         (panel_get), its panel stage waited for as the descriptor's scan is. None when it filed none: a plugin that
@@ -1610,7 +1722,8 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
     def pages(self, width=None):
         """[(page name, [slot])] as omx-panel cuts the plugin's description at `width` (the Zynthian screen's): every page has
         exactly `width` slots, a slot (symbol, label, unit, descriptor control) or None where the control is hidden, read-only
-        or empty. Nothing here builds, merges, reorders or cuts a page."""
+        or empty. The description is the descriptions store's entry of the plugin when it has one (stored_entry), else
+        the one omx-panel derives from the descriptor. Nothing here builds, merges, reorders or cuts a page."""
         width = width or SURFACE_WIDTH
         path = self.descriptor_path()
         dcontrols, served = {}, {}
@@ -1622,7 +1735,15 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
                         served[str(c["id"])] = served_symbol(c)
             except (OSError, ValueError, KeyError) as e:
                 logging.error(f"Can't read descriptor {path} => {e}")
-        cut = panel_layout(path, width, self.remote_ids(dcontrols), self.own_panel()) if path else None
+        cut = None
+        if path:
+            remote = self.remote_ids(dcontrols)
+            key = self.description_key()
+            answer = stored_entry(key, path) if key else None
+            if answer is not None:
+                cut = stored_layout(answer, key[1], width, remote)
+            if cut is None:
+                cut = panel_layout(path, width, remote, self.own_panel())
         if not cut:
             return []
         result = []
