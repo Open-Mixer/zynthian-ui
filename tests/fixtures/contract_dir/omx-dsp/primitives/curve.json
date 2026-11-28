@@ -1,0 +1,428 @@
+{
+  "$schema": "https://openmixer.org/schema/omx-contract/v0/omx-contract.schema.json",
+  "CURVE_DISPLAYS": {
+    "kind": "set",
+    "since": "3.0.0",
+    "source": {
+      "impl": "include/omxdsp/omx_curve.h#omx_curve_points_marked"
+    },
+    "doc": "The displays a panel description draws from a closed form, the kinds omx_curve_points answers: an EQ's magnitude response, x in Hz and y in dB, and a dynamics stage's static transfer curve, input dB to output dB. The wire spells each id in snake case (`eq_response`, `transfer_curve`), the description's own display word. `time_response` (since 0.32.4) is the picture of a stage whose shape is a function of TIME, x in ms from 0 and y in dB relative to a unit impulse: a delay's tap train, answered as STEMS (one per tap: its time, its level, its brightness as a shade 0..1 and the leg it lands on), and a reverb's decay envelope, answered as points; the answer says which arrays it carries, never the family.",
+    "ids": [
+      "eqResponse",
+      "transferCurve",
+      "timeResponse"
+    ]
+  },
+  "CURVE_FAMILIES": {
+    "kind": "set",
+    "since": "3.0.0",
+    "source": {
+      "impl": "include/omxdsp/omx_curve.h#omx_curve_points_marked"
+    },
+    "doc": "The panel families omx_curve_points draws, by the description's family word. `eq` draws an eq_response; the other four a transfer_curve, the family choosing the gain computer's mode: `dynamics`, `limiter` and `deesser` act ABOVE the threshold, `gate` BELOW it with the shifted knee of the gate's knee range. `drive` draws a transfer_curve too, input dB to output dB like the others: a steady level through the drive kernel's static path, its shaper biased by the character, faded by the mix and scaled by the trim (since 0.32.4). Any other family has no closed form here. `delay` and `reverb` (since 0.32.4) draw a time_response: the delay the tap train its kernel produces (the dry tap at 1 - mix, echo n at n x time at mix x feedback^(n-1), darkened by the tone one-pole each pass, L/R alternating under ping-pong, stopping below CURVE_EXTENTS timeFloorDb of the loudest tap or at CURVE_TAPS_MAX), the reverb the closed form of its longest loop (REVERB_DECAY_LOOPS: level g^((t - predelay) / loop) scaled by the mix, 0 before the predelay, ending at its RT60).",
+    "ids": [
+      "eq",
+      "dynamics",
+      "limiter",
+      "gate",
+      "deesser",
+      "drive",
+      "delay",
+      "reverb"
+    ]
+  },
+  "CURVE_ROLES": {
+    "kind": "set",
+    "since": "3.0.0",
+    "source": {
+      "impl": "include/omxdsp/omx_curve.h#omx_curve_points_marked"
+    },
+    "doc": "The roles of a panel description a curve request reads, by the description's role word (the wire spells each id in snake case: `band_freq`, `knee_start`). The EQ's indexed band roles and head filters, the gain computer's terms, and the drive's (since 0.32.4): `drive` the pre-shaper gain in dB, `tone` the character -1..+1 that biases the shaper, `model` the shaper (the drive kernel's curve, 0 soft, 1 tape, 2 tube, 3 exciter), `mix` the wet share in percent and `output` the trim in dB; a drive curve needs `drive` and `model`, and draws `tone` -1, `mix` 100 % and `output` 0 dB where a term is absent (a card's picture draws no make-up or parallel mix). A term of any other role is no term of the curve. The time family's (since 0.32.4), the words of omx-panel's role table: a delay's `time` (ms or s), `feedback` and `mix` (a share: none or coef 0..1, or pc), `tone` (0..1, the feedback low-pass), `pingpong` (a switch), `sync` (a switch) and `division` (a choice into DELAY_DIVISION_BEATS, read with the request's tempo); a reverb's `size` (0..1), `decay` (ms or s, the RT60 said outright), `algorithm` (a choice: the reverb kernel's 0 room, 1 plate, 2 hall), `predelay` (ms or s), `damping` and `width` (0..1), `low_cut` and `high_cut` (Hz). A delay curve needs `time` (or `sync` on, `division` and a tempo) and `feedback`, and draws `mix` 1 where it is absent; a reverb curve needs `mix` and `size` with `algorithm` or `decay`; the others ride along for a later picture.",
+    "ids": [
+      "bandType",
+      "bandFreq",
+      "bandGain",
+      "bandQ",
+      "bandOn",
+      "hpfFreq",
+      "hpfSlope",
+      "hpfOn",
+      "lpfFreq",
+      "lpfSlope",
+      "lpfOn",
+      "threshold",
+      "ratio",
+      "knee",
+      "makeup",
+      "range",
+      "kneeStart",
+      "kneeEnd",
+      "drive",
+      "tone",
+      "model",
+      "mix",
+      "output",
+      "time",
+      "feedback",
+      "pingpong",
+      "sync",
+      "division",
+      "size",
+      "decay",
+      "algorithm",
+      "predelay",
+      "damping",
+      "width",
+      "lowCut",
+      "highCut"
+    ]
+  },
+  "CURVE_ROLE_PREFIXES": {
+    "kind": "words",
+    "since": "3.22.0",
+    "doc": "The prefixes a role word of CURVE_ROLES is read by: an indexed band role is one whose word starts with the `band` prefix.",
+    "why": "The console, omx-panel and the Zynthian fork each restated `band_` to tell a band role from the others (omx-dsp#40): declared once here, beside the roles it reads.",
+    "words": {
+      "band": {
+        "word": "band_",
+        "doc": "The prefix every indexed band role of CURVE_ROLES carries on the wire (`band_type`, `band_freq`, `band_gain`, `band_q`, `band_on`): a role word that starts with it is a band's and carries an index. A consumer reads this word, or calls omx_curve_role_is_band(), and never writes the prefix itself.",
+        "text": {
+          "en": "The prefix every indexed band role of CURVE_ROLES carries on the wire (`band_type`, `band_freq`, `band_gain`, `band_q`, `band_on`): a role word that starts with it is a band's and carries an index. A consumer reads this word, or calls omx_curve_role_is_band(), and never writes the prefix itself."
+        }
+      }
+    }
+  },
+  "CURVE_UNITS": {
+    "kind": "set",
+    "since": "3.0.0",
+    "source": {
+      "impl": "include/omxdsp/omx_curve.h#omx_curve_unit_accepted"
+    },
+    "doc": "The units a curve term's value may come in: the PARAM_UNITS ids (the wire word, never its x-symbol) the served description gives a role, so a host sends the unit it was given. omx_curve_points converts once: `coef` to dB for a gain, `oct` to Q for a bandwidth, `kHz` to Hz; a level in `dB`, `dBFS`, `dBu` or `LUFS` is read as dB from the threshold's own scale; `none` is a plain number, a switch or a choice; `ratio` a ratio. A unit its role does not accept is refused, and so is any other spelling of an id (`hz`, `db`). `percent` (since 0.32.4) is the drive's `mix`. `ms` and `s` (since 0.32.4) are a time, read as ms.",
+    "ids": [
+      "Hz",
+      "kHz",
+      "dB",
+      "dBFS",
+      "dBu",
+      "LUFS",
+      "coef",
+      "oct",
+      "none",
+      "ratio",
+      "percent",
+      "ms",
+      "s"
+    ]
+  },
+  "CURVE_SHAPES": {
+    "kind": "set",
+    "since": "3.0.0",
+    "source": {
+      "impl": "include/omxdsp/omx_curve.h#omx_curve_shape_kind"
+    },
+    "doc": "The shape of an EQ band, as the caller resolves it from the description: a `band_type` role's `shapes` list indexed by the control's choice value, or the fixed `shape` of a band no control selects. `off` is a band that is not drawn, and so is `unshaped`, spelt `-` on the wire, a choice value with no shape. The others design the band through omx_eq_design: a bell, the two shelves, the pass filters, the notch, and the first- and second-order allpasses, which draw what they run, 0 dB.",
+    "ids": [
+      "off",
+      "bell",
+      "lowshelf",
+      "highshelf",
+      "highpass",
+      "lowpass",
+      "notch",
+      "unshaped",
+      "allpass1",
+      "allpass2"
+    ]
+  },
+  "CURVE_ORIGINS": {
+    "kind": "set",
+    "since": "3.0.0",
+    "source": {
+      "impl": "include/omxdsp/omx_curve.h#omx_curve_points_marked"
+    },
+    "doc": "Where an EQ band of a curve request comes from, as the console's strip EQ state says it (its BAND_ORIGINS): `user`, the operator's own band, and the bands a planter put there, `fbsFixed` and `fbsLive` (the feedback corrector's ring-out and show pools), `hrp` (the harmonic resonance processor's cuts) and `roomMode` (a room mode's correction), spelt `user`, `fbs-fixed`, `fbs-live`, `hrp` and `room-mode` on the wire. The sum ignores it: every drawn band is in the curve. A band whose origin is not `user` is answered as a mark (its frequency, depth, Q and origin), and a request that asks for it also gets the curve over the `user` bands alone. A plugin's descriptor carries no origin: a request with none draws no marks.",
+    "ids": [
+      "user",
+      "fbsFixed",
+      "fbsLive",
+      "hrp",
+      "roomMode"
+    ]
+  },
+  "CURVE_CODES": {
+    "kind": "set",
+    "since": "3.0.0",
+    "source": {
+      "impl": "include/omxdsp/omx_curve.h#omx_curve_code"
+    },
+    "doc": "What omx_curve_points answers in its code: `ok`, a curve; `kindUnknown`, a kind, family or head filter slope with no closed form; `termMissing`, a term the closed form has no default for is not in the request (a band's frequency and shape, a bell's or shelf's gain, a head filter's corner, and its slope unless it comes from the role's declared enumeration as dB per octave; threshold and ratio for dynamics and the de-esser, threshold for a limiter (its ratio is infinity, a hard corner), threshold, range and ratio for a gate; both ends of a gate's knee range or neither); `unitRefused`, a term in a unit its role does not accept; `valueNotFinite`, a value, the rate or an extent that is not finite, a rate that is not positive; `pointsRange`, grid points outside 2 to CURVE_POINTS_MAX (for an EQ, with three anchors a drawn band), a band index past what fits, or extents that bound nothing; `room`, a caller's buffers too small. Where omx-dsp declares a default the curve takes it: a band's Q is EQ_BAND_DEFAULTS q, clamped for its shape as clampEqQFor clamps it. No curve is drawn from a guess. For the time family (since 0.32.4): `termMissing` a delay with no time (a synced one with no division or no tempo in the request), a delay with no feedback, a reverb with no mix or with neither size nor decay; `kindUnknown` a division past DELAY_DIVISION_BEATS, or an algorithm the closed form has no loop for (reverse, gated); `room` a delay's stems with no buffer for them.",
+    "ids": [
+      "ok",
+      "kindUnknown",
+      "termMissing",
+      "unitRefused",
+      "valueNotFinite",
+      "pointsRange",
+      "room"
+    ]
+  },
+  "CURVE_POINTS_MAX": {
+    "kind": "scalar",
+    "since": "3.0.0",
+    "source": {
+      "impl": "include/omxdsp/omx_curve.h#omx_curve_points_marked"
+    },
+    "doc": "The most points one curve carries, an EQ's band anchors included: a reply of x with four significant digits and y to 0.01 dB, about 13 bytes a point, fits the 4096-byte line a host's reply is built in. Every caller reads it here; it moves with that buffer, in this one place.",
+    "unit": "none",
+    "value": 256
+  },
+  "CURVE_EXTENTS": {
+    "kind": "sheet",
+    "since": "3.0.0",
+    "source": {
+      "impl": "include/omxdsp/omx_curve.h#omx_curve_points_marked"
+    },
+    "doc": "A curve's default extents, where a request gives none: an eq_response from `freqMinHz` to the lower of `freqMaxHz` and `nyquistFraction` of Nyquist, each band's dB floored at `eqFloorDb` so a notch's null stays finite (the console's EQ draws to -120 dB); a transfer_curve's input from `levelMinDb` to `levelMaxDb`, and a drive's (a steady level in, its level out, in dB like every transfer_curve; since 0.32.4) from `driveLevelMinDb` to `driveLevelMaxDb`; a time_response's level floor `timeFloorDb` (dB, below which a tap is not a stem and an envelope ends: the picture's own bottom line, since 0.32.4)",
+    "value": {
+      "freqMinHz": 20,
+      "freqMaxHz": 20000,
+      "nyquistFraction": 0.999,
+      "eqFloorDb": -120,
+      "levelMinDb": -80,
+      "levelMaxDb": 0,
+      "driveLevelMinDb": -60,
+      "driveLevelMaxDb": 0,
+      "timeFloorDb": -60
+    }
+  },
+  "CURVE_TAPS_MAX": {
+    "kind": "scalar",
+    "since": "3.0.0",
+    "source": {
+      "impl": "include/omxdsp/omx_curve.h#omx_curve_time"
+    },
+    "doc": "The most taps a delay's time_response carries, the dry tap included (since 0.32.4): a runaway feedback near 1 must not make the train unbounded, and 32 taps at the picture's resolution are a ladder the eye reads as one.",
+    "unit": "none",
+    "value": 32
+  },
+  "CURVE_LEGS": {
+    "kind": "set",
+    "since": "3.0.0",
+    "source": {
+      "impl": "include/omxdsp/omx_curve.h#omx_curve_time"
+    },
+    "doc": "The leg a delay's tap lands on (since 0.32.4): `both` (the dry tap, and every echo of a plain delay), `left` and `right` (the echoes of a ping-pong delay, alternating from the first). A surface draws it as the stem's letter.",
+    "ids": [
+      "both",
+      "left",
+      "right"
+    ]
+  },
+  "CURVE_AXES": {
+    "kind": "words",
+    "since": "3.1.0",
+    "doc": "The axes a curve kind is drawn on, each with its unit and how a host draws it (docs/curves.md). A curve's values are in these units, so the drawn values can be held equal to the closed form a kernel's controls give.",
+    "why": "A curve kind names its axes (the remaining-FX wave, FreeMixer/omx-contract#107): an axis is declared once and every kind drawn on it reads the same unit and scale.",
+    "words": {
+      "frequency": {
+        "word": "frequency",
+        "unit": "Hz",
+        "scale": "log",
+        "doc": "Frequency, on the points of EQ_CURVE_GRID where the curve is a response.",
+        "text": {
+          "en": "Frequency, on the points of EQ_CURVE_GRID where the curve is a response."
+        }
+      },
+      "magnitude": {
+        "word": "magnitude",
+        "unit": "dB",
+        "scale": "linear",
+        "doc": "The magnitude of a response at a frequency: 0 dB is unity, a boost positive, a cut negative.",
+        "text": {
+          "en": "The magnitude of a response at a frequency: 0 dB is unity, a boost positive, a cut negative."
+        }
+      },
+      "inputLevel": {
+        "word": "input-level",
+        "unit": "dBFS",
+        "scale": "linear",
+        "doc": "The level a gain computer reads, the static law's input.",
+        "text": {
+          "en": "The level a gain computer reads, the static law's input."
+        }
+      },
+      "outputLevel": {
+        "word": "output-level",
+        "unit": "dBFS",
+        "scale": "linear",
+        "doc": "The level the static law gives for an input level; the diagonal is no gain change.",
+        "text": {
+          "en": "The level the static law gives for an input level; the diagonal is no gain change."
+        }
+      },
+      "inputAmplitude": {
+        "word": "input-amplitude",
+        "unit": "none",
+        "scale": "linear",
+        "doc": "A memoryless shaper's input sample, linear, -1 to +1 full scale: bipolar, so an even/odd asymmetry shows.",
+        "text": {
+          "en": "A memoryless shaper's input sample, linear, -1 to +1 full scale: bipolar, so an even/odd asymmetry shows."
+        }
+      },
+      "outputAmplitude": {
+        "word": "output-amplitude",
+        "unit": "none",
+        "scale": "linear",
+        "doc": "The shaper's output sample for an input amplitude, linear, on the same full scale.",
+        "text": {
+          "en": "The shaper's output sample for an input amplitude, linear, on the same full scale."
+        }
+      },
+      "delayTime": {
+        "word": "delay-time",
+        "unit": "ms",
+        "scale": "linear",
+        "doc": "The time after the dry sound at which a delay's tap or repeat sounds.",
+        "text": {
+          "en": "The time after the dry sound at which a delay's tap or repeat sounds."
+        }
+      },
+      "decayTime": {
+        "word": "decay-time",
+        "unit": "s",
+        "scale": "linear",
+        "doc": "The time after an impulse over which a reverb's energy decays.",
+        "text": {
+          "en": "The time after an impulse over which a reverb's energy decays."
+        }
+      },
+      "level": {
+        "word": "level",
+        "unit": "dB",
+        "scale": "linear",
+        "doc": "A level relative to the dry input: 0 dB is the input's own, a tap or a decay below it negative.",
+        "text": {
+          "en": "A level relative to the dry input: 0 dB is the input's own, a tap or a decay below it negative."
+        }
+      },
+      "phase": {
+        "word": "phase",
+        "unit": "none",
+        "scale": "linear",
+        "doc": "The position within one period of a modulation source, 0 to 1.",
+        "text": {
+          "en": "The position within one period of a modulation source, 0 to 1."
+        }
+      },
+      "modulation": {
+        "word": "modulation",
+        "unit": "none",
+        "scale": "linear",
+        "doc": "A modulation source's output at a phase, -1 to +1, before the depth scales it.",
+        "text": {
+          "en": "A modulation source's output at a phase, -1 to +1, before the depth scales it."
+        }
+      },
+      "inputPitch": {
+        "word": "input-pitch",
+        "unit": "st",
+        "scale": "linear",
+        "doc": "The pitch played into a pitch effect, semitones from an origin the host picks.",
+        "text": {
+          "en": "The pitch played into a pitch effect, semitones from an origin the host picks."
+        }
+      },
+      "outputPitch": {
+        "word": "output-pitch",
+        "unit": "st",
+        "scale": "linear",
+        "doc": "The pitch the effect sounds for an input pitch, semitones on the same origin: an unshifted map is the diagonal.",
+        "text": {
+          "en": "The pitch the effect sounds for an input pitch, semitones on the same origin: an unshifted map is the diagonal."
+        }
+      }
+    }
+  },
+  "CURVE_KINDS": {
+    "kind": "words",
+    "since": "3.1.0",
+    "doc": "The kinds of picture a plugin's panel section draws and a console's card shows, each with the two axes it is drawn on (docs/curves.md). A kernel file and a plugin declaration name a kind by its word; a host keeps only its kind-to-drawing map. Append-only: a kind is never renamed, moved or removed while a reader draws it.",
+    "why": "Declared once here and read by the omx-plugins schema and the console's curve registry (the remaining-FX wave, FreeMixer/omx-contract#107). The first five are the omx-plugins schema's graph kinds as they were; comb-response, modulation-shape and interval-map are the kinds the wave adds for the modulation and pitch plugins. modulation-shape is the picture the schema's unused lfo stood for.",
+    "axes": "CURVE_AXES",
+    "words": {
+      "eqCurve": {
+        "word": "eq-curve",
+        "x": "frequency",
+        "y": "magnitude",
+        "doc": "An EQ's summed magnitude response over log frequency.",
+        "text": {
+          "en": "An EQ's summed magnitude response over log frequency."
+        }
+      },
+      "dynamicsCurve": {
+        "word": "dynamics-curve",
+        "x": "input-level",
+        "y": "output-level",
+        "doc": "A gate's or a compressor's static law, input level to output level, with the live needle.",
+        "text": {
+          "en": "A gate's or a compressor's static law, input level to output level, with the live needle."
+        }
+      },
+      "transferCurve": {
+        "word": "transfer-curve",
+        "x": "input-amplitude",
+        "y": "output-amplitude",
+        "doc": "A memoryless shaper's transfer, input sample to output sample over full scale.",
+        "text": {
+          "en": "A memoryless shaper's transfer, input sample to output sample over full scale."
+        }
+      },
+      "delayTaps": {
+        "word": "delay-taps",
+        "x": "delay-time",
+        "y": "level",
+        "doc": "A delay's taps and repeats, each a line at its time and level.",
+        "text": {
+          "en": "A delay's taps and repeats, each a line at its time and level."
+        }
+      },
+      "decayEnvelope": {
+        "word": "decay-envelope",
+        "x": "decay-time",
+        "y": "level",
+        "doc": "A reverb's decay envelope after an impulse.",
+        "text": {
+          "en": "A reverb's decay envelope after an impulse."
+        }
+      },
+      "combResponse": {
+        "word": "comb-response",
+        "x": "frequency",
+        "y": "magnitude",
+        "doc": "The wet path's comb or notch response at the current sweep position (chorus, flanger, phaser, doubler).",
+        "text": {
+          "en": "The wet path's comb or notch response at the current sweep position (chorus, flanger, phaser, doubler)."
+        }
+      },
+      "modulationShape": {
+        "word": "modulation-shape",
+        "x": "phase",
+        "y": "modulation",
+        "doc": "A modulation source over one period (tremolo, rotary).",
+        "text": {
+          "en": "A modulation source over one period (tremolo, rotary)."
+        }
+      },
+      "intervalMap": {
+        "word": "interval-map",
+        "x": "input-pitch",
+        "y": "output-pitch",
+        "doc": "A pitch effect's map from the input pitch to the output pitch.",
+        "text": {
+          "en": "A pitch effect's map from the input pitch to the output pitch."
+        }
+      }
+    }
+  }
+}
