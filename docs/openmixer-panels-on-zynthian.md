@@ -84,7 +84,7 @@ omx-strip shows switches, knobs and choices, but none of the panel's drawn group
 
 ## What was fixed for these pictures
 
-Taken first on 2026-11-28 with four faults, each fixed where it was caused and the pictures taken again:
+Taken first on 2026-11-28 with six faults, each fixed where it was caused and the pictures taken again:
 
 - **The panel screen drew no value.** The renderer's layout names a CLAP control by its contract symbol
   (`thresholdDb`) and gives the parameter number in `param`; the panel screen keyed the engine's controllers as
@@ -98,15 +98,16 @@ Taken first on 2026-11-28 with four faults, each fixed where it was caused and t
   lane/easy-from-declared-page, docs/panel-layout.md there).
 - **This fork loaded `libomx-panel-render.so.0`**, which omx-panel 0.17 does not ship: a device drew no panel
   screen. It loads `.so.1` (lane/zynthian-ui-47-rta-dual-trace-so1, #51), and these pictures set no override.
+- **omx-eq8's response curve was an empty frame.** Its description gives the head filters' slope roles the unit
+  `dBPerOct` (`hpf_slope=hpf_slope:dBPerOct`), the PARAM_UNITS id of the parameter, and omx-dsp's curve had no such
+  unit, so plugin-hostd refused the binding (-538, reply.plugin-hostd.curve-unit-refused). omx-dsp reads a head
+  filter's slope in `dBPerOct` now (omx-dsp lane/curve-slope-unit-word); the omx-eq8 pictures were taken with
+  plugin-hostd's protocol library rebuilt over it.
+- **omx-delay's taps were not drawn.** Its `time_response` answers no point, only the taps after the count
+  (`stems ...`), and this fork read past them. The panel gives them to the renderer now
+  (`omx_panel_view_set_stems`, this fork, lane/omx-delay-taps), each with its leg's letter.
 
 ## What these pictures still show wrong
 
-- **omx-eq8's response curve is an empty frame.** Its description gives the head filters' slope roles the unit
-  `dBPerOct` (`hpf_slope=hpf_slope:dBPerOct`), the PARAM_UNITS id of the parameter; omx-dsp's `CURVE_UNITS` has no
-  `dBPerOct` and `omx_curve_unit_accepted` takes only `none` or `dB` for a slope, so plugin-hostd refuses the binding
-  (-538, reply.plugin-hostd.curve-unit-refused) and the curve is never bound. Without the head filters' six terms
-  the same binding draws (omx-dsp's to fix: its curve declaration says a host sends the unit it was given).
-- **omx-delay's taps are not drawn.** Its `time_response` answers no point and the taps after them (`stems ...`);
-  this fork's panel draws points only.
 - **`Ratio ratio`.** The contract's symbol for the unit `ratio` (omx-contract-data's param domain, PARAM_UNITS
   `ratio`, `x-symbol` "ratio") is the word itself; the contract declares no `:1` form, so the title shows the word.
