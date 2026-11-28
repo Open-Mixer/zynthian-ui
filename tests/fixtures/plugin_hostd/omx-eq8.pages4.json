@@ -46,34 +46,12 @@
   {
     "section": 0,
     "sectionName": "Bands",
-    "pageName": "Bands: Band 1 2",
-    "ids": [
-      6,
-      null,
-      null,
-      null
-    ]
-  },
-  {
-    "section": 0,
-    "sectionName": "Bands",
     "pageName": "Bands: Band 2",
     "ids": [
       15,
       12,
       null,
       14
-    ]
-  },
-  {
-    "section": 0,
-    "sectionName": "Bands",
-    "pageName": "Bands: Band 2 2",
-    "ids": [
-      11,
-      null,
-      null,
-      null
     ]
   },
   {
@@ -90,34 +68,12 @@
   {
     "section": 0,
     "sectionName": "Bands",
-    "pageName": "Bands: Band 3 2",
-    "ids": [
-      16,
-      null,
-      null,
-      null
-    ]
-  },
-  {
-    "section": 0,
-    "sectionName": "Bands",
     "pageName": "Bands: Band 4",
     "ids": [
       25,
       22,
       null,
       24
-    ]
-  },
-  {
-    "section": 0,
-    "sectionName": "Bands",
-    "pageName": "Bands: Band 4 2",
-    "ids": [
-      21,
-      null,
-      null,
-      null
     ]
   },
   {
@@ -134,34 +90,12 @@
   {
     "section": 0,
     "sectionName": "Bands",
-    "pageName": "Bands: Band 5 2",
-    "ids": [
-      26,
-      null,
-      null,
-      null
-    ]
-  },
-  {
-    "section": 0,
-    "sectionName": "Bands",
     "pageName": "Bands: Band 6",
     "ids": [
       35,
       32,
       33,
       34
-    ]
-  },
-  {
-    "section": 0,
-    "sectionName": "Bands",
-    "pageName": "Bands: Band 6 2",
-    "ids": [
-      31,
-      null,
-      null,
-      null
     ]
   },
   {
@@ -178,17 +112,6 @@
   {
     "section": 0,
     "sectionName": "Bands",
-    "pageName": "Bands: Band 7 2",
-    "ids": [
-      36,
-      null,
-      null,
-      null
-    ]
-  },
-  {
-    "section": 0,
-    "sectionName": "Bands",
     "pageName": "Bands: Band 8",
     "ids": [
       45,
@@ -200,23 +123,34 @@
   {
     "section": 0,
     "sectionName": "Bands",
-    "pageName": "Bands: Band 8 2",
-    "ids": [
-      41,
-      null,
-      null,
-      null
-    ]
-  },
-  {
-    "section": 0,
-    "sectionName": "Bands",
     "pageName": "Bands: LPF",
     "ids": [
       3,
       4,
       5,
       null
+    ]
+  },
+  {
+    "section": 0,
+    "sectionName": "Bands",
+    "pageName": "Bands: Type",
+    "ids": [
+      6,
+      11,
+      16,
+      21
+    ]
+  },
+  {
+    "section": 0,
+    "sectionName": "Bands",
+    "pageName": "Bands: Type 2",
+    "ids": [
+      26,
+      31,
+      36,
+      41
     ]
   }
 ]

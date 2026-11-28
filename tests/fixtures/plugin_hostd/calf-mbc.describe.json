@@ -24,7 +24,7 @@
         "kind": "number",
         "symbol": "b1_thresh",
         "name": "Band 1 Threshold",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": -60,
@@ -68,7 +68,7 @@
         "kind": "number",
         "symbol": "b1_makeup",
         "name": "Band 1 Makeup",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": 0,
@@ -90,7 +90,7 @@
         "kind": "number",
         "symbol": "b2_thresh",
         "name": "Band 2 Threshold",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": -60,
@@ -134,7 +134,7 @@
         "kind": "number",
         "symbol": "b2_makeup",
         "name": "Band 2 Makeup",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": 0,
@@ -156,7 +156,7 @@
         "kind": "number",
         "symbol": "b3_thresh",
         "name": "Band 3 Threshold",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": -60,
@@ -200,7 +200,7 @@
         "kind": "number",
         "symbol": "b3_makeup",
         "name": "Band 3 Makeup",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": 0,
@@ -222,7 +222,7 @@
         "kind": "number",
         "symbol": "b4_thresh",
         "name": "Band 4 Threshold",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": -60,
@@ -266,7 +266,7 @@
         "kind": "number",
         "symbol": "b4_makeup",
         "name": "Band 4 Makeup",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": 0,
@@ -318,6 +318,10 @@
           ],
           "rows": [
             {
+              "label": "On",
+              "head": true
+            },
+            {
               "label": "Threshold"
             },
             {
@@ -331,13 +335,15 @@
             },
             {
               "label": "Makeup"
-            },
-            {
-              "label": "On",
-              "head": true
             }
           ],
           "cells": [
+            [
+              "b1_bypass",
+              "b2_bypass",
+              "b3_bypass",
+              "b4_bypass"
+            ],
             [
               "b1_thresh",
               "b2_thresh",
@@ -367,12 +373,6 @@
               "b2_makeup",
               "b3_makeup",
               "b4_makeup"
-            ],
-            [
-              "b1_bypass",
-              "b2_bypass",
-              "b3_bypass",
-              "b4_bypass"
             ]
           ]
         }
@@ -575,6 +575,24 @@
     "meters": [],
     "roles": [],
     "displays": [],
+    "words": {
+      "meters": {
+        "labelKey": "panel.label.meters",
+        "label": "Meters"
+      },
+      "more": {
+        "labelKey": "panel.label.more",
+        "label": "More"
+      },
+      "unheld": {
+        "labelKey": "panel.label.unheld",
+        "label": "unheld"
+      },
+      "gainReduction": {
+        "labelKey": "panel.label.gain.reduction",
+        "label": "Gain reduction"
+      }
+    },
     "pages": [
       {
         "section": null,

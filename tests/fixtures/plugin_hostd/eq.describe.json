@@ -12,7 +12,7 @@
         "kind": "number",
         "symbol": "master",
         "name": "Master",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": -20,
@@ -23,7 +23,7 @@
         "kind": "number",
         "symbol": "freq1",
         "name": "Freq 1",
-        "unit": "hz",
+        "unit": "Hz",
         "scale": "log",
         "step": 0,
         "min": 20,
@@ -34,7 +34,7 @@
         "kind": "number",
         "symbol": "gain1",
         "name": "Gain 1",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": -20,
@@ -69,7 +69,7 @@
         "kind": "number",
         "symbol": "freq2",
         "name": "Freq 2",
-        "unit": "hz",
+        "unit": "Hz",
         "scale": "log",
         "step": 0,
         "min": 20,
@@ -80,7 +80,7 @@
         "kind": "number",
         "symbol": "gain2",
         "name": "Gain 2",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": -20,
@@ -115,7 +115,7 @@
         "kind": "number",
         "symbol": "freq3",
         "name": "Freq 3",
-        "unit": "hz",
+        "unit": "Hz",
         "scale": "log",
         "step": 0,
         "min": 20,
@@ -126,7 +126,7 @@
         "kind": "number",
         "symbol": "gain3",
         "name": "Gain 3",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": -20,
@@ -262,6 +262,10 @@
           ],
           "rows": [
             {
+              "label": "",
+              "head": true
+            },
+            {
               "label": "Freq"
             },
             {
@@ -272,13 +276,14 @@
             },
             {
               "label": "Width"
-            },
-            {
-              "label": "",
-              "head": true
             }
           ],
           "cells": [
+            [
+              null,
+              null,
+              null
+            ],
             [
               "freq1",
               "freq2",
@@ -298,11 +303,6 @@
               "width1",
               "width2",
               "width3"
-            ],
-            [
-              null,
-              null,
-              null
             ]
           ]
         }
@@ -498,6 +498,24 @@
     "meters": [],
     "roles": [],
     "displays": [],
+    "words": {
+      "meters": {
+        "labelKey": "panel.label.meters",
+        "label": "Meters"
+      },
+      "more": {
+        "labelKey": "panel.label.more",
+        "label": "More"
+      },
+      "unheld": {
+        "labelKey": "panel.label.unheld",
+        "label": "unheld"
+      },
+      "gainReduction": {
+        "labelKey": "panel.label.gain.reduction",
+        "label": "Gain reduction"
+      }
+    },
     "pages": [
       {
         "section": null,

@@ -13,7 +13,7 @@
         "kind": "number",
         "symbol": "thresh",
         "name": "Thr",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": -60,
@@ -57,7 +57,7 @@
         "kind": "number",
         "symbol": "gr",
         "name": "Gain Reduction",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": -40,
@@ -68,7 +68,7 @@
         "kind": "number",
         "symbol": "makeup",
         "name": "Mk",
-        "unit": "db",
+        "unit": "dB",
         "scale": "linear",
         "step": 0,
         "min": 0,
@@ -164,6 +164,7 @@
         "kind": "level",
         "measurement": null,
         "unit": "dB",
+        "unitText": "dB",
         "min": -40,
         "max": 0,
         "channels": 1,
@@ -175,6 +176,24 @@
     ],
     "roles": [],
     "displays": [],
+    "words": {
+      "meters": {
+        "labelKey": "panel.label.meters",
+        "label": "Meters"
+      },
+      "more": {
+        "labelKey": "panel.label.more",
+        "label": "More"
+      },
+      "unheld": {
+        "labelKey": "panel.label.unheld",
+        "label": "unheld"
+      },
+      "gainReduction": {
+        "labelKey": "panel.label.gain.reduction",
+        "label": "Gain reduction"
+      }
+    },
     "pages": [
       {
         "section": null,
