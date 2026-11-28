@@ -101,13 +101,14 @@ class CurveBinding(unittest.TestCase):
         d = {"family": "dynamics", "displays": [{"kind": "gain_reduction_bar"}], "roles": []}
         self.assertIsNone(view.curve_bind_line(1, 0, d))
 
-    def declaration(self, displays, roles):
+    def declaration(self, displays, roles, legs=None):
         """A contract directory holding only omx-dsp's curve.json with these ids; OMX_CONTRACT_PATH names it."""
         root = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, root)
         os.makedirs(os.path.join(root, "omx-dsp", "primitives"))
         with open(os.path.join(root, "omx-dsp", "primitives", "curve.json"), "w") as f:
-            json.dump({"CURVE_DISPLAYS": {"ids": displays}, "CURVE_ROLES": {"ids": roles}}, f)
+            json.dump({"CURVE_DISPLAYS": {"ids": displays}, "CURVE_ROLES": {"ids": roles},
+                       **({} if legs is None else {"CURVE_LEGS": {"ids": legs}})}, f)
         patch = mock.patch.dict(os.environ, {"OMX_CONTRACT_PATH": root + ":/nowhere"})
         patch.start()
         self.addCleanup(patch.stop)
@@ -173,6 +174,29 @@ class CurveBinding(unittest.TestCase):
         self.assertEqual(view.curve_points("0 -"), [])
         for bad in ("", "3 - 1,2 3,4", "2 - 1,2 nan,4", "x - 1,2", "2 1,2 3,4", "1 -"):
             self.assertEqual(view.curve_points(bad), [], bad)
+
+    def test_the_taps_of_a_reply(self):
+        """A delay's time_response answers no point but its taps, after the points as 'stems <count> <t>,<dB>,<shade>,<leg>
+        ...' (plugin-hostd-protocol's curve-points-reply; the reply is doc/protocol.md's example). Each is a stem for
+        omx-panel's renderer (omx_panel_view_set_stems): time in ms, level in dB, shade, and its leg's letter, the leg word
+        of omx-dsp's CURVE_LEGS, none for a tap on both legs. Before, the fork read past them and drew an empty frame."""
+        self.assertEqual(view.curve_stems("0 - stems 4 0,-4.44,1.000,both 250.0,-7.96,1.000,left 500.0,-13.98,0.538,right "
+                                          "750.0,-20.00,0.290,left"),
+                         [(0.0, -4.44, 1.0, " "), (250.0, -7.96, 1.0, "L"), (500.0, -13.98, 0.538, "R"),
+                          (750.0, -20.0, 0.29, "L")])
+        self.assertEqual(view.curve_stems("2 - 0,-80.00 500.0,-80.00 stems 1 0,0.00,1.000,right"), [(0.0, 0.0, 1.0, "R")],
+                         "taps after points")
+        self.assertIsNone(view.curve_stems("2 - 0,-80.00 500.0,-80.00"), "a reply with no taps has none to set")
+        for bad in ("", "0 - stems 2 0,0.00,1.000,both", "0 - stems 1 0,0.00,1.000,middle", "0 - stems 1 0,nan,1.000,both",
+                    "0 - stems 1 0,0.00,both", "0 - stems x 0,0.00,1.000,both", "x - stems 1 0,0.00,1.000,both"):
+            self.assertIsNone(view.curve_stems(bad), bad)
+
+    def test_a_leg_letter_follows_the_owners_legs(self):
+        """The letters come from CURVE_LEGS as omx-dsp declares them, not from a list here: a leg the owner adds is
+        lettered, one it drops is refused."""
+        self.declaration([], [], legs=["both", "centre"])
+        self.assertEqual(view.curve_stems("0 - stems 1 5,0.00,1.000,centre"), [(5.0, 0.0, 1.0, "C")])
+        self.assertIsNone(view.curve_stems("0 - stems 1 5,0.00,1.000,left"))
 
     def test_a_feedback_line(self):
         self.assertEqual(view.output_set("output_set 2 compGr -3.5"), (2, "compGr", -3.5))
