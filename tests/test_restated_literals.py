@@ -27,7 +27,7 @@ import restated_declarations as check  # noqa: E402
 TOOL = os.path.join(ROOT, "tools", "restated_declarations.py")
 CONTRACTS = os.path.join(HERE, "fixtures", "restated_contracts")
 MODULE = "zyngine/zynthian_plugin_demo.py"  # a name SCAN matches
-DB = "omx-contract/contract.d/3/plugin-db/db.json"
+DB = "omx-contract/contract.d/plugin-db/db.json"
 
 
 def run(*args, env=None):
@@ -313,10 +313,10 @@ class test_restated_literals(unittest.TestCase):
     def test_a_root_that_lacks_one_owner_is_an_error_naming_it_alone(self):
         partial = os.path.join(self.tmp, "partial")
         shutil.copytree(CONTRACTS, partial)
-        shutil.rmtree(os.path.join(partial, "omx-contract", "contract.d", "3", "plugin-hostd"))
+        shutil.rmtree(os.path.join(partial, "omx-contract", "contract.d", "plugin-hostd"))
         out = run("--root", self.tmp, "--left", self.left, "--contracts", partial, "--literals-left", self.allowance)
         self.assertEqual(out.returncode, 2, out.stdout + out.stderr)
-        self.assertIn("in: omx-contract/contract.d/*/plugin-hostd (install", out.stderr)
+        self.assertIn("in: omx-contract/contract.d/plugin-hostd (install", out.stderr)
         self.assertNotIn("plugin-db", out.stderr)
 
     def test_the_root_comes_from_the_environment_when_no_flag_names_it(self):
