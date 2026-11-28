@@ -20,6 +20,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_engine_plugin_hostd import ROOT  # noqa: E402  (sets up the stand-ins)
 from zyngine import zynthian_panel_gestures as pg  # noqa: E402
+from test_panel_gestures_shared import omx_panel_gesture_scripts  # noqa: E402
 
 
 def omx_panel(*path):
@@ -29,7 +30,7 @@ def omx_panel(*path):
 
 def omx_panel_scripts():
     """omx-panel's parity scripts."""
-    with open(omx_panel("test", "fixtures", "gestures", "scripts.json")) as f:
+    with open(omx_panel_gesture_scripts()) as f:
         return json.load(f)["scripts"]
 
 
