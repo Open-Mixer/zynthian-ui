@@ -638,7 +638,9 @@ class zynthian_gui_controller(tkinter.Canvas):
         if self.hidden:
             return
         self.title = title
-        self.set_text(self.label_title, title, self.title_width, self.title_height)
+        # a title of words with a unit symbol (plugin-hostd's "Trim dB") is not split at its case changes ("d B")
+        self.set_text(self.label_title, title, self.title_width, self.title_height,
+                      getattr(self.zctrl, "camel_title", True))
 
     def calculate_value_font_size(self, val_text=None):
         if self.value_width < 10:
