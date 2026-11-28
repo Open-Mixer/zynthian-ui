@@ -40,7 +40,7 @@ class TapsReachTheView(unittest.TestCase):
         w.display_map = {0: 2}  # the screen's display 0 is the description's display 2
         w.page_keys = lambda: []
         w.paint = lambda v: setattr(v, "drew", v.drew + 1)
-        w.panel_image = None
+        w.panel_image = w.spectrum = None  # no measured spectrum under the display
         asked = []
         w.processor = types.SimpleNamespace(engine=types.SimpleNamespace(
             curve_drawing=lambda d: (asked.append(d), drawing)[1], meter=lambda symbol: None))
