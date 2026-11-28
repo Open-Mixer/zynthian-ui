@@ -164,10 +164,11 @@ class test_no_contract_path_carries_a_major_level(unittest.TestCase):
         self.assertEqual(found, [], "the contract directory has no schema-major level (#139):\n" + "\n".join(found))
 
     def test_the_check_sees_each_spelling_it_refuses(self):
-        for source in ('P = "/usr/share/omx-contract/contract.d/3/plugin-hostd"\n',
-                       'G = "omx-contract/contract.d/*/" + owner\n',
-                       'import os\np = os.path.join(root, "3", "omx-dsp", "primitives", "curve.json")\n',
-                       'import os\np = os.path.join(c, "omx-contract", "contract.d", "3", "plugin-hostd")\n'):
+        # the refused spellings are written with {m} for the level, so that this file itself names none
+        for source in ('P = "/usr/share/omx-contract/contract.d/{m}/plugin-hostd"\n'.format(m="3"),
+                       'G = "omx-contract/contract.d/{m}/" + owner\n'.format(m="*"),
+                       'import os\np = os.path.join(root, "{m}", "omx-dsp", "primitives", "curve.json")\n'.format(m="3"),
+                       'import os\np = os.path.join(c, "omx-contract", "contract.d", "{m}", "plugin-hostd")\n'.format(m="3")):
             self.assertTrue(any(MAJOR_LEVEL.search(p) for _, p in literal_paths(source)), source)
         for source in ('P = "/usr/share/omx-contract/contract.d/plugin-hostd/grouping"\n',
                        'import os\np = os.path.join(root, "omx-dsp", "primitives", "curve.json")\n'):
