@@ -78,8 +78,8 @@ class JoinByParam(unittest.TestCase):
         widget.processor = types.SimpleNamespace(engine=engine)
         widget.zyngui_control = types.SimpleNamespace(zcontrollers=[self.zctrls["0"], self.zctrls["1"],
                                                                     self.zctrls["2"], None])
-        widget.width, widget.height, widget.stopped = 400, 240, None
-        widget.drawn = widget.drawn_state = widget.panel_image = None
+        widget.width, widget.height, widget.stopped, widget.shown = 400, 240, None, False
+        widget.drawn = widget.drawn_state = widget.panel_image = widget.spectrum = None
         widget.widget_canvas = mock.MagicMock()
         self.widget = widget
 

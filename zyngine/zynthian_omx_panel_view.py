@@ -664,7 +664,7 @@ def panel_words(item, root=None):
     """{code: word} of a words item of omx-panel's domain `panel` (PANEL_DISPLAY_KINDS, PANEL_DISPLAY_SOURCES), each
     word's `x-code` as the domain document of the contract directory declares it (OMX_CONTRACT_PATH's first, else the
     installed one). {} when the document cannot be read, said once."""
-    root = root or (os.environ.get("OMX_CONTRACT_PATH") or CONTRACT_PATH).split(":")[0]
+    root = root or next(iter(zynthian_contract_dir.contract_dirs()), "")
     if (root, item) not in _panel_words:
         try:
             with open(os.path.join(root, *PANEL_DOMAIN)) as f:
@@ -770,17 +770,20 @@ def rta_taps(client, sharing, instance, get_ports):
     return post, pre, None if (first or last) else "no spectrum inside a grouped chain"
 
 
-RTA_PATH = os.path.join("3", "omx-dsp", "kernels", "rta.json")  # omx-dsp's package of the contract directory
+RTA_PATH = ("omx-dsp", "kernels", "rta.json")  # omx-dsp's package of the contract directory, <contractdir>/omx-dsp/
 _rta_window_said = set()  # the contract roots whose rta.json was said unreadable
 
 
 def rta_window(root=None):
     """(db_min, db_max, grid_db): the level window omx-dsp declares (RTA_LEVEL_DB_MIN, RTA_LEVEL_DB_MAX,
     RTA_LEVEL_GRID_DB of the rta.json its contract package installs), never restated here; None, said once, when it
-    cannot be read, and no spectrum is drawn then."""
-    root = root or (os.environ.get("OMX_CONTRACT_PATH") or CONTRACT_PATH).split(":")[0]
+    cannot be read, and no spectrum is drawn then. The file is <contractdir>/omx-dsp/kernels/rta.json, in the contract
+    directory given or else the installed one (zynthian_contract_dir)."""
     try:
-        with open(os.path.join(root, RTA_PATH)) as f:
+        path = zynthian_contract_dir.find(*RTA_PATH, dirs=None if root is None else [root])
+        if path is None:
+            raise OSError(f"no contract directory holds {os.path.join(*RTA_PATH)}")
+        with open(path) as f:
             doc = json.load(f)["constants"]
 
         def number(key):

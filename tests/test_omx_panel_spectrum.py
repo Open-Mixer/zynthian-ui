@@ -100,8 +100,8 @@ class PanelSpectrum(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp, True)
         os.chmod(STUB_READER, os.stat(STUB_READER).st_mode | stat.S_IXUSR)
-        os.makedirs(os.path.join(self.tmp, "c", "3", "omx-dsp", "kernels"))
-        with open(os.path.join(self.tmp, "c", "3", "omx-dsp", "kernels", "rta.json"), "w") as f:
+        os.makedirs(os.path.join(self.tmp, "c", "omx-dsp", "kernels"))  # <contractdir>/omx-dsp/, no schema-major level
+        with open(os.path.join(self.tmp, "c", "omx-dsp", "kernels", "rta.json"), "w") as f:
             json.dump({"constants": {"RTA_LEVEL_DB_MIN": {"value": -72}, "RTA_LEVEL_DB_MAX": {"value": 0},
                                      "RTA_LEVEL_GRID_DB": {"value": 12}}}, f)
         self.pidfile, self.argvfile = os.path.join(self.tmp, "pid"), os.path.join(self.tmp, "argv")
