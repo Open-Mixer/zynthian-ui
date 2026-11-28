@@ -1447,31 +1447,39 @@ class zynthian_engine_plugin_hostd(zynthian_engine):
 
     def curve(self, display):
         """The points of display `display` of the description, as plugin-hostd computes them from the plugin's values
-        now (curve_bind once, then curve_points); [] when it draws none (its reply says why, logged once)."""
+        now (curve_drawing's points); [] when it draws none."""
+        return self.curve_drawing(display)[0]
+
+    def curve_drawing(self, display):
+        """(the points, the taps) of display `display` of the description, as plugin-hostd computes them from the
+        plugin's values now (curve_bind once, then curve_points): the points as curve_points() reads them, the taps a
+        delay's time_response answers as curve_stems() reads them, None when the reply has none. ([], None) when it
+        draws nothing (its reply says why, logged once)."""
         if not self.drawn or self.instance is None:
-            return []
+            return [], None
         description = self.drawn[1]
         line = panel_view.curve_bind_line(self.instance, display, description)
         if not line:
-            return []
+            return [], None
         for attempt in (0, 1):
             try:
                 if self.curves_bound.get(display) != line:
                     daemon.call(line)
                     self.curves_bound[display] = line
-                return panel_view.curve_points(daemon.call(command("curve_points", self.instance, display, 96))[1])
+                reply = daemon.call(command("curve_points", self.instance, display, 96))[1]
+                return panel_view.curve_points(reply), panel_view.curve_stems(reply)
             except plugin_hostd_error as e:
                 # a respawned instance lost its binding: bind again, once
                 self.curves_bound.pop(display, None)
                 if attempt or e.code != protocol.find("reply.plugin-hostd.curve-term-missing"):
                     log_once(("curve", self.plugin_uri, display), "plugin-hostd draws no curve %s for %s: %s", display,
                              self.plugin_uri, e)
-                    return []
+                    return [], None
             except (OSError, plugin_hostd_down, plugin_hostd_timeout) as e:
                 log_once(("curve", self.plugin_uri, display), "plugin-hostd draws no curve %s for %s: %s", display,
                          self.plugin_uri, e)
-                return []
-        return []
+                return [], None
+        return [], None
 
     def rta_sharing(self, processor):
         """The instances processor's jack client runs, in chain order (rta_sharing)."""

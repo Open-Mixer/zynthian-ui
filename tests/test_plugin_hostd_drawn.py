@@ -245,6 +245,20 @@ class drawn_view(plugin_hostd_case):
         self.assertEqual(len(engine.curve(0)), 2, "bound again and drawn")
         self.assertEqual(len([l for l in fake.lines if l.startswith("curve_bind")]), 2)
 
+    def test_a_delays_taps_are_read_with_its_points(self):
+        # a delay's time_response answers no point but its taps ('stems ...'): curve_drawing hands both to the widget,
+        # which gives the taps to the renderer; before, they were read past and the delay's frame stayed empty
+        fake, proc = self.drawn_plugin()
+        engine = proc.engine
+        engine.drawn[1].update(family="delay", displays=[{"kind": "time_response", "section": 0, "source": "family"}],
+                               roles=[{"role": "time", "index": 0, "symbol": "p0", "unit": "ms"},
+                                      {"role": "feedback", "index": 0, "symbol": "p1", "unit": "none"}])
+        fake.params[engine.instance]["p0"] = 300.0
+        self.assertEqual(engine.curve_drawing(0), ([], [(0.0, 0.0, 1.0, " "), (300.0, -6.02, 0.5, "L")]))
+        self.assertEqual(engine.curve(0), [], "and no point")
+        self.assertEqual([l for l in fake.lines if l.startswith("curve_bind")],
+                         [f"curve_bind {engine.instance} 0 time_response delay time=p0:ms feedback=p1:none"])
+
     def test_a_display_that_is_no_curve_asks_nothing(self):
         fake, proc = self.drawn_plugin()
         proc.engine.drawn[1]["displays"] = [{"kind": "gain_reduction_bar"}]

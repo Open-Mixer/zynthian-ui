@@ -145,6 +145,7 @@ class BlankSlotPage(unittest.TestCase):
         self.proc.engine.zctrls = self.zctrls
         self.proc.engine.drawn = None
         self.proc.engine.curve, self.proc.engine.meter = (lambda display: []), (lambda symbol: None)
+        self.proc.engine.curve_drawing = lambda display: ([], None)
         control = load_control()
         screen = object.__new__(control)
         screen.mode, screen.widgets, screen.current_widget, screen.widget_zctrl = "control", {}, None, None

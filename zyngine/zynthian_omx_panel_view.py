@@ -158,6 +158,11 @@ def _declare(lib):
             ("omx_panel_word_name", S, [ctypes.c_int])):
         f = getattr(lib, name)
         f.restype, f.argtypes = res, args
+    # a time_response's taps (omx_panel_view_set_stems, omx-panel 0.13.8): a renderer without it draws no tap, nothing else
+    stems = getattr(lib, "omx_panel_view_set_stems", None)
+    if stems is not None:
+        stems.restype = B
+        stems.argtypes = [P, U, DP, DP, DP, S, U]
     # the dirty draw (omx-panel#78): a renderer released before it has no such symbol, and the full draw is then the only
     # draw; no other shape of it is taken
     dirty = getattr(lib, "omx_panel_view_draw_dirty", None)
@@ -293,6 +298,16 @@ class _LibraryView:
         return bool(f(self.view, display, arr(*frame["hz"]), arr(*pre[0]) if mode != "post" else None,
                       arr(*post[0]) if mode != "pre" else None, arr(*filled[1]), n, TAP_MODES[mode],
                       bool(delta) and mode == "both", *window))
+
+    def set_stems(self, display, stems):
+        """The taps of a time_response display, curve_stems()'s (time ms, level dB, shade, letter); none clears them.
+        False for a renderer with no stems, or stems it refuses."""
+        set_stems = getattr(self.lib, "omx_panel_view_set_stems", None)
+        if set_stems is None:
+            return False
+        n = len(stems)
+        ts, dbs, shades = ((ctypes.c_double * n)(*(s[k] for s in stems)) for k in range(3))
+        return set_stems(self.view, display, ts, dbs, shades, "".join(s[3] for s in stems).encode(), n)
 
     def set_surface(self, width, height, scale=1.0):
         self.size = (width, height)
@@ -564,6 +579,9 @@ class View:
         """The spectrum under display `display`'s curve, drawn by the renderer's process (_LibraryView.set_spectrum)."""
         return bool(self._call("set_spectrum", display, frame, mode, delta, window))
 
+    def set_stems(self, display, stems):
+        return self._call("set_stems", display, [tuple(s) for s in stems])
+
     def set_surface(self, width, height, scale=1.0):
         self.size = (width, height)
         return self._call("set_surface", width, height, scale)
@@ -686,6 +704,25 @@ def panel_word(item, value, root=None):
     return value
 
 
+_curve_legs = {}  # curve.json => leg words
+
+
+def curve_legs(root=None):
+    """The leg words a delay's tap lands on, omx-dsp's CURVE_LEGS of the curve.json curve_words reads, in their order
+    (the first is the dry tap's, on both legs); () when the declaration cannot be read, said once per file."""
+    path = zynthian_contract_dir.find("omx-dsp", "primitives", "curve.json", dirs=None if root is None else [root])
+    if path is None:
+        return ()
+    if path not in _curve_legs:
+        try:
+            with open(path) as f:
+                _curve_legs[path] = tuple(json.load(f)["CURVE_LEGS"]["ids"])
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            logging.warning("omx-dsp's curve.json declares no readable CURVE_LEGS (%s): no tap is drawn", e)
+            _curve_legs[path] = ()
+    return _curve_legs[path]
+
+
 def curve_bind_line(instance, index, description):
     """The curve_bind line of display `index` of a description (`omx-panel describe`'s): its kind, the family and a
     term per role, <role>[.<index>]=<symbol>:<unit>[@<shape>|...], the symbols as the daemon sets them. None for a
@@ -724,6 +761,31 @@ def curve_points(reply):
     if len(points) != n or any(len(p) != 2 or not all(math.isfinite(v) for v in p) for p in points):
         return []
     return points
+
+
+def curve_stems(reply):
+    """The taps of a curve_points reply, each (time ms, level dB, shade 0..1, letter) as omx-panel's renderer takes a
+    stem (omx_panel_view_set_stems); None for a reply with no taps or a malformed one. A delay's time_response answers
+    them after the points, 'stems <count> <t>,<dB>,<shade>,<leg> ...' (plugin-hostd-protocol's curve-points-reply).
+    The letter is the leg's, as CURVE_LEGS says it (curve_legs): none for the first, the dry tap's on both legs, else
+    the leg word's initial; a leg word it does not hold refuses the reply."""
+    words = reply.split()
+    if "stems" not in words:
+        return None
+    at = words.index("stems")
+    legs = curve_legs()
+    try:
+        int(words[0])
+        n = int(words[at + 1])
+        stems = []
+        for w in words[at + 2:]:
+            t, db, shade, leg = w.split(",")
+            stems.append((float(t), float(db), float(shade), " " if leg == legs[0] else leg[0].upper()))
+            if leg not in legs or not all(math.isfinite(v) for v in stems[-1][:3]):
+                return None
+    except (IndexError, ValueError):
+        return None
+    return stems if len(stems) == n else None
 
 
 def output_set(line):
