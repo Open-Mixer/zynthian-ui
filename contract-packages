@@ -1,0 +1,20 @@
+# The contract packages this series is built and tested against: tools/contract_packages.py checks that each is
+# installed and that each path named after it exists and is laid down by it. No version is typed here: the next level
+# uses the published package, nothing else, and the run prints the version it found (owner's rule, no hand-kept
+# floors). A line with a version relation is refused.
+# <binary package> [<path the code reads>...]
+#
+# the protocol library and the documents zyngine/zynthian_plugin_hostd_protocol.py reads (PLACE)
+libplugin-hostd-protocol0 /usr/share/plugin-hostd-protocol/plugin-hostd-protocol.json /usr/share/plugin-hostd-protocol/plugin-hostd.json
+# the protocol's verbs in the contract directory, and the Catalan catalog of its codes
+plugin-hostd-protocol-contract /usr/share/omx-contract/contract.d/plugin-hostd-protocol
+plugin-hostd-protocol-l10n-ca /usr/share/plugin-hostd-protocol/catalogs/ca.json
+# the daemon's own domain: its format tables and the grouping reasons
+plugin-hostd-contract /usr/share/omx-contract/contract.d/plugin-hostd/MANIFEST.json /usr/share/omx-contract/contract.d/plugin-hostd/grouping/grouping.json
+# plugin-hostd's Python client, imported at module load (zyngine/zynthian_plugin_hostd_protocol.py)
+python3-plugin-hostd-protocol /usr/lib/python3/dist-packages/plugin_hostd_protocol
+# omx-contract's Python readers: omx_contract.scale and omx_contract.catalog (omx-contract#28)
+python3-omx-contract /usr/lib/python3/dist-packages/omx_contract/scale.py /usr/lib/python3/dist-packages/omx_contract/catalog.py
+# the owners' vocabularies the sentences are read from (#6): omx-contract's own domain in the contract directory
+omx-contract-data /usr/share/omx-contract/contract.d/omx-contract/MANIFEST.json
+omx-dsp-contract /usr/share/omx-contract/contract.d/omx-dsp/MANIFEST.json
