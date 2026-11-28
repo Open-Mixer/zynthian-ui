@@ -18,10 +18,19 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# THE CHANNEL LEVELS (owner 2026-11-28: run in parallel with the release, testing the devel and staging packages; an
+# error found there is contributed to the package). A pull request reads the devel wave the repository variables name
+# (OMX_DEVEL_CHANNEL, devel/<wave>, and its base waves OMX_DEVEL_BASE), above staging, above the real channel, through the
+# shared add-openmixer action the Open-Mixer repositories use, with the same variable names. A push (the release line a
+# Zynthian updates from) reads the real channel alone: the production arm, what a device installs.
 jobs:
   tests:
     name: python3 -m pytest tests/ (debian:trixie arm64)
     runs-on: ubuntu-24.04-arm
+    env:
+      OMX_LEVELS: ${{ github.event_name == 'pull_request' && 'devel' || 'production' }}
+      OMX_DEVEL_CHANNEL: ${{ github.event_name == 'pull_request' && vars.OMX_DEVEL_CHANNEL || '' }}
+      OMX_DEVEL_BASE: ${{ github.event_name == 'pull_request' && vars.OMX_DEVEL_BASE || '' }}
     # the suite takes ~2 min here (100 s serial on trixie amd64); a run past this is a hang, never a slow pass
     timeout-minutes: 20
     container:
@@ -45,15 +54,28 @@ jobs:
           echo 'cython<3.1' > /tmp/pip-constraints.txt
           PIP_CONSTRAINT=/tmp/pip-constraints.txt pip install -q --break-system-packages -r requirements-dev.txt
 
-      - name: Add the OpenMixer channel
+      - name: Add the OpenMixer channel, and on a pull request staging and the devel wave above it
         uses: Open-Mixer/.github/.github/actions/add-openmixer@openmixer-v1
+        with:
+          staging: ${{ env.OMX_LEVELS == 'devel' }}
+          devel-channel: ${{ env.OMX_DEVEL_CHANNEL }}
+          devel-base: ${{ env.OMX_DEVEL_BASE }}
 
       - name: Install plugin-hostd from the channel
+        shell: bash
         run: |
           # plugin-hostd depends on its contract at its own version: both at the newest version this cell serves
           # TOGETHER (tools/served_pair.py reads the channel's deb/cells.tsv), so a release that has reached another
           # architecture first is not this cell's version, and the gap never reads as this repository's red
-          v=$(python3 tools/served_pair.py plugin-hostd plugin-hostd-contract)
+          # the trees apt reads here, each level's cells.tsv: the real channel, then on a pull request staging, the wave
+          # and its bases (a wave that never published answers 404 and is skipped)
+          ch=https://www.openmixer.org; levels=(--channel "$ch")
+          if [ "$OMX_LEVELS" = devel ]; then
+            levels+=(--channel "$ch/staging")
+            for w in $OMX_DEVEL_CHANNEL $OMX_DEVEL_BASE; do levels+=(--channel "$ch/devel/${w#devel/}"); done
+          fi
+          echo "channel levels ($OMX_LEVELS): ${levels[*]}"
+          v=$(python3 tools/served_pair.py "${levels[@]}" plugin-hostd plugin-hostd-contract)
           pins=
           for p in plugin-hostd plugin-hostd-contract; do
             full=$(apt-cache madison "$p" | awk -F'|' -v v="$v" '{gsub(/ /, "", $2)} $2 ~ "^"v"([-~+]|$)" {print $2; exit}')
