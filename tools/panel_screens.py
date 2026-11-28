@@ -41,6 +41,8 @@ LOOK = os.environ.get("LOOK", "stock")
 OUT = os.environ.get("OUT", "/tmp/shots")
 PORT = int(os.environ.get("PHD_PORT", "17556"))
 URIS = os.environ.get("PHD_URIS", "clap:/usr/lib/clap/omx-strip.clap#org.openmixer.strip").split()
+# a snapshot (.zss) whose PH processors are taken instead of PHD_URIS, each set to the snapshot's controller values
+SNAPSHOT = os.environ.get("SNAPSHOT")
 SETTLE = float(os.environ.get("SETTLE", "1.5"))
 
 # the UI's settings, after tests.bootstrap dropped every inherited ZYNTHIAN_* variable
@@ -114,10 +116,33 @@ class Screens(plugin_hostd_case):
         subprocess.run(["import", "-window", "root", "-crop", f"{W}x{H}+0+0", "+repage", path], check=True)
         return path
 
+    def snapshot_plugins(self):
+        """[(uri, {symbol: value})] of the snapshot's PH processors, in its chains' order."""
+        with open(SNAPSHOT) as f:
+            snap = json.load(f)
+        zs3 = snap["zs3"][snap.get("last_zs3_id", "zs3-0")]["processors"]
+        out = []
+        for chain in snap["chains"].values():
+            for slot in chain["slots"]:
+                for pid, code in slot.items():
+                    if code.startswith("PH/clap:"):
+                        ctl = zs3.get(pid, {}).get("controllers", {})
+                        out.append((code[3:], {k: v["value"] for k, v in ctl.items()}))
+        return out
+
     def test_every_page_of_each_plugin(self):
-        for n, uri in enumerate(URIS, 1):
+        plugins = self.snapshot_plugins() if SNAPSHOT else [(uri, {}) for uri in URIS]
+        for n, (uri, values) in enumerate(plugins, 1):
             proc = self.add_real(uri, n)
             engine = proc.engine
+            for symbol, value in values.items():  # what loading the snapshot sets, through the engine to the daemon
+                self.assertIn(symbol, engine.zctrls, f"{uri}: the snapshot sets {symbol}, a control the engine has not")
+                engine.zctrls[symbol].set_value(value)
+            if values:
+                got = engine.read_values(values)
+                print(f"  the daemon reads back: {got}", flush=True)
+                for symbol, value in values.items():
+                    self.assertAlmostEqual(float(got[symbol]), float(value), places=3, msg=f"{uri}: {symbol}")
             deadline = time.monotonic() + 30
             while not engine.drawn and time.monotonic() < deadline and not engine._ctrl_screens:
                 time.sleep(1)
