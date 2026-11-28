@@ -123,23 +123,27 @@ jobs:
       - name: Fetch omx-panel's gesture declaration and build its renderer
         run: |
           apt-get install -y -qq --no-install-recommends git ca-certificates build-essential pkgconf libcjson-dev \
-            libomx-contract-dev libomxdsp-dev binutils
-          # omx-panel v0.15.1: its renderer holds omx-dsp-devel to a floor (0.32.2) only, and builds against omx-dsp 0.33; it carries the group model
-          # (omx-panel#63) the cut tests/fixtures/plugin_hostd records (#71)
-          SHA=3cace582d1da169fe3f6597e6574c3bc23a3cba2
+            libomx-contract-dev libomxdsp-dev binutils omx-panel-contract
+          # omx-panel at the release tag of the version the channel levels serve (omx-panel-contract's), never a named
+          # commit: its renderer builds against the libomx-contract-dev and libomxdsp-dev those levels serve beside it (a
+          # commit named here went stale when omx-contract moved the PANEL_* items to omx-panel); the log says which
+          v=$(dpkg-query -W -f '${Version}' omx-panel-contract)
+          SHA=v${v%%[-~+]*}
           git clone -q https://github.com/Open-Mixer/omx-panel /tmp/omx-panel
           git -C /tmp/omx-panel checkout -q "$SHA"
           test -f /tmp/omx-panel/schema/gestures.json
           echo "ZYNTHIAN_OMX_GESTURES=/tmp/omx-panel/schema/gestures.json" >> "$GITHUB_ENV"
-          echo "GESTURES FROM BRANCH $SHA"
-          make -C /tmp/omx-panel/renderer build/libomx-panel-render.so.0
+          echo "GESTURES FROM TAG $SHA (omx-panel-contract $v)"
+          # the renderer's soname is the tag's own (.so.1 from omx-panel 0.17): read from its Makefile, never typed here
+          so=$(make -s -C /tmp/omx-panel/renderer --eval 'print-soname: ; @echo $(SONAME)' print-soname)
+          make -C /tmp/omx-panel/renderer "build/$so"
           # the real command (dist/bin/omx-panel.mjs): the two tests that run it compare the recorded cut with it and
           # drive the engine through it, and skip without OMX_PANEL_REAL, so the recordings could drift unseen
           apt-get install -y -qq --no-install-recommends nodejs npm
           (cd /tmp/omx-panel && npm ci --ignore-scripts --no-audit --no-fund && npm run build)
           test -f /tmp/omx-panel/dist/bin/omx-panel.mjs
           echo "OMX_PANEL_REAL=node /tmp/omx-panel/dist/bin/omx-panel.mjs" >> "$GITHUB_ENV"
-          echo "ZYNTHIAN_OMX_PANEL_RENDER=/tmp/omx-panel/renderer/build/libomx-panel-render.so.0" >> "$GITHUB_ENV"
+          echo "ZYNTHIAN_OMX_PANEL_RENDER=/tmp/omx-panel/renderer/build/$so" >> "$GITHUB_ENV"
           echo "ZYNTHIAN_OMX_PANEL_TOOLS=/tmp/omx-panel/tools" >> "$GITHUB_ENV"
 
       - name: Assemble the contract root the literal gate reads (#4)
