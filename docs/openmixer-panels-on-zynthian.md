@@ -97,4 +97,9 @@ These are open, each to be fixed where it is caused; the pictures will be taken 
 - **omx-strip shows two Easy pages.** omx-panel derives the Easy controls from the descriptor (Input, Trim, Filters,
   HPF); omx-strip serves an Easy page of other controls (Trim, HPF Freq, HPF Slope, LPF Freq). The second one is
   marked `+` in the list.
+- **This fork loads `libomx-panel-render.so.0`** (`zyngine/zynthian_omx_panel_view.py`, `LIBRARY`); omx-panel ships
+  `libomx-panel-render.so.1` since its ABI break (#240) and keeps no `.so.0`. With omx-panel 0.17 installed and no
+  `ZYNTHIAN_OMX_PANEL_RENDER`, a device draws no panel screen at all, only the controller pages. These pictures set
+  `ZYNTHIAN_OMX_PANEL_RENDER=/usr/lib/x86_64-linux-gnu/libomx-panel-render.so.1`; the HOLD branch
+  lane/zynthian-ui-47-rta-dual-trace-so1 (#51) carries the move.
 - **`Ratio ratio`.** The contract's symbol for the unit `ratio` is the word `ratio`.
