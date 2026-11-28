@@ -357,11 +357,11 @@ class SpectrumDrawn(unittest.TestCase):
         pics = {}
         for mode, delta in (("post", False), ("both", False), ("both", True)):
             self.assertTrue(v.set_spectrum(d, f, mode, delta, self.WINDOW), (mode, delta))
-            pics[(mode, delta)] = v.draw(self.W, self.H)
+            pics[(mode, delta)] = v.draw(self.W, self.H)[0]  # the pixels; the second item is the rectangles it repainted
         self.assertNotEqual(pics[("post", False)], pics[("both", False)], "PRE's dim line is drawn in both")
         self.assertNotEqual(pics[("both", False)], pics[("both", True)], "the delta's wedges are drawn")
         self.assertTrue(v.set_spectrum(d, f, "post", False, self.WINDOW))
-        self.assertEqual(v.draw(self.W, self.H), pics[("post", False)], "and post alone comes back")
+        self.assertEqual(v.draw(self.W, self.H)[0], pics[("post", False)], "and post alone comes back")
 
 
 class FakeView:
