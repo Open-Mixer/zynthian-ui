@@ -78,8 +78,9 @@ CONTRACT_ROOT = os.environ.get("RESTATED_CONTRACT_ROOT") or "/usr/share"
 
 # where the owners install their declarations, under the contract root: omx-contract's contract directory holds one
 # directory per owner (omx-contract, omx-clap-core, omx-dsp, omx-plugins, plugin-db, plugin-hostd,
-# plugin-hostd-protocol; the * is the contract's major), plugin-hostd-protocol installs its own command table, omx-panel its schema
-CONTRACT_DIRS = tuple("omx-contract/contract.d/*/" + owner for owner in (
+# plugin-hostd-protocol; no schema-major level, omx-contract docs/contract-dir.md), plugin-hostd-protocol installs its own
+# command table, omx-panel its schema
+CONTRACT_DIRS = tuple("omx-contract/contract.d/" + owner for owner in (
     "omx-contract", "omx-clap-core", "omx-dsp", "omx-plugins", "plugin-db", "plugin-hostd", "plugin-hostd-protocol")
 ) + ("plugin-hostd-protocol", "omx-panel/schema")
 HOST_TABLES = ("VERB_HOSTS", "PLUGIN_DB_ISOLATION_HOSTS")  # tables whose ids name a package, an engine or a worker: not words of a protocol
