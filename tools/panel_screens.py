@@ -13,8 +13,10 @@
 #
 #   Xvfb :9 -screen 0 1024x768x24 &  DISPLAY=:9 W=480 H=320 WIRING=V4 LOOK=stock OUT=/tmp/shots \
 #   PHD_PORT=17556 PHD_URIS="clap:/usr/lib/clap/omx-strip.clap#org.openmixer.strip" \
-#   ZYNTHIAN_OMX_PANEL_RENDER=/usr/lib/x86_64-linux-gnu/libomx-panel-render.so.1 \
 #   python3 -m pytest -s tools/panel_screens.py
+#
+# The renderer is libomx-panel-render.so.1 by its default name (zynthian_omx_panel_view.LIBRARY);
+# ZYNTHIAN_OMX_PANEL_RENDER names another build of it.
 #
 # LOOK=vintage sources zynthian-sys's config/ui-looks/openmixer-vintage.sh (VINTAGE names the file). The daemon must run
 # the plugin (on a desk with no qualification records: `require_pins 0` in its -c file), or the page cut misses the
