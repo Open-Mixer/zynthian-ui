@@ -105,8 +105,8 @@ class CurveBinding(unittest.TestCase):
         """A contract directory holding only omx-dsp's curve.json with these ids; OMX_CONTRACT_PATH names it."""
         root = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, root)
-        os.makedirs(os.path.join(root, "3", "omx-dsp", "primitives"))
-        with open(os.path.join(root, "3", "omx-dsp", "primitives", "curve.json"), "w") as f:
+        os.makedirs(os.path.join(root, "omx-dsp", "primitives"))
+        with open(os.path.join(root, "omx-dsp", "primitives", "curve.json"), "w") as f:
             json.dump({"CURVE_DISPLAYS": {"ids": displays}, "CURVE_ROLES": {"ids": roles}}, f)
         patch = mock.patch.dict(os.environ, {"OMX_CONTRACT_PATH": root + ":/nowhere"})
         patch.start()
@@ -131,7 +131,7 @@ class CurveBinding(unittest.TestCase):
 
     def test_with_no_declaration_no_display_is_a_curve(self):
         root = self.declaration([], [])
-        shutil.rmtree(os.path.join(root, "3"))
+        shutil.rmtree(os.path.join(root, "omx-dsp"))
         with self.assertLogs(level="WARNING") as logs:
             self.assertIsNone(view.curve_bind_line(7, 0, fixture("omx-comp")["description"]))
         self.assertIn("curve.json", logs.output[0])

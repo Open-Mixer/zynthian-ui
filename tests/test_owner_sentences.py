@@ -31,7 +31,9 @@ from zyngine import zynthian_plugin_hostd_protocol as protocol_files  # noqa: E4
 import omx_contract.catalog as reader  # noqa: E402
 from zyngine import zynthian_plugin_hostd_estimate as estimate  # noqa: E402
 
-CONTRACT_DIR = (os.environ.get("OMX_CONTRACT_PATH") or "/usr/share/omx-contract/contract.d").split(":")[0]
+from zyngine import zynthian_contract_dir  # noqa: E402
+
+CONTRACT_DIRS = zynthian_contract_dir.contract_dirs()
 CATALOG_ROOT = "/usr/share"
 # the files of ours the scan reads: what the fork adds or changes, never upstream Zynthian's own text
 OURS = ("zyngine", "zyngui", "zynautoconnect", "zynconf", "tools")
@@ -52,12 +54,15 @@ def owner_sources():
             for v in node:
                 walk(v, owner)
 
-    root = os.path.join(CONTRACT_DIR, "3")
-    for owner in sorted(os.listdir(root)):
-        for name in sorted(os.listdir(os.path.join(root, owner))):
-            if name.endswith(".json"):
-                with open(os.path.join(root, owner, name)) as f:
-                    walk(json.load(f), owner)
+    # <contractdir>/<owner>/... (no schema-major level, omx-contract docs/contract-dir.md); a catalog is a translation
+    for root in CONTRACT_DIRS:
+        for owner in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+            for here, dirs, files in os.walk(os.path.join(root, owner)):
+                dirs[:] = sorted(d for d in dirs if d != "catalogs")
+                for name in sorted(files):
+                    if name.endswith(".json"):
+                        with open(os.path.join(here, name)) as f:
+                            walk(json.load(f), owner)
     return out
 
 
