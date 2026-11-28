@@ -212,7 +212,10 @@ class FreewheelRunner(TestClient):
 
     def run(self, nframes, timeout=60):
         self.done.clear()
-        self.target = self.frame_time + nframes
+        # Count from the server's current frame time: a runner that has not processed a cycle yet still has
+        # frame_time 0, while the session's server has been running since an earlier test, so its target was
+        # already passed and the run ended on its first cycle, before the clients under test processed anything.
+        self.target = max(self.frame_time, self.client.frame_time) + nframes
         self.client.set_freewheel(True)
         try:
             if not self.done.wait(timeout):
