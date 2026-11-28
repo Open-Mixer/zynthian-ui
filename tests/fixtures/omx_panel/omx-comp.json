@@ -129,7 +129,7 @@
     "label": "Mix",
     "visible": null,
     "mask": "0",
-    "unit": "%",
+    "unit": "percent",
     "meaning": "wetDryRatio"
    },
    {
@@ -145,8 +145,8 @@
     "label": "Kind",
     "visible": null,
     "mask": "0",
-    "unit": "",
-    "meaning": null
+    "unit": "none",
+    "meaning": "type"
    },
    {
     "symbol": "detectorOversampling",
@@ -161,8 +161,8 @@
     "label": "Detector Oversampling",
     "visible": null,
     "mask": "0",
-    "unit": "",
-    "meaning": null
+    "unit": "none",
+    "meaning": "mode"
    },
    {
     "symbol": "detectorTopology",
@@ -177,8 +177,8 @@
     "label": "Detector Topology",
     "visible": null,
     "mask": "0",
-    "unit": "",
-    "meaning": null
+    "unit": "none",
+    "meaning": "type"
    },
    {
     "symbol": "holdMs",
@@ -194,7 +194,23 @@
     "visible": null,
     "mask": "0",
     "unit": "ms",
-    "meaning": null
+    "meaning": "hold"
+   },
+   {
+    "symbol": "releaseMode",
+    "param": 19,
+    "section": 0,
+    "sectionKey": "comp",
+    "widget": "auto",
+    "standard": {
+     "widget": "selector"
+    },
+    "labelKey": null,
+    "label": "Release Mode",
+    "visible": null,
+    "mask": "0",
+    "unit": "none",
+    "meaning": "mode"
    },
    {
     "symbol": "keySource",
@@ -209,8 +225,8 @@
     "label": "Key Source",
     "visible": null,
     "mask": "0",
-    "unit": "",
-    "meaning": null
+    "unit": "none",
+    "meaning": "mode"
    },
    {
     "symbol": "keyHpHz",
@@ -226,7 +242,7 @@
     "visible": null,
     "mask": "0",
     "unit": "Hz",
-    "meaning": null
+    "meaning": "lowCut"
    },
    {
     "symbol": "keyLpHz",
@@ -242,7 +258,7 @@
     "visible": null,
     "mask": "0",
     "unit": "Hz",
-    "meaning": null
+    "meaning": "highCut"
    },
    {
     "symbol": "keyTiltDb",
@@ -257,8 +273,8 @@
     "label": "Key Tilt",
     "visible": null,
     "mask": "0",
-    "unit": "dB/oct",
-    "meaning": null
+    "unit": "dBPerOct",
+    "meaning": "tone"
    },
    {
     "symbol": "keyListen",
@@ -273,8 +289,8 @@
     "label": "Key Listen",
     "visible": null,
     "mask": "0",
-    "unit": "",
-    "meaning": null
+    "unit": "none",
+    "meaning": "listen"
    },
    {
     "symbol": "detectLink",
@@ -289,8 +305,8 @@
     "label": "Detect Link",
     "visible": null,
     "mask": "0",
-    "unit": "",
-    "meaning": null
+    "unit": "none",
+    "meaning": "link"
    },
    {
     "symbol": "duck",
@@ -305,8 +321,8 @@
     "label": "Duck",
     "visible": null,
     "mask": "0",
-    "unit": "",
-    "meaning": null
+    "unit": "none",
+    "meaning": "enabled"
    },
    {
     "symbol": "rangeDb",
@@ -322,7 +338,7 @@
     "visible": null,
     "mask": "0",
     "unit": "dB",
-    "meaning": null
+    "meaning": "range"
    }
   ],
   "roles": [
@@ -373,7 +389,7 @@
     "index": 0,
     "symbol": "mixPct",
     "param": 6,
-    "unit": "%"
+    "unit": "percent"
    }
   ],
   "unpublished": [],
@@ -385,8 +401,8 @@
     "sectionKey": "comp",
     "source": "family",
     "meters": [
-     null,
-     null
+     1,
+     2
     ],
     "curve": null,
     "floor": null,
@@ -406,7 +422,7 @@
     ],
     "curve": null,
     "floor": null,
-    "labelKey": null,
+    "labelKey": "panel.label.gain.reduction",
     "label": "Gain reduction",
     "basis": "modelled"
    }
@@ -448,6 +464,7 @@
   ],
   "meters": [
    {
+    "declared": true,
     "symbol": "compGr",
     "widget": "meter",
     "kind": "gain-reduction",
@@ -456,7 +473,7 @@
     "min": -60,
     "max": 0,
     "channels": 1,
-    "held": false,
+    "held": true,
     "clip": false,
     "label": "Gain reduction",
     "labelKey": null,
@@ -464,38 +481,41 @@
     "sectionKey": "comp"
    },
    {
+    "declared": true,
     "symbol": "compIn",
     "widget": "meter",
     "kind": "level",
-    "measurement": null,
+    "measurement": "peak",
     "unit": "dBFS",
     "min": -60,
     "max": 6,
     "channels": 2,
-    "held": false,
-    "clip": false,
+    "held": true,
+    "clip": true,
     "label": "Input level",
     "labelKey": null,
     "section": 0,
     "sectionKey": "comp"
    },
    {
+    "declared": true,
     "symbol": "compOut",
     "widget": "meter",
     "kind": "level",
-    "measurement": null,
+    "measurement": "peak",
     "unit": "dBFS",
     "min": -60,
     "max": 6,
     "channels": 2,
-    "held": false,
-    "clip": false,
+    "held": true,
+    "clip": true,
     "label": "Output level",
     "labelKey": null,
     "section": 0,
     "sectionKey": "comp"
    },
    {
+    "declared": true,
     "symbol": "compKey",
     "widget": "meter",
     "kind": "level",
@@ -504,7 +524,7 @@
     "min": -60,
     "max": 0,
     "channels": 1,
-    "held": false,
+    "held": true,
     "clip": false,
     "label": "Key level",
     "labelKey": null,
@@ -512,11 +532,29 @@
     "sectionKey": "comp"
    }
   ],
-  "meterRefusals": []
+  "meterRefusals": [],
+  "words": {
+   "meters": {
+    "labelKey": "panel.label.meters",
+    "label": "Meters"
+   },
+   "more": {
+    "labelKey": "panel.label.more",
+    "label": "More"
+   },
+   "unheld": {
+    "labelKey": "panel.label.unheld",
+    "label": "unheld"
+   },
+   "gainReduction": {
+    "labelKey": "panel.label.gain.reduction",
+    "label": "Gain reduction"
+   }
+  }
  },
  "description": {
   "family": "dynamics",
-  "fingerprint": "596cd2cfb24d95487b302c78c8d211e579c59b5606b0755d936961b0ae1bbf13",
+  "fingerprint": "35b741285fb0750931e348e0e9a2aba6e59f9fc1e3f961a15ab8830a44eca80d",
   "easy": [
    "thresholdDb",
    "ratio",
@@ -530,7 +568,7 @@
     "kind": "number",
     "symbol": "thresholdDb",
     "name": "Threshold",
-    "unit": "db",
+    "unit": "dB",
     "scale": "stepped",
     "step": 1,
     "min": -60,
@@ -552,7 +590,7 @@
     "kind": "number",
     "symbol": "kneeDb",
     "name": "Knee",
-    "unit": "db",
+    "unit": "dB",
     "scale": "linear",
     "step": 0,
     "min": 0,
@@ -585,7 +623,7 @@
     "kind": "number",
     "symbol": "makeupDb",
     "name": "Makeup",
-    "unit": "db",
+    "unit": "dB",
     "scale": "linear",
     "step": 0,
     "min": 0,
@@ -596,7 +634,7 @@
     "kind": "number",
     "symbol": "mixPct",
     "name": "Mix",
-    "unit": "pc",
+    "unit": "percent",
     "scale": "stepped",
     "step": 1,
     "min": 0,
@@ -668,7 +706,7 @@
     "kind": "number",
     "symbol": "keyHpHz",
     "name": "Key HP",
-    "unit": "hz",
+    "unit": "Hz",
     "scale": "stepped",
     "step": 1,
     "min": 0,
@@ -679,7 +717,7 @@
     "kind": "number",
     "symbol": "keyLpHz",
     "name": "Key LP",
-    "unit": "hz",
+    "unit": "Hz",
     "scale": "stepped",
     "step": 1,
     "min": 0,
@@ -690,8 +728,7 @@
     "kind": "number",
     "symbol": "keyTiltDb",
     "name": "Key Tilt",
-    "unit": "none",
-    "unitText": "dB/oct",
+    "unit": "dBPerOct",
     "scale": "linear",
     "step": 0,
     "min": -6,
@@ -752,12 +789,28 @@
     "kind": "number",
     "symbol": "rangeDb",
     "name": "Duck Range",
-    "unit": "db",
+    "unit": "dB",
     "scale": "stepped",
     "step": 1,
     "min": -40,
     "max": 0,
     "default": -12
+   },
+   {
+    "kind": "number",
+    "symbol": "releaseMode",
+    "name": "Release Mode",
+    "unit": "none",
+    "scale": "stepped",
+    "step": 1,
+    "min": 0,
+    "max": 2,
+    "default": 0,
+    "enumLabels": [
+     "Fixed",
+     "Opto",
+     "Auto"
+    ]
    }
   ],
   "sections": [
@@ -867,6 +920,14 @@
     "visibleWhen": null
    },
    {
+    "symbol": "releaseMode",
+    "section": "comp",
+    "widget": "auto",
+    "labelKey": "",
+    "label": "Release Mode",
+    "visibleWhen": null
+   },
+   {
     "symbol": "keySource",
     "section": "key",
     "widget": "auto",
@@ -938,10 +999,11 @@
     "kind": "gain-reduction",
     "measurement": "gain-reduction",
     "unit": "dB",
+    "unitText": "dB",
     "min": -60,
     "max": 0,
     "channels": 1,
-    "held": false,
+    "held": true,
     "clip": false,
     "labelKey": "",
     "label": "Gain reduction"
@@ -950,13 +1012,14 @@
     "symbol": "compIn",
     "section": "comp",
     "kind": "level",
-    "measurement": null,
+    "measurement": "peak",
     "unit": "dBFS",
+    "unitText": "dBFS",
     "min": -60,
     "max": 6,
     "channels": 2,
-    "held": false,
-    "clip": false,
+    "held": true,
+    "clip": true,
     "labelKey": "",
     "label": "Input level"
    },
@@ -964,13 +1027,14 @@
     "symbol": "compOut",
     "section": "comp",
     "kind": "level",
-    "measurement": null,
+    "measurement": "peak",
     "unit": "dBFS",
+    "unitText": "dBFS",
     "min": -60,
     "max": 6,
     "channels": 2,
-    "held": false,
-    "clip": false,
+    "held": true,
+    "clip": true,
     "labelKey": "",
     "label": "Output level"
    },
@@ -980,10 +1044,11 @@
     "kind": "level",
     "measurement": null,
     "unit": "dBFS",
+    "unitText": "dBFS",
     "min": -60,
     "max": 0,
     "channels": 1,
-    "held": false,
+    "held": true,
     "clip": false,
     "labelKey": "",
     "label": "Key level"
@@ -994,7 +1059,7 @@
     "role": "threshold",
     "index": 0,
     "symbol": "thresholdDb",
-    "unit": "db"
+    "unit": "dB"
    },
    {
     "role": "ratio",
@@ -1006,7 +1071,7 @@
     "role": "knee",
     "index": 0,
     "symbol": "kneeDb",
-    "unit": "db"
+    "unit": "dB"
    },
    {
     "role": "attack",
@@ -1024,23 +1089,24 @@
     "role": "makeup",
     "index": 0,
     "symbol": "makeupDb",
-    "unit": "db"
+    "unit": "dB"
    },
    {
     "role": "mix",
     "index": 0,
     "symbol": "mixPct",
-    "unit": "pc"
+    "unit": "percent"
    }
   ],
   "displays": [
    {
     "kind": "transfer_curve",
+    "axis": "linear",
     "section": "comp",
     "source": "family",
     "meterIds": [
-     null,
-     null
+     1,
+     2
     ],
     "curveIndex": null,
     "floor": null,
@@ -1050,6 +1116,7 @@
    },
    {
     "kind": "gain_reduction_bar",
+    "axis": "linear",
     "section": "comp",
     "source": "meters",
     "meterIds": [
@@ -1058,11 +1125,29 @@
     ],
     "curveIndex": null,
     "floor": null,
-    "labelKey": "",
+    "labelKey": "panel.label.gain.reduction",
     "label": "Gain reduction",
     "basis": "modelled"
    }
   ],
+  "words": {
+   "meters": {
+    "labelKey": "panel.label.meters",
+    "label": "Meters"
+   },
+   "more": {
+    "labelKey": "panel.label.more",
+    "label": "More"
+   },
+   "unheld": {
+    "labelKey": "panel.label.unheld",
+    "label": "unheld"
+   },
+   "gainReduction": {
+    "labelKey": "panel.label.gain.reduction",
+    "label": "Gain reduction"
+   }
+  },
   "pages": [
    {
     "section": null,
@@ -1089,7 +1174,7 @@
      8,
      9,
      15,
-     null,
+     19,
      null,
      null
     ]
