@@ -478,14 +478,15 @@ class test_protocol(plugin_hostd_case):
 
     def test_the_words_follow_the_installed_grammar(self):
         """The reader of words is plugin-hostd's Python client, and the installed grammar is the one it was written to:
-        quoted words with \\" as the only escape (core.abnf), a path percent-encoded (the section Pins and
-        qualification). An installed grammar that says otherwise needs a newer client."""
+        quoted words with \\" for a quote and \\\\ for a backslash (core.abnf, escaped-char, from plugin-hostd-protocol
+        0.21.3), a path percent-encoded (the section Pins and qualification). An installed grammar that says otherwise
+        needs a newer client."""
         directory, _ = ph.zynthian_plugin_hostd_protocol.daemon_file()
         with open(os.path.join(directory, "plugin-hostd-protocol.abnf")) as f:
             grammar_text = f.read()
         self.assertIn("quoted", grammar_text)
-        self.assertIn("escaped-quote", grammar_text)
-        self.assertRegex(grammar_text, r"escaped-quote\s*=\s*%x5C DQUOTE", "the quote is the only escape")
+        self.assertIn("escaped-char", grammar_text)
+        self.assertRegex(grammar_text, r"escaped-char\s*=\s*%x5C \(DQUOTE / %x5C\)", "a quote and a backslash are the escapes")
         limits = ph.zynthian_plugin_hostd_protocol.read(*reversed(ph.zynthian_plugin_hostd_protocol.daemon_file()))[0]["pin_limits"]
         path_rule = next(entry["meaning"] for entry in limits if entry["name"] == "PATH")
         self.assertIn("percent-encoded", path_rule)
@@ -686,13 +687,14 @@ class test_processor(plugin_hostd_case):
             self.assertEqual(fake.instances[instance], uri, "the daemon took the path whole")
 
     def test_a_preset_name_with_a_backslash_reaches_the_daemon_as_it_is(self):
-        """The grammar unescapes only a quote: a backslash doubled by the client would be a different name."""
+        """The grammar unescapes a quote and a backslash (escaped-char): the client doubles the backslash, and the daemon
+        reads the name back whole."""
         fake = self.serve()
         proc = self.add(self.chain(), "PH/clap:/usr/lib/clap/test.clap#org.test.synth")
         with tempfile.TemporaryDirectory() as my_data:
             proc.engine.my_data_dir = my_data
             path = proc.engine.save_preset(None, 'a\\b "c"')
-            self.assertIn('preset_save 1000 %s %s "a\\b \\"c\\""' % os.path.split(path), fake.lines)
+            self.assertIn('preset_save 1000 %s %s "a\\\\b \\"c\\""' % os.path.split(path), fake.lines)
             with open(path) as f:
                 self.assertEqual(json.load(f)["name"], 'a\\b "c"')
 
